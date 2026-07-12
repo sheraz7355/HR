@@ -1,0 +1,82 @@
+{% extends "layouts/base.html" %}
+{% block title %}User Management - HR Portal{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>User Management</h1>
+    <a href="{{ url_for('auth.user_add') }}" class="btn btn-primary">+ Add User</a>
+</div>
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Department</th>
+                    <th>Status</th>
+                    <th style="width:200px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in users %}
+                <tr class="{{ 'inactive-row' if not u.is_active }}">
+                    <td>{{ u.employee_code }}</td>
+                    <td><strong>{{ u.full_name }}</strong></td>
+                    <td>{{ u.email }}</td>
+                    <td><span class="badge badge-{{ 'danger' if u.is_admin() else 'warning' if u.is_manager() else 'info' }}">{{ u.get_role_name()|title }}</span></td>
+                    <td>{{ u.department or '-' }}</td>
+                    <td>
+                        {% if u.is_active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-default">Inactive</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                            <a href="{{ url_for('auth.user_edit', uid=u.id) }}" class="btn btn-sm btn-outline">Edit</a>
+                            <button class="btn btn-sm btn-outline" onclick="resetPw({{ u.id }}, '{{ u.full_name|e }}')">Reset PW</button>
+                            {% if u.is_active and not u.is_admin() and u.id != current_user.id %}
+                            <form method="POST" action="{{ url_for('auth.user_delete', uid=u.id) }}" style="display:inline;" onsubmit="return confirm('Deactivate {{ u.full_name|e }}?')">
+                                <button class="btn btn-sm btn-danger">Deactivate</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay hidden" id="pw-modal">
+    <div class="modal-content" style="max-width:380px;">
+        <div class="modal-header">
+            <h3>Reset Password</h3>
+            <button class="modal-close" onclick="document.getElementById('pw-modal').classList.add('hidden')">&times;</button>
+        </div>
+        <form method="POST" id="pw-form">
+            <p style="font-size:13px;color:#666;margin-bottom:12px;">New password for <strong id="pw-user-name"></strong></p>
+            <div class="form-group">
+                <input type="password" name="new_password" class="form-control" placeholder="New password" required minlength="4">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Set Password</button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+function resetPw(uid, name) {
+    document.getElementById('pw-user-name').textContent = name;
+    document.getElementById('pw-form').action = '/auth/users/' + uid + '/reset-password';
+    document.getElementById('pw-modal').classList.remove('hidden');
+}
+document.getElementById('pw-modal')?.addEventListener('click', function(e) {
+    if (e.target === this) this.classList.add('hidden');
+});
+</script>
+{% endblock %}

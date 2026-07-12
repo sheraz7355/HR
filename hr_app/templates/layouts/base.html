@@ -13,6 +13,7 @@
     <div class="app-layout">
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
+                <div class="brand-icon">S</div>
                 <h2>Solarkon HR</h2>
             </div>
             <nav class="sidebar-nav">
@@ -64,6 +65,7 @@
                 <a href="{{ url_for('timesheet.projects') }}" class="nav-item {{ 'active' if ep == 'timesheet.projects' }}">&#128194; Projects</a>
                 <a href="{{ url_for('digital_files.admin') }}" class="nav-item {{ 'active' if ep == 'digital_files.admin' }}">&#128193; All Files</a>
                 <a href="{{ url_for('pf.config') }}" class="nav-item {{ 'active' if ep == 'pf.config' }}">&#9881; PF Config</a>
+                <a href="{{ url_for('auth.user_list') }}" class="nav-item {{ 'active' if ep in ('auth.user_list','auth.user_add','auth.user_edit') }}">&#128101; User Management</a>
                 {% endif %}
             </nav>
         </aside>
@@ -94,8 +96,10 @@
                         </div>
                     </div>
                     <div class="user-menu">
+                        <div class="avatar">{{ current_user.full_name[:1] }}</div>
                         <span class="user-name">{{ current_user.full_name }}</span>
-                        <span class="user-role">{{ current_user.get_role_name() }}</span>
+                        <span class="user-role">{{ current_user.get_role_name()|title }}</span>
+                        <a href="{{ url_for('auth.change_password') }}" class="btn-link" title="Change Password">&#128273;</a>
                         <a href="{{ url_for('auth.logout') }}" class="btn-link">Logout</a>
                     </div>
                 </div>
