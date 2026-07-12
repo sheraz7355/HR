@@ -1,12 +1,32 @@
 document.addEventListener('DOMContentLoaded', function () {
-    // Sidebar toggle
+    // Sidebar toggle (desktop: collapse, mobile: open/close)
     const toggle = document.getElementById('sidebar-toggle');
     const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    const isMobile = () => window.innerWidth <= 768;
+
     if (toggle && sidebar) {
         toggle.addEventListener('click', () => {
-            sidebar.classList.toggle('collapsed');
+            if (isMobile()) {
+                sidebar.classList.toggle('open');
+                if (overlay) overlay.classList.toggle('show');
+            } else {
+                sidebar.classList.toggle('collapsed');
+            }
         });
     }
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+        });
+    }
+    window.addEventListener('resize', () => {
+        if (!isMobile()) {
+            sidebar.classList.remove('open');
+            if (overlay) overlay.classList.remove('show');
+        }
+    });
 
     // Notification dropdown
     const notifBtn = document.getElementById('notif-btn');
@@ -29,6 +49,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const id = this.dataset.id;
             if (id) {
                 fetch(`/auth/api/notifications/${id}/read`, { method: 'POST' });
+                this.remove();
+                const badge = document.querySelector('.notif-badge');
+                if (badge) {
+                    const count = parseInt(badge.textContent) - 1;
+                    badge.textContent = count;
+                    if (count <= 0) badge.remove();
+                }
             }
         });
     });

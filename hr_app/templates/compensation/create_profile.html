@@ -4,23 +4,30 @@
 <div class="page-header">
     <h1>Create Payroll Profile</h1>
 </div>
-<div class="card" style="max-width:500px;">
-    <form method="POST">
-        <div class="form-group">
-            <label>Employee</label>
-            <select name="user_id" class="form-control" required>
-                <option value="">Select employee...</option>
-                {% for e in employees %}
-                <option value="{{ e.id }}">{{ e.full_name }} ({{ e.employee_code }})</option>
-                {% endfor %}
-            </select>
+<form method="POST">
+    <div class="card mb-20">
+        <div class="card-header">Employee & Basic Salary</div>
+        <div class="form-row" style="padding:12px;">
+            <div class="form-group">
+                <label>Employee</label>
+                <select name="user_id" class="form-control" required>
+                    <option value="">Select Employee</option>
+                    {% for e in employees %}
+                    <option value="{{ e.id }}">{{ e.full_name }} ({{ e.email }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Basic Salary (Rs.)</label>
+                <input type="number" name="basic_salary" class="form-control" required step="1000">
+            </div>
+            <div class="form-group">
+                <label>Effective From</label>
+                <input type="date" name="effective_from" class="form-control" required>
+            </div>
         </div>
-        <div class="form-group">
-            <label>Basic Salary (PKR)</label>
-            <input type="number" name="basic_salary" class="form-control" step="1000" required placeholder="e.g. 50000">
-        </div>
-        <button type="submit" class="btn btn-primary">Create Profile</button>
-        <a href="{{ url_for('compensation.index') }}" class="btn btn-secondary">Cancel</a>
-    </form>
-</div>
+    </div>
+    <button type="submit" class="btn btn-primary">Create Profile</button>
+    <a href="{{ url_for('compensation.index') }}" class="btn btn-secondary">Cancel</a>
+</form>
 {% endblock %}

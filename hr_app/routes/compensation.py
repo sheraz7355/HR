@@ -1,6 +1,7 @@
 import json
 import io
 import os
+import csv
 from datetime import datetime, date, timedelta
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
@@ -59,9 +60,10 @@ def tax_settings():
             for s in [
                 (0, 600000, 0, 0),
                 (600000, 1200000, 5, 0),
-                (1200000, 2400000, 15, 30000),
-                (2400000, 3600000, 25, 210000),
-                (3600000, 999999999, 35, 510000),
+                (1200000, 2200000, 15, 30000),
+                (2200000, 3200000, 25, 180000),
+                (3200000, 4100000, 30, 430000),
+                (4100000, 999999999, 35, 700000),
             ]:
                 if not IncomeTaxSlab.query.filter_by(min_income=s[0]).first():
                     db.session.add(IncomeTaxSlab(min_income=s[0], max_income=s[1], rate_pct=s[2], fixed_amount=s[3]))
@@ -70,6 +72,44 @@ def tax_settings():
         return redirect(url_for("compensation.tax_settings"))
     slabs = IncomeTaxSlab.query.order_by(IncomeTaxSlab.min_income).all()
     return render_template("compensation/tax_settings.html", slabs=slabs)
+
+
+# ── Create Payroll Profile ──
+
+@comp_bp.route("/create-profile", methods=["GET", "POST"])
+@login_required
+def create_profile():
+    if not current_user.is_admin():
+        flash("Access denied.", "danger")
+        return redirect(url_for("compensation.index"))
+    employees = User.query.filter_by(is_active=True).all()
+    if request.method == "POST":
+        uid = request.form.get("user_id", type=int)
+        basic = request.form.get("basic_salary", type=float)
+        effective = request.form.get("effective_from")
+        if not uid or not basic or not effective:
+            flash("All fields required.", "danger")
+            return redirect(url_for("compensation.create_profile"))
+        if PayrollProfile.query.filter_by(user_id=uid).first():
+            flash("Profile already exists for this employee.", "warning")
+            return redirect(url_for("compensation.edit_profile", uid=uid))
+        try:
+            eff_date = datetime.strptime(effective, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            flash("Invalid date format.", "danger")
+            return redirect(url_for("compensation.create_profile"))
+        profile = PayrollProfile(user_id=uid, basic_salary=basic, effective_from=eff_date)
+        db.session.add(profile)
+        db.session.flush()
+        for cname in ["Basic Salary", "House Rent", "Medical Allowance", "Conveyance"]:
+            comp = PayrollComponent(profile_id=profile.id, name=cname, type="allowance",
+                                    value=basic * 0.25 if cname == "House Rent" else (basic * 0.1 if cname in ("Medical Allowance", "Conveyance") else basic),
+                                    is_taxable=True if cname != "Medical Allowance" else False)
+            db.session.add(comp)
+        db.session.commit()
+        flash(f"Profile created for {User.query.get(uid).full_name}.", "success")
+        return redirect(url_for("compensation.edit_profile", uid=uid))
+    return render_template("compensation/create_profile.html", employees=employees)
 
 
 # ── Employee Salary Package Setup ──
@@ -106,7 +146,106 @@ def edit_profile(uid):
     return render_template("compensation/edit_profile.html", profile=profile, employee=emp)
 
 
-# ── Payroll Run with Per-Employee Control ──
+# ── Payroll Run with Preview, Replace, Template Upload ──
+
+def _preview_employee(pp, month, year, pf_config, adjustments=None):
+    """Compute payroll preview for a single employee. Returns dict of computed values."""
+    adj = adjustments.get(str(pp.user_id), {}) if adjustments else {}
+    hire_date = pp.user.date_of_joining
+    days_in_month = 30
+    worked_days = days_in_month
+    if hire_date and (hire_date.year > year or (hire_date.year == year and hire_date.month > month)):
+        return None
+    if hire_date and hire_date.month == month and hire_date.year == year:
+        worked_days = days_in_month - hire_date.day + 1
+    pro_ratio = worked_days / days_in_month
+    basic = round(pp.basic_salary * pro_ratio, 2)
+    allowances = 0; deductions = 0
+    comps = {"allowances": {}, "deductions": {}}
+    allowances_override = adj.get("allowances_override")
+    for c in pp.components:
+        val = round(c.value * pro_ratio, 2)
+        if c.type == "allowance":
+            if allowances_override is None:
+                allowances += val
+                comps["allowances"][c.name] = val
+            else:
+                comps["allowances"][c.name + " (override)"] = 0
+        else:
+            deductions += val
+            comps["deductions"][c.name] = val
+    if allowances_override is not None:
+        allowances = float(allowances_override)
+    ot_hours = db.session.query(func.sum(OvertimeAccount.overtime_hours)).filter(
+        OvertimeAccount.user_id == pp.user_id,
+        extract("month", OvertimeAccount.date) == month,
+        extract("year", OvertimeAccount.date) == year
+    ).scalar() or 0
+    ot_pay = round(float(ot_hours) * (basic / max(160, 1)) * 1.5, 2)
+    if allowances_override is None:
+        allowances += ot_pay
+    bonus_override = adj.get("bonus")
+    if bonus_override:
+        allowances += float(bonus_override)
+    gross = round(basic + allowances, 2)
+    monthly_tax = 0
+    annual_gross = gross * 12
+    tax_override = adj.get("income_tax")
+    if tax_override is not None and tax_override != "":
+        monthly_tax = round(float(tax_override), 2)
+    else:
+        annual_tax = IncomeTaxSlab.calculate_tax(annual_gross)
+        monthly_tax = round(annual_tax / 12, 2)
+    deductions += monthly_tax
+    pf_employee = 0; pf_employer = 0
+    if pf_config:
+        pf_employee = round(gross * pf_config.employee_contribution_pct / 100, 2)
+        pf_employer = round(gross * pf_config.employer_contribution_pct / 100, 2)
+        deductions += pf_employee
+    loan_deduction = 0
+    active_loans = LoanAdvanceRequest.query.filter_by(user_id=pp.user_id, status="approved").filter(
+        LoanAdvanceRequest.remaining_amount > 0).all()
+    loan_details = []
+    for loan in active_loans:
+        if loan.remaining_amount and loan.remaining_amount > 0:
+            installment = adj.get(f"loan_{loan.id}")
+            ded = float(installment) if installment else (loan.monthly_installment or loan.amount / max(loan.installment_months, 1))
+            ded = min(ded, loan.remaining_amount)
+            if ded > 0:
+                loan_deduction += ded
+    deductions += loan_deduction
+    custom_ded = adj.get("custom_deduction")
+    if custom_ded:
+        deductions += float(custom_ded)
+    net = round(gross - deductions, 2)
+    allowances_breakdown = dict(comps["allowances"])
+    deductions_breakdown = dict(comps["deductions"])
+    deductions_breakdown["Income Tax"] = round(monthly_tax, 2)
+    if pf_config:
+        deductions_breakdown["PF Employee"] = round(pf_employee, 2)
+    if loan_deduction > 0:
+        deductions_breakdown["Loan Repayment"] = round(loan_deduction, 2)
+    if custom_ded:
+        deductions_breakdown["Additional Deduction"] = round(float(custom_ded), 2)
+    return {
+        "user_id": pp.user_id,
+        "name": pp.user.full_name,
+        "designation": pp.user.designation or "",
+        "basic": basic,
+        "allowances_breakdown": allowances_breakdown,
+        "allowances_total": round(allowances, 2),
+        "bonus": float(adj.get("bonus", 0)) if adj.get("bonus") else 0,
+        "ot_pay": ot_pay,
+        "gross": gross,
+        "monthly_tax": monthly_tax,
+        "pf_employee": pf_employee,
+        "loan_deduction": loan_deduction,
+        "custom_ded": float(custom_ded) if custom_ded else 0,
+        "deductions_total": round(deductions, 2),
+        "net": net,
+        "active_loans": active_loans,
+    }
+
 
 @comp_bp.route("/run-payroll", methods=["GET", "POST"])
 @login_required
@@ -114,106 +253,101 @@ def run_payroll():
     if not current_user.is_admin():
         flash("Access denied.", "danger")
         return redirect(url_for("dashboard"))
+    pf_config = ProvidentFundConfig.query.first()
+
     if request.method == "POST":
         month = int(request.form["month"])
         year = int(request.form["year"])
+        replace_all = request.form.get("replace_all") == "1"
+        replace_ids_str = request.form.get("replace_ids", "[]")
+        import json
+        replace_ids = json.loads(replace_ids_str) if replace_ids_str else []
+
         existing = PayrollRun.query.filter_by(month=month, year=year).first()
         if existing:
-            flash(f"Payroll already run for {month}/{year}.", "danger")
-            return redirect(url_for("compensation.index"))
+            if replace_all:
+                for slip in existing.slips:
+                    for lr in LoanRepayment.query.filter_by(payroll_run_id=existing.id).all():
+                        db.session.delete(lr)
+                    PFContribution.query.filter_by(month=month, year=year).delete()
+                    PFLedger.query.filter_by(transaction_date=date.today(),
+                                              description=f"PF contribution {month}/{year}").delete()
+                    db.session.delete(slip)
+                db.session.delete(existing)
+                db.session.commit()
+                flash(f"Replaced existing payroll for {month}/{year}.", "info")
+            else:
+                flash(f"Payroll already run for {month}/{year}. Use 'Replace All' to override.", "danger")
+                return redirect(url_for("compensation.run_payroll"))
+
         profiles = PayrollProfile.query.all()
         if not profiles:
             flash("No payroll profiles found.", "danger")
             return redirect(url_for("compensation.index"))
         adjustments = json.loads(request.form.get("adjustments", "{}"))
-        pf_config = ProvidentFundConfig.query.first()
+
         pr = PayrollRun(month=month, year=year, processed_by=current_user.id, status="processing")
         db.session.add(pr)
         db.session.flush()
         total_gross = 0; total_ded = 0; total_net = 0; emp_count = 0
+
         for pp in profiles:
             if not pp.user.is_active:
                 continue
-            adj = adjustments.get(str(pp.user_id), {})
-            hire_date = pp.user.date_of_joining
-            days_in_month = 30
-            worked_days = days_in_month
-            if hire_date and (hire_date.year > year or (hire_date.year == year and hire_date.month > month)):
+            uid_str = str(pp.user_id)
+            if replace_ids and uid_str not in replace_ids and not replace_all:
                 continue
-            if hire_date and hire_date.month == month and hire_date.year == year:
-                worked_days = days_in_month - hire_date.day + 1
-            pro_ratio = worked_days / days_in_month
-            basic = pp.basic_salary * pro_ratio
-            allowances = 0; deductions = 0
-            comps = {"allowances": {}, "deductions": {}}
+            preview = _preview_employee(pp, month, year, pf_config, adjustments)
+            if preview is None:
+                continue
+            basic = preview["basic"]
+            allowances = preview["allowances_total"]
+            deductions = preview["deductions_total"]
+            gross = preview["gross"]
+            net = preview["net"]
+            monthly_tax = preview["monthly_tax"]
+            pf_employee = preview["pf_employee"]
+            loan_deduction = preview["loan_deduction"]
+            custom_ded = preview["custom_ded"]
+            pf_employer = round(gross * pf_config.employer_contribution_pct / 100, 2) if pf_config else 0
+
+            comps = {"allowances": preview["allowances_breakdown"], "deductions": {}}
             for c in pp.components:
-                val = c.value * pro_ratio
-                if c.type == "allowance":
-                    allowances += val
-                    comps["allowances"][c.name] = round(val, 2)
-                else:
-                    deductions += val
-                    comps["deductions"][c.name] = round(val, 2)
-            ot_hours = db.session.query(func.sum(OvertimeAccount.overtime_hours)).filter(
-                OvertimeAccount.user_id == pp.user_id,
-                extract("month", OvertimeAccount.date) == month,
-                extract("year", OvertimeAccount.date) == year
-            ).scalar() or 0
-            ot_pay = round(float(ot_hours) * (basic / 160) * 1.5, 2)
-            allowances += ot_pay
-            gross = basic + allowances
-            monthly_tax = 0
-            annual_gross = gross * 12
-            tax_override = adj.get("income_tax")
-            if tax_override is not None:
-                monthly_tax = float(tax_override)
-            else:
-                annual_tax = IncomeTaxSlab.calculate_tax(annual_gross)
-                monthly_tax = round(annual_tax / 12, 2)
-            deductions += monthly_tax
-            pf_employee = 0; pf_employer = 0
+                if c.type != "allowance":
+                    val = round(c.value * (basic / pp.basic_salary if pp.basic_salary else 1), 2)
+                    comps["deductions"][c.name] = val
+            comps["deductions"]["Income Tax"] = round(monthly_tax, 2)
             if pf_config:
-                pf_employee = round(gross * pf_config.employee_contribution_pct / 100, 2)
-                pf_employer = round(gross * pf_config.employer_contribution_pct / 100, 2)
-                deductions += pf_employee
-            loan_deduction = 0
-            active_loans = LoanAdvanceRequest.query.filter_by(
-                user_id=pp.user_id, status="approved"
-            ).all()
+                comps["deductions"]["PF Employee"] = round(pf_employee, 2)
+            if loan_deduction > 0:
+                comps["deductions"]["Loan Repayment"] = round(loan_deduction, 2)
+            if custom_ded > 0:
+                comps["deductions"]["Additional Deduction"] = round(custom_ded, 2)
+
+            adj = adjustments.get(uid_str, {})
+            active_loans = LoanAdvanceRequest.query.filter_by(user_id=pp.user_id, status="approved").filter(
+                LoanAdvanceRequest.remaining_amount > 0).all()
             for loan in active_loans:
                 if loan.remaining_amount and loan.remaining_amount > 0:
                     installment = adj.get(f"loan_{loan.id}")
-                    if installment is not None:
-                        ded = float(installment)
-                    else:
-                        ded = loan.monthly_installment or (loan.amount / max(loan.installment_months, 1))
+                    ded = float(installment) if installment else (loan.monthly_installment or loan.amount / max(loan.installment_months, 1))
                     ded = min(ded, loan.remaining_amount)
                     if ded > 0:
-                        loan_deduction += ded
                         loan.remaining_amount -= ded
                         if loan.remaining_amount <= 0:
                             loan.status = "paid"
                         db.session.add(LoanRepayment(loan_id=loan.id, amount=ded, payroll_run_id=pr.id,
                                                       notes=f"Deducted via payroll {month}/{year}"))
-            deductions += loan_deduction
-            custom_ded = adj.get("custom_deduction")
-            if custom_ded:
-                deductions += float(custom_ded)
-            net = gross - deductions
-            comps["deductions"]["Income Tax"] = round(monthly_tax, 2)
-            comps["deductions"]["PF Employee"] = round(pf_employee, 2)
-            if loan_deduction > 0:
-                comps["deductions"]["Loan Repayment"] = round(loan_deduction, 2)
-            if custom_ded:
-                comps["deductions"]["Additional Deduction"] = round(float(custom_ded), 2)
+
             slip = PayrollSlip(
-                payroll_run_id=pr.id, user_id=pp.user_id, basic_salary=round(basic, 2),
-                allowances=round(allowances, 2), deductions=round(deductions, 2),
-                gross_pay=round(gross, 2), total_deductions=round(deductions, 2),
-                net_pay=round(net, 2), components_json=json.dumps(comps),
+                payroll_run_id=pr.id, user_id=pp.user_id, basic_salary=basic,
+                allowances=allowances, deductions=deductions,
+                gross_pay=gross, total_deductions=deductions,
+                net_pay=net, components_json=json.dumps(comps),
             )
             db.session.add(slip)
             total_gross += gross; total_ded += deductions; total_net += net; emp_count += 1
+
             if pf_config:
                 contrib = PFContribution(user_id=pp.user_id, month=month, year=year,
                                           employee_amount=pf_employee, employer_amount=pf_employer,
@@ -223,13 +357,12 @@ def run_payroll():
                                          transaction_type="contribution",
                                          description=f"PF contribution {month}/{year}",
                                          credit=round(pf_employee + pf_employer, 2), debit=0))
-            # Notify employee
             _notify(pp.user_id, "Salary Slip Generated",
                     f"Your salary slip for {month}/{year} is available.", "info", "compensation")
-            # Notify manager
             if pp.user.manager_id:
                 _notify(pp.user.manager_id, f"Salary Slip: {pp.user.full_name}",
                         f"Salary for {month}/{year}: Rs.{net:,.0f}", "info", "compensation")
+
         pr.status = "completed"
         pr.total_gross = round(total_gross, 2)
         pr.total_deductions = round(total_ded, 2)
@@ -241,19 +374,156 @@ def run_payroll():
         db.session.commit()
         flash(f"Payroll completed for {emp_count} employees. Net: Rs.{total_net:,.0f}", "success")
         return redirect(url_for("compensation.index"))
+
+    # GET: build preview for all employees
+    preview_employees = []
     profiles = PayrollProfile.query.all()
-    employees_data = []
     for pp in profiles:
         if not pp.user.is_active:
             continue
-        active_loans = LoanAdvanceRequest.query.filter_by(
-            user_id=pp.user_id, status="approved"
-        ).filter(LoanAdvanceRequest.remaining_amount > 0).all()
-        employees_data.append({
-            "profile": pp,
-            "loans": active_loans,
-        })
-    return render_template("compensation/run_payroll.html", employees=employees_data)
+        p = _preview_employee(pp, 7, 2026, pf_config)  # default preview month
+        if p:
+            active_loans = LoanAdvanceRequest.query.filter_by(user_id=pp.user_id, status="approved").filter(
+                LoanAdvanceRequest.remaining_amount > 0).all()
+            p["active_loans"] = active_loans
+            preview_employees.append(p)
+    return render_template("compensation/run_payroll.html", employees=preview_employees,
+                           pf_config=pf_config, now=datetime.utcnow())
+
+
+@comp_bp.route("/payroll-preview-json", methods=["POST"])
+@login_required
+def payroll_preview_json():
+    """Return computed preview as JSON for AJAX recalculation."""
+    if not current_user.is_admin():
+        return jsonify({"error": "Access denied"}), 403
+    month = int(request.form.get("month", 7))
+    year = int(request.form.get("year", 2026))
+    adjustments = json.loads(request.form.get("adjustments", "{}"))
+    pf_config = ProvidentFundConfig.query.first()
+    results = []
+    for pp in PayrollProfile.query.all():
+        if not pp.user.is_active:
+            continue
+        p = _preview_employee(pp, month, year, pf_config, adjustments)
+        if p:
+            results.append(p)
+    return jsonify({"employees": results})
+
+
+@comp_bp.route("/download-template")
+@login_required
+def download_payroll_template():
+    """Download an Excel template for bulk payroll data upload."""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    except ImportError:
+        flash("openpyxl not installed.", "danger")
+        return redirect(url_for("compensation.index"))
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Payroll Data"
+    headers = [
+        "Employee Code", "Full Name", "Basic Salary", "Allowances", "Bonus",
+        "Income Tax", "Loan Deduction", "Custom Deduction", "Net Pay"
+    ]
+    hf = Font(bold=True, color="FFFFFF", size=11)
+    hfill = PatternFill(start_color="1A237E", end_color="1A237E", fill_type="solid")
+    ha = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    thin = Border(left=Side(style="thin"), right=Side(style="thin"),
+                   top=Side(style="thin"), bottom=Side(style="thin"))
+    for ci, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=ci, value=h)
+        c.font = hf; c.fill = hfill; c.alignment = ha; c.border = thin
+    sample = ["EMP001", "John Doe", 50000, 25000, 5000, 2500, 2000, 0, 73500]
+    for ci, val in enumerate(sample, 1):
+        c = ws.cell(row=2, column=ci, value=val)
+        c.border = thin; c.alignment = ha
+    from openpyxl.utils import get_column_letter
+    for ci in range(1, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(ci)].width = 20
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                     as_attachment=True, download_name="payroll_template.xlsx")
+
+
+@comp_bp.route("/upload-bulk-data", methods=["POST"])
+@login_required
+def upload_bulk_data():
+    """Upload bulk payroll data as XLSX/CSV/JSON and apply as adjustments."""
+    if not current_user.is_admin():
+        return jsonify({"error": "Access denied"}), 403
+    adjustments = {}
+
+    if request.content_type and "multipart/form-data" in request.content_type:
+        f = request.files.get("file")
+        if not f or f.filename == "":
+            return jsonify({"error": "No file uploaded"}), 400
+        ext = os.path.splitext(f.filename)[1].lower()
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(Config.UPLOAD_FOLDER, f"payroll_bulk_{ts}{ext}")
+        f.save(path)
+        rows = []
+        try:
+            if ext == ".csv":
+                import csv
+                with open(path, newline="", encoding="utf-8-sig") as fh:
+                    reader = csv.DictReader(fh)
+                    rows = [r for r in reader]
+            elif ext in (".xlsx", ".xls"):
+                import openpyxl
+                wb = openpyxl.load_workbook(path, data_only=True)
+                ws = wb.active
+                headers = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if all(v is None or str(v).strip() == "" for v in row):
+                        continue
+                    rows.append(dict(zip(headers, [str(v).strip() if v is not None else "" for v in row])))
+                wb.close()
+        except Exception as e:
+            return jsonify({"error": f"Parse error: {str(e)}"}), 400
+        for row in rows:
+            code = row.get("Employee Code", row.get("employee_code", "")).strip()
+            user = User.query.filter_by(employee_code=code).first()
+            if not user:
+                user = User.query.filter_by(email=code).first()
+            if not user:
+                continue
+            uid = str(user.id)
+            adj = {}
+            bonus = row.get("Bonus") or row.get("bonus")
+            if bonus: adj["bonus"] = bonus
+            tax = row.get("Income Tax") or row.get("income_tax") or row.get("tax")
+            if tax: adj["income_tax"] = tax
+            custom = row.get("Custom Deduction") or row.get("custom_deduction") or row.get("extra_ded")
+            if custom: adj["custom_deduction"] = custom
+            if adj:
+                adjustments[uid] = adj
+        msg = f"Bulk data loaded for {len(adjustments)} employees from {f.filename}."
+        flash(msg, "success")
+        return jsonify({"adjustments": adjustments, "message": msg})
+
+    # JSON upload
+    data = request.get_json(silent=True)
+    if not data:
+        flash("Invalid upload data.", "danger")
+        return redirect(url_for("compensation.run_payroll"))
+    payroll_data = data.get("data", [])
+    for row in payroll_data:
+        code = row.get("employee_code", "").strip()
+        user = User.query.filter_by(employee_code=code).first()
+        if not user:
+            continue
+        uid = str(user.id)
+        adjustments[uid] = {
+            "bonus": row.get("bonus"),
+            "income_tax": row.get("income_tax"),
+            "custom_deduction": row.get("custom_deduction"),
+        }
+    flash(f"Bulk data loaded for {len(adjustments)} employees. Adjustments applied.", "success")
+    return jsonify({"adjustments": adjustments})
 
 
 # ── View & Download Slip ──

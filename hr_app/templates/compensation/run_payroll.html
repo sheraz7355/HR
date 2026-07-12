@@ -3,97 +3,247 @@
 {% block content %}
 <div class="page-header">
     <h1>Run Monthly Payroll</h1>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <a href="{{ url_for('compensation.download_payroll_template') }}" class="btn btn-outline">&#128196; Download Template</a>
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('bulk-upload-input').click()">&#128228; Upload Data</button>
+        <input type="file" id="bulk-upload-input" accept=".xlsx,.csv" style="display:none">
+    </div>
 </div>
 <form method="POST" id="payroll-form">
     <div class="card mb-20">
-        <div class="card-header">Period</div>
+        <div class="card-header flex-between">
+            <span>Period & Replace Options</span>
+        </div>
         <div class="form-row" style="padding:12px;">
             <div class="form-group"><label>Month</label>
-                <select name="month" class="form-control">
-                    {% for m in range(1,13) %}<option value="{{ m }}" {{ 'selected' if m == 7 }}>{{ m }}</option>{% endfor %}
+                <select name="month" class="form-control" id="sel-month">
+                    {% for m in range(1,13) %}<option value="{{ m }}" {{ 'selected' if m == now.month }}>{{ m }}</option>{% endfor %}
                 </select>
             </div>
             <div class="form-group"><label>Year</label>
-                <select name="year" class="form-control">
-                    {% for y in range(2024, 2028) %}<option value="{{ y }}" {{ 'selected' if y == 2026 }}>{{ y }}</option>{% endfor %}
+                <select name="year" class="form-control" id="sel-year">
+                    {% for y in range(2024, 2028) %}<option value="{{ y }}" {{ 'selected' if y == now.year }}>{{ y }}</option>{% endfor %}
                 </select>
             </div>
         </div>
+        <div style="padding:0 12px 12px;">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;">
+                <input type="checkbox" id="replace-all" name="replace_all" value="1">
+                <strong>Replace existing payroll for this period (all employees)</strong>
+            </label>
+        </div>
     </div>
     <div class="card mb-20">
-        <div class="card-header">Per-Employee Adjustments</div>
-        <p style="font-size:12px;color:#888;padding:0 12px 12px;">Adjust deductions, income tax, and loan installments for each employee before running payroll.</p>
+        <div class="card-header flex-between">
+            <span>Payroll Preview & Adjustments</span>
+            <div style="display:flex;gap:4px;align-items:center;">
+                <span style="font-size:11px;color:#888;">Select:</span>
+                <button type="button" class="btn btn-sm btn-outline" id="select-all">All</button>
+                <button type="button" class="btn btn-sm btn-outline" id="deselect-all">None</button>
+            </div>
+        </div>
+        <p style="font-size:12px;color:#888;padding:0 12px;">Edit any field on the spot. Only employees with <strong>Replace</strong> checked will be processed.</p>
         <div class="table-wrap">
-            <table>
+            <table id="payroll-table">
                 <thead>
                     <tr>
+                        <th style="width:28px;"><input type="checkbox" id="master-check"></th>
                         <th>Employee</th>
                         <th>Basic (Rs.)</th>
-                        <th>Income Tax (Rs.)</th>
-                        <th>Loan Deduction (Rs.)</th>
-                        <th>Additional Deduction (Rs.)</th>
+                        <th>Allowances (Rs.)</th>
+                        <th>Bonus (Rs.)</th>
+                        <th>PF Emp. (Rs.)</th>
+                        <th>Tax (Rs.)</th>
+                        <th>Loan Ded. (Rs.)</th>
+                        <th>Extra Ded. (Rs.)</th>
+                        <th>Gross (Rs.)</th>
+                        <th>Net Pay (Rs.)</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="preview-body">
                     {% for ed in employees %}
-                    {% set pp = ed.profile %}
-                    <tr>
-                        <td><strong>{{ pp.user.full_name }}</strong><br><span style="font-size:11px;color:#888;">{{ pp.user.designation or '' }}</span></td>
-                        <td>Rs. {{ pp.basic_salary|round|int }}</td>
-                        <td><input name="tax_{{ pp.user_id }}" class="form-control" style="width:100px;" placeholder="Auto" step="0.01"></td>
+                    <tr data-uid="{{ ed.user_id }}">
+                        <td><input type="checkbox" class="emp-check" checked></td>
                         <td>
-                            {% if ed.loans %}
-                            {% for loan in ed.loans %}
-                            <div style="font-size:11px;margin-bottom:2px;">
-                                {{ loan.request_type|title }} (Bal: Rs.{{ loan.remaining_amount|round|int }})
-                                <input name="loan_{{ loan.id }}" class="form-control" style="width:80px;display:inline;" placeholder="{{ loan.monthly_installment|round|int }}" step="0.01">
+                            <strong>{{ ed.name }}</strong><br>
+                            <span style="font-size:11px;color:#888;">{{ ed.designation }}</span>
+                            {% if ed.active_loans %}
+                            <div style="font-size:10px;color:#c62828;margin-top:2px;">
+                                {% for loan in ed.active_loans %}
+                                <div>Loan #{{ loan.id }}: Bal Rs.{{ '%.0f'|format(loan.remaining_amount) }}, Inst Rs.{{ '%.0f'|format(loan.monthly_installment or loan.amount/loan.installment_months) }}</div>
+                                {% endfor %}
                             </div>
-                            {% endfor %}
-                            {% else %}
-                            <span style="color:#999;">No active loans</span>
                             {% endif %}
                         </td>
-                        <td><input name="custom_{{ pp.user_id }}" class="form-control" style="width:100px;" placeholder="0" step="0.01"></td>
+                        <td>Rs. {{ '%.0f'|format(ed.basic) }}</td>
+                        <td>
+                            <div style="font-size:10px;color:#555;">
+                                {% for name, val in ed.allowances_breakdown.items() %}
+                                <div>{{ name }}: Rs.{{ '%.0f'|format(val) }}</div>
+                                {% endfor %}
+                            </div>
+                            <input name="allowances_{{ ed.user_id }}" class="form-control" style="width:100px;margin-top:2px;" placeholder="Override total" step="0.01">
+                        </td>
+                        <td><input name="bonus_{{ ed.user_id }}" class="form-control" style="width:80px;" placeholder="0" step="0.01"></td>
+                        <td><span style="font-size:12px;font-weight:600;color:#c62828;">Rs. {{ '%.0f'|format(ed.pf_employee) }}</span></td>
+                        <td>
+                            <input name="tax_{{ ed.user_id }}" class="form-control" style="width:80px;" placeholder="{{ '%.0f'|format(ed.monthly_tax) }}" step="0.01">
+                            <div style="font-size:10px;color:#888;">Auto: Rs.{{ '%.0f'|format(ed.monthly_tax) }}</div>
+                        </td>
+                        <td>
+                            {% if ed.active_loans %}
+                            {% for loan in ed.active_loans %}
+                            <input name="loan_{{ loan.id }}" class="form-control" style="width:70px;margin-bottom:2px;" placeholder="{{ '%.0f'|format(loan.monthly_installment or loan.amount/loan.installment_months) }}" step="0.01">
+                            {% endfor %}
+                            {% else %}
+                            <span style="color:#999;">None</span>
+                            {% endif %}
+                        </td>
+                        <td><input name="custom_{{ ed.user_id }}" class="form-control" style="width:80px;" placeholder="0" step="0.01"></td>
+                        <td><strong>Rs. {{ '%.0f'|format(ed.gross) }}</strong></td>
+                        <td><strong style="color:#1b5e20;">Rs. {{ '%.0f'|format(ed.net) }}</strong></td>
                     </tr>
-                    {% else %}<tr><td colspan="5" class="text-center" style="color:#999;">No payroll profiles</td></tr>{% endfor %}
+                    {% else %}
+                    <tr><td colspan="11" class="text-center" style="color:#999;">No payroll profiles found</td></tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
+        <div style="padding:8px 12px;font-size:12px;color:#888;display:flex;gap:16px;flex-wrap:wrap;">
+            <span>Total Employees: <strong id="total-emp">{{ employees|length }}</strong></span>
+            <span>Selected: <strong id="selected-count">{{ employees|length }}</strong></span>
+            <span>Total Gross: Rs. <strong id="total-gross">{{ '%.0f'|format(employees|sum(attribute='gross')) }}</strong></span>
+            <span>Total Net: Rs. <strong id="total-net">{{ '%.0f'|format(employees|sum(attribute='net')) }}</strong></span>
+        </div>
     </div>
     <input type="hidden" name="adjustments" id="adjustments-json" value="{}">
-    <button type="submit" class="btn btn-accent">&#9889; Run Payroll</button>
-    <a href="{{ url_for('compensation.index') }}" class="btn btn-secondary">Cancel</a>
+    <input type="hidden" name="replace_ids" id="replace-ids-json" value="[]">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="submit" class="btn btn-accent">&#9889; Run Payroll</button>
+        <a href="{{ url_for('compensation.index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
 </form>
 {% endblock %}
 {% block extra_scripts %}
 <script>
-document.getElementById('payroll-form')?.addEventListener('submit', function(e) {
-    e.preventDefault();
-    const adjustments = {};
-    document.querySelectorAll('[name^="tax_"]').forEach(el => {
-        const uid = el.name.replace('tax_', '');
-        if (el.value) {
-            if (!adjustments[uid]) adjustments[uid] = {};
-            adjustments[uid]['income_tax'] = el.value;
-        }
+(function() {
+    const form = document.getElementById('payroll-form');
+    const masterCheck = document.getElementById('master-check');
+    const selectAll = document.getElementById('select-all');
+    const deselectAll = document.getElementById('deselect-all');
+
+    function updateTotals() {
+        const checks = document.querySelectorAll('.emp-check');
+        const sel = document.querySelectorAll('.emp-check:checked').length;
+        document.getElementById('selected-count').textContent = sel;
+    }
+
+    masterCheck?.addEventListener('change', function() {
+        document.querySelectorAll('.emp-check').forEach(c => c.checked = this.checked);
+        updateTotals();
     });
-    document.querySelectorAll('[name^="loan_"]').forEach(el => {
-        const lid = el.name.replace('loan_', '');
-        const uid = el.closest('tr').querySelector('[name^="tax_"]')?.name.replace('tax_', '');
-        if (uid && el.value) {
-            if (!adjustments[uid]) adjustments[uid] = {};
-            adjustments[uid]['loan_' + lid] = el.value;
-        }
+    selectAll?.addEventListener('click', () => {
+        document.querySelectorAll('.emp-check').forEach(c => c.checked = true);
+        if (masterCheck) masterCheck.checked = true;
+        updateTotals();
     });
-    document.querySelectorAll('[name^="custom_"]').forEach(el => {
-        const uid = el.name.replace('custom_', '');
-        if (el.value) {
-            if (!adjustments[uid]) adjustments[uid] = {};
-            adjustments[uid]['custom_deduction'] = el.value;
-        }
+    deselectAll?.addEventListener('click', () => {
+        document.querySelectorAll('.emp-check').forEach(c => c.checked = false);
+        if (masterCheck) masterCheck.checked = false;
+        updateTotals();
     });
-    document.getElementById('adjustments-json').value = JSON.stringify(adjustments);
-    this.submit();
-});
+    document.getElementById('preview-body')?.addEventListener('change', function(e) {
+        if (e.target.classList.contains('emp-check')) updateTotals();
+    });
+
+    form?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const adjustments = {};
+        const replaceIds = [];
+
+        document.querySelectorAll('#preview-body tr').forEach(tr => {
+            const checkbox = tr.querySelector('.emp-check');
+            if (!checkbox) return;
+            const uid = tr.dataset.uid;
+            if (checkbox.checked) replaceIds.push(uid);
+
+            // Gather field values regardless of checkbox (empty values are skipped in processing)
+            const adjustments_uid = {};
+            const taxEl = tr.querySelector('[name^="tax_"]');
+            if (taxEl && taxEl.value) adjustments_uid['income_tax'] = taxEl.value;
+
+            const bonusEl = tr.querySelector('[name^="bonus_"]');
+            if (bonusEl && bonusEl.value) adjustments_uid['bonus'] = bonusEl.value;
+
+            const allowancesEl = tr.querySelector('[name^="allowances_"]');
+            if (allowancesEl && allowancesEl.value) adjustments_uid['allowances_override'] = allowancesEl.value;
+
+            tr.querySelectorAll('[name^="loan_"]').forEach(el => {
+                if (el.value) adjustments_uid[el.name] = el.value;
+            });
+
+            const customEl = tr.querySelector('[name^="custom_"]');
+            if (customEl && customEl.value) adjustments_uid['custom_deduction'] = customEl.value;
+
+            if (Object.keys(adjustments_uid).length > 0) adjustments[uid] = adjustments_uid;
+        });
+
+        document.getElementById('adjustments-json').value = JSON.stringify(adjustments);
+        document.getElementById('replace-ids-json').value = JSON.stringify(replaceIds);
+        this.submit();
+    });
+
+    // Bulk upload handler (supports XLSX, CSV, JSON)
+    const uploadInput = document.getElementById('bulk-upload-input');
+    uploadInput?.addEventListener('change', function() {
+        const file = this.files[0];
+        if (!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+
+        if (ext === 'json') {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.adjustments) {
+                        Object.entries(data.adjustments).forEach(([uid, adj]) => {
+                            const tr = document.querySelector(`#preview-body tr[data-uid="${uid}"]`);
+                            if (!tr) return;
+                            if (adj.bonus) tr.querySelector('[name^="bonus_"]').value = adj.bonus;
+                            if (adj.income_tax) tr.querySelector('[name^="tax_"]').value = adj.income_tax;
+                            if (adj.custom_deduction) tr.querySelector('[name^="custom_"]').value = adj.custom_deduction;
+                        });
+                        alert('Bulk adjustments applied from JSON.');
+                    } else {
+                        alert('JSON must have an "adjustments" object keyed by user_id.');
+                    }
+                } catch (err) { alert('Invalid JSON file.'); }
+            };
+            reader.readAsText(file);
+        } else {
+            // XLSX/CSV: upload to server, get adjustments back as JSON
+            const fd = new FormData();
+            fd.append('file', file);
+            fetch('{{ url_for("compensation.upload_bulk_data") }}', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.adjustments) {
+                    Object.entries(data.adjustments).forEach(([uid, adj]) => {
+                        const tr = document.querySelector(`#preview-body tr[data-uid="${uid}"]`);
+                        if (!tr) return;
+                        if (adj.bonus) document.querySelector(`[name="bonus_${uid}"]`).value = adj.bonus;
+                        if (adj.income_tax) document.querySelector(`[name="tax_${uid}"]`).value = adj.income_tax;
+                        if (adj.custom_deduction) document.querySelector(`[name="custom_${uid}"]`).value = adj.custom_deduction;
+                    });
+                    alert(data.message || 'Bulk adjustments applied.');
+                } else {
+                    alert('Server returned no adjustments.' + JSON.stringify(data));
+                }
+            })
+            .catch(err => alert('Upload failed: ' + err.message));
+        }
+        this.value = '';
+    });
+})();
 </script>
 {% endblock %}

@@ -16,10 +16,8 @@ class IncomeTaxSlab(db.Model):
         slabs = IncomeTaxSlab.query.filter_by(is_active=True).order_by(IncomeTaxSlab.min_income).all()
         if not slabs:
             return round(annual_gross * 0.05, 2)
-        tax = 0
-        for slab in slabs:
+        for slab in reversed(slabs):
             if annual_gross > slab.min_income:
-                taxable = min(annual_gross, slab.max_income) - slab.min_income
-                if taxable > 0:
-                    tax += slab.fixed_amount + taxable * slab.rate_pct / 100
-        return round(tax, 2)
+                tax = slab.fixed_amount + (annual_gross - slab.min_income) * slab.rate_pct / 100
+                return round(tax, 2)
+        return 0
