@@ -12,6 +12,7 @@ class Config:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
     WTF_CSRF_ENABLED = False
+    TEMPLATES_AUTO_RELOAD = True
 
     # Email config (smtp)
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")

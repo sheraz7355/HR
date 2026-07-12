@@ -44,10 +44,60 @@
 </div>
 
 {% if current_user.is_admin() or current_user.is_manager() %}
+{% if not chart_data %}
+<div class="card mt-20"><div class="card-header">Attendance Trend</div><div style="padding:30px;text-align:center;color:#888;">No attendance data for this year.</div></div>
+{% else %}
+{% set W = 600 %}
+{% set H = 200 %}
+{% set pt = 12 %}
+{% set pr = 16 %}
+{% set pb = 28 %}
+{% set pl = 40 %}
+{% set cw = W - pl - pr %}
+{% set ch = H - pt - pb %}
+{% set max_val = chart_data | map(attribute='total') | max %}
+{% set months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+{% set x_step = cw // (chart_data|length - 1) if chart_data|length > 1 else cw %}
+{% set line_d = namespace(d="") %}
+{% set area_d = namespace(d="") %}
+{% for d in chart_data %}
+{% set x = pl + (loop.index0 * x_step) %}
+{% set y = (pt + ch - (d.total / max_val * ch)) | round %}
+{% if loop.first %}{% set line_d.d = "M" ~ x ~ "," ~ y %}{% set area_d.d = "M" ~ x ~ "," ~ y %}{% else %}{% set line_d.d = line_d.d ~ " L" ~ x ~ "," ~ y %}{% set area_d.d = area_d.d ~ " L" ~ x ~ "," ~ y %}{% endif %}
+{% endfor %}
+{% set area_d.d = area_d.d ~ " L" ~ (pl + (chart_data|length - 1) * x_step) ~ "," ~ (pt + ch) ~ " L" ~ pl ~ "," ~ (pt + ch) ~ " Z" %}
 <div class="card mt-20">
-    <div class="card-header">Attendance Trend</div>
-    <div style="height:200px;display:flex;align-items:flex-end;gap:6px;padding:10px 0;" id="attendance-chart"></div>
+    <div class="card-header">Attendance Trend <span style="font-weight:400;font-size:12px;color:#888;">&bull; {{ chart_data|length }} months</span></div>
+    <div style="width:100%;height:220px;">
+        <svg width="100%" height="220" viewBox="0 0 {{ W }} 220" style="display:block;">
+            <defs>
+                <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#3b82f6"/>
+                    <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+                </linearGradient>
+            </defs>
+            {% for i in range(5) %}
+            {% set y = pt + (ch // 4) * i %}
+            <line x1="{{ pl }}" x2="{{ W - pr }}" y1="{{ y }}" y2="{{ y }}" stroke="#e5e7eb" stroke-width="1"/>
+            <text x="{{ pl - 6 }}" y="{{ y + 4 }}" text-anchor="end" font-size="10" fill="#9ca3af">{{ (max_val - (max_val // 4) * i) | round }}</text>
+            {% endfor %}
+            {% if chart_data|length > 1 %}
+            <path d="{{ area_d.d }}" fill="url(#chartGrad)" opacity="0.15"/>
+            <path d="{{ line_d.d }}" stroke="#3b82f6" stroke-width="2.5" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+            {% endif %}
+            {% for d in chart_data %}
+            {% set x = pl + (loop.index0 * x_step) %}
+            {% set y = (pt + ch - (d.total / max_val * ch)) | round %}
+            <circle cx="{{ x }}" cy="{{ y }}" r="4" fill="#3b82f6" stroke="#fff" stroke-width="2">
+                <title>{{ months[d.month] }}: {{ d.total }} ({{ d.late }} late, {{ d.half }} half-day)</title>
+            </circle>
+            <text x="{{ x }}" y="{{ y - 10 }}" text-anchor="middle" font-size="11" font-weight="600" fill="#1e293b">{{ d.total }}</text>
+            <text x="{{ x }}" y="{{ pt + ch + 18 }}" text-anchor="middle" font-size="11" fill="#64748b">{{ months[d.month] or d.month }}</text>
+            {% endfor %}
+        </svg>
+    </div>
 </div>
+{% endif %}
 {% endif %}
 {% endblock %}
 
@@ -67,29 +117,6 @@ async function loadDashboard() {
         document.getElementById('stat-leaves').textContent = d.pending_leaves;
         {% endif %}
     } catch(e) {}
-    {% if current_user.is_admin() or current_user.is_manager() %}
-    try {
-        const r = await fetch('/reports/attendance-chart?year=' + new Date().getFullYear());
-        const data = await r.json();
-        const container = document.getElementById('attendance-chart');
-        container.innerHTML = '';
-        const maxVal = Math.max(...data.map(d => d.total), 1);
-        data.forEach(m => {
-            const pct = (m.total / maxVal) * 100;
-            const bar = document.createElement('div');
-            bar.style.cssText = `flex:1;background:#1a237e;border-radius:4px 4px 0 0;height:${pct}%;min-height:4px;position:relative;`;
-            const label = document.createElement('div');
-            label.style.cssText = 'text-align:center;font-size:9px;color:#888;margin-top:4px;';
-            const months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            label.textContent = months[m.month] || m.month;
-            const wrapper = document.createElement('div');
-            wrapper.style.cssText = 'display:flex;flex-direction:column;flex:1;align-items:center;';
-            wrapper.appendChild(bar);
-            wrapper.appendChild(label);
-            container.appendChild(wrapper);
-        });
-    } catch(e) {}
-    {% endif %}
 }
 loadDashboard();
 </script>

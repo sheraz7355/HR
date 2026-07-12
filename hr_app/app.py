@@ -1,4 +1,5 @@
 import os
+from datetime import date
 from flask import Flask, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from .config import Config
@@ -50,7 +51,18 @@ def create_app():
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        return render_template("dashboard/index.html")
+        chart_data = []
+        if current_user.is_admin() or current_user.is_manager():
+            from .models.attendance import Attendance
+            from sqlalchemy import func, extract, case
+            monthly = db.session.query(
+                extract("month", Attendance.date).label("month"),
+                func.count(Attendance.id).label("total"),
+                func.sum(case((Attendance.is_late == True, 1), else_=0)).label("late"),
+                func.sum(case((Attendance.is_half_day == True, 1), else_=0)).label("half"),
+            ).filter(extract("year", Attendance.date) == date.today().year).group_by("month").order_by("month").all()
+            chart_data = [{"month": int(r.month), "total": int(r.total), "late": int(r.late), "half": int(r.half)} for r in monthly]
+        return render_template("dashboard/index.html", chart_data=chart_data)
 
     @app.context_processor
     def inject_notifications():
@@ -121,6 +133,7 @@ def create_app():
 
 if __name__ == "__main__":
     app = create_app()
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 5000))
     debug = os.environ.get("DEBUG", "0") == "1"
