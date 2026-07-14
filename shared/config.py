@@ -11,12 +11,17 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 
-    # Serverless/Vercel: if filesystem is read-only, use in-memory SQLite
-    if not SQLALCHEMY_DATABASE_URI or "sqlite" in SQLALCHEMY_DATABASE_URI:
-        try:
-            test_path = os.path.join(os.getcwd(), ".vercel_write_test")
-            with open(test_path, "w") as f:
-                f.write("test")
-            os.remove(test_path)
-        except (OSError, IOError):
+    # Serverless/Vercel: detect read-only filesystem
+    _readonly = False
+    try:
+        test_path = os.path.join(os.getcwd(), ".vercel_write_test")
+        with open(test_path, "w") as f:
+            f.write("test")
+        os.remove(test_path)
+    except (OSError, IOError):
+        _readonly = True
+
+    if _readonly:
+        if not SQLALCHEMY_DATABASE_URI or "sqlite" in SQLALCHEMY_DATABASE_URI:
             SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+        UPLOAD_FOLDER = "/tmp/uploads"
