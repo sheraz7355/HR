@@ -323,13 +323,30 @@ def create_app():
         return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>{tb}</pre>", 500
 
     with app.app_context():
-        db.create_all()
-        seed_all_data(app)
+        try:
+            db.create_all()
+            seed_all_data(app)
+        except Exception as e:
+            import traceback
+            print("DB INIT ERROR:", e)
+            traceback.print_exc()
 
     return app
 
 
-app = create_app()
+try:
+    app = create_app()
+except Exception as e:
+    import traceback
+    print("FATAL: App creation failed:", e)
+    traceback.print_exc()
+    app = Flask(__name__)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+
+    @app.route("/")
+    @app.route("/<path:path>")
+    def error_route(path=""):
+        return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>App failed to start:\n{traceback.format_exc()}</pre>", 500
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
