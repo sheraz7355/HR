@@ -60,3 +60,22 @@ def hr_user_page(page, flask_server):
     page.click("button[type='submit']")
     page.wait_for_url("**/dashboard/**")
     return page
+
+
+@pytest.fixture
+def mobile_page(page, flask_server):
+    page.set_viewport_size({"width": 375, "height": 812})
+    return page
+
+
+@pytest.fixture
+def admin_mobile(browser, flask_server):
+    ctx = browser.new_context(viewport={"width": 375, "height": 812})
+    p = ctx.new_page()
+    p.goto(f"{BASE_URL}/auth/login")
+    p.fill("#email", "admin@solarkon.com")
+    p.fill("#password", "admin123")
+    p.click("button[type='submit']")
+    p.wait_for_url("**/dashboard/**")
+    yield p
+    ctx.close()

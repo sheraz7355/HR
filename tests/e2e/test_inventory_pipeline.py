@@ -114,6 +114,26 @@ class TestInvPurchaseReturn:
         assert "return" in admin_page.url.lower()
 
 
+class TestInvResponsive:
+    def test_pi_form_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/inventory/purchase-invoice/")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.locator("#supplierSearch").is_visible()
+        assert admin_mobile.locator(".tb-w").is_visible()
+        assert admin_mobile.viewport_size["width"] == 375
+
+    def test_products_list_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/inventory/products/")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.locator("body").inner_text()
+        assert admin_mobile.viewport_size["width"] == 375
+
+    def test_dashboard_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/inventory/dashboard")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.viewport_size["width"] == 375
+
+
 class TestInvLogout:
     def test_logout(self, admin_page):
         admin_page.goto(f"{BASE_URL}/auth/logout")

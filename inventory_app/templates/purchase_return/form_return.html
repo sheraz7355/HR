@@ -23,16 +23,17 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
 .inp-plain:disabled{background:transparent;color:var(--text)}
 textarea.inp{resize:vertical;font-family:inherit}
 .hdr-g{display:grid;grid-template-columns:2fr 1fr 1fr;gap:20px;align-items:start}
-.tb-w{overflow-x:auto;border:1px solid var(--border);border-radius:5px}
-.tb{width:100%;border-collapse:collapse;font-size:12px;min-width:900px}
-.tb th{padding:7px 6px;font-size:10px;font-weight:700;color:#991b1b;background:#fef2f2;border-bottom:2px solid #fecaca;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
-.tb td{padding:2px 4px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.tb-w{overflow-x:auto;border:1px solid var(--border);border-radius:5px;-webkit-overflow-scrolling:touch}
+.tb-w::after{content:'\2190  Scroll for more columns  \2192';display:block;text-align:center;font-size:10px;color:var(--light);padding:2px;background:#f8fafc;border-top:1px solid var(--border)}
+.tb{width:100%;border-collapse:collapse;font-size:13px;min-width:1100px}
+.tb th{padding:8px 8px;font-size:11px;font-weight:700;color:#991b1b;background:#fef2f2;border-bottom:2px solid #fecaca;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.tb td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 .tb tr:hover td{background:#fafafa}
-.tb .ri{width:100%;border:1px solid transparent;padding:5px 6px;font-size:12px;background:transparent;outline:none;border-radius:4px;font-family:inherit}
+.tb .ri{width:100%;border:1px solid transparent;padding:7px 8px;font-size:13px;background:transparent;outline:none;border-radius:4px;font-family:inherit;min-height:34px}
 .tb .ri:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(220,38,38,.1);outline:none;background:#fff}
 .tb .ri:disabled{background:transparent;color:var(--muted)}
 .tb .ri.rc{font-weight:700;border:none;background:transparent;color:var(--text)}
-.tb .rn{width:26px;text-align:center;color:var(--light);font-size:10px;font-weight:600}
+.tb .rn{width:32px;text-align:center;color:var(--light);font-size:11px;font-weight:600}
 .tb .num{text-align:right}
 .tb .rqty{font-weight:600;border:1px solid var(--border);background:#fff}
 .tb .rqty:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(220,38,38,.15)}
@@ -72,7 +73,9 @@ textarea.inp{resize:vertical;font-family:inherit}
 .modal-b{background:#fff;padding:24px;border-radius:var(--radius);width:420px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.15)}
 .modal-b h3{margin:0 0 12px;font-size:16px}
 .modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
-@media print{.sidebar,.topbar,.ab,.toast-c,.btn,.modal-o{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:none}body{background:#fff}}
+@media(max-width:768px){.wrap{padding:12px}.card-h{padding:10px 14px;flex-wrap:wrap;gap:8px}.card-b{padding:12px 14px}.hdr-g{grid-template-columns:1fr;gap:12px}.btm{grid-template-columns:1fr}.btm-l{border-right:none;border-bottom:1px solid var(--border)}.tb-w::after{content:'\2190  Scroll for more  \2192'}.tb{font-size:12px;min-width:1000px}.tb .ri{padding:5px 6px;font-size:12px;min-height:30px}.ab{flex-wrap:wrap}.btn{width:100%;justify-content:center}.hdr-g>div>div{grid-template-columns:1fr!important}#originalInvoiceRef>div{grid-template-columns:1fr!important}}
+@media(max-width:480px){.wrap{padding:8px}.card-h{font-size:10px}.card-b{padding:8px 10px}.modal-b{width:95vw;padding:16px}}
+@media print{.sidebar,.topbar,.ab,.toast-c,.btn,.modal-o,.tb-w::after{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:none}body{background:#fff}}
 </style>
 {% endblock %}
 
@@ -135,8 +138,8 @@ textarea.inp{resize:vertical;font-family:inherit}
     <div style="padding:0;">
       {% if editable %}
       <div style="padding:8px 12px;display:flex;gap:8px;border-bottom:1px solid var(--border);background:#fafafa;">
-        <button class="bsm" style="border-color:#f87171;color:var(--primary);" onclick="returnAll()">Return All</button>
-        <button class="bsm" onclick="resetQuantities()">Reset</button>
+        <button type="button" class="bsm" style="border-color:#f87171;color:var(--primary);" onclick="returnAll()">Return All</button>
+        <button type="button" class="bsm" onclick="resetQuantities()">Reset</button>
         <span style="flex:1;"></span>
       </div>
       {% endif %}
@@ -144,21 +147,21 @@ textarea.inp{resize:vertical;font-family:inherit}
         <table class="tb" id="itemsTable">
           <thead>
             <tr>
-              <th style="width:26px;">#</th>
-              <th style="width:70px;">Code</th>
-              <th style="min-width:140px;">Description</th>
-              <th class="num" style="width:50px;">Orig</th>
-              <th class="num" style="width:50px;">Prev</th>
-              <th class="num" style="width:50px;">Max</th>
-              <th class="num" style="width:72px;">Ret Qty *</th>
-              <th style="width:40px;">Unit</th>
-              <th class="num" style="width:66px;">Price</th>
-              <th class="num" style="width:50px;">Disc%</th>
-              <th class="num" style="width:50px;">STax%</th>
-              <th class="num" style="width:50px;">WHT%</th>
-              <th class="num" style="width:80px;">Prop Disc</th>
-              <th class="num" style="width:80px;">Prop Tax</th>
-              <th class="num" style="width:90px;">Net Return</th>
+              <th style="width:32px;">#</th>
+              <th style="width:90px;">Code</th>
+              <th style="min-width:180px;">Description</th>
+              <th class="num" style="width:60px;">Orig</th>
+              <th class="num" style="width:60px;">Prev</th>
+              <th class="num" style="width:60px;">Max</th>
+              <th class="num" style="width:88px;">Ret Qty *</th>
+              <th style="width:50px;">Unit</th>
+              <th class="num" style="width:82px;">Price</th>
+              <th class="num" style="width:62px;">Disc%</th>
+              <th class="num" style="width:62px;">STax%</th>
+              <th class="num" style="width:62px;">WHT%</th>
+              <th class="num" style="width:96px;">Prop Disc</th>
+              <th class="num" style="width:96px;">Prop Tax</th>
+              <th class="num" style="width:110px;">Net Return</th>
             </tr>
           </thead>
           <tbody id="itemsBody"></tbody>
@@ -199,13 +202,13 @@ textarea.inp{resize:vertical;font-family:inherit}
     <!-- ACTION BUTTONS -->
     <div class="ab">
       {% if is_new %}
-        <button class="btn btn-p" id="saveBtn">Save as Unapproved Return</button>
+        <button type="button" class="btn btn-p" id="saveBtn">Save as Unapproved Return</button>
       {% elif is_unapproved %}
-        <button class="btn btn-o" id="saveChangesBtn">Save Changes</button>
-        <button class="btn btn-p" id="approveBtn">Approve Return</button>
+        <button type="button" class="btn btn-o" id="saveChangesBtn">Save Changes</button>
+        <button type="button" class="btn btn-p" id="approveBtn">Approve Return</button>
       {% elif is_approved %}
-        <button class="btn btn-d" id="unapproveBtn">Unapprove Return</button>
-        <button class="btn btn-o" onclick="window.print()">Print</button>
+        <button type="button" class="btn btn-d" id="unapproveBtn">Unapprove Return</button>
+        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
       {% endif %}
       <a href="{{ url_for('inv_purchasereturn.list_returns') }}" class="btn btn-o">Cancel</a>
     </div>
@@ -217,8 +220,8 @@ textarea.inp{resize:vertical;font-family:inherit}
     <h3 id="confirmTitle">Confirm</h3>
     <p id="confirmMsg" style="color:var(--muted);font-size:14px;margin:0 0 16px;"></p>
     <div class="modal-acts">
-      <button class="btn btn-o" onclick="closeConfirm()">Cancel</button>
-      <button class="btn btn-p" id="confirmOkBtn">Yes, Continue</button>
+      <button type="button" class="btn btn-o" onclick="closeConfirm()">Cancel</button>
+      <button type="button" class="btn btn-p" id="confirmOkBtn">Yes, Continue</button>
     </div>
   </div>
 </div>

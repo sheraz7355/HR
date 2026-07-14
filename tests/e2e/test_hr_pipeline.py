@@ -80,6 +80,23 @@ class TestHrProfile:
         assert "password" in admin_page.url.lower()
 
 
+class TestHrResponsive:
+    def test_attendance_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/attendance/")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.viewport_size["width"] == 375
+
+    def test_leave_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/leaves/")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.viewport_size["width"] == 375
+
+    def test_hub_mobile(self, admin_mobile):
+        admin_mobile.goto(f"{BASE_URL}/dashboard/")
+        admin_mobile.wait_for_load_state("networkidle")
+        assert admin_mobile.viewport_size["width"] == 375
+
+
 class TestHrLogout:
     def test_logout(self, admin_page):
         admin_page.goto(f"{BASE_URL}/auth/logout")

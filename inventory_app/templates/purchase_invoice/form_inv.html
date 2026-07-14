@@ -42,17 +42,18 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
 .pill-b.active{background:var(--primary-light);border-color:var(--primary);color:var(--primary);z-index:1}
 .pill-b:disabled{opacity:.4;cursor:not-allowed}
 /* Table */
-.tb-w{overflow-x:auto;border:1px solid var(--border);border-radius:5px}
-.tb{width:100%;border-collapse:collapse;font-size:12px;min-width:800px}
-.tb th{padding:7px 6px;font-size:10px;font-weight:700;color:var(--muted);background:#f8fafc;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
-.tb td{padding:2px 4px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.tb-w{overflow-x:auto;border:1px solid var(--border);border-radius:5px;-webkit-overflow-scrolling:touch}
+.tb-w::after{content:'\2190  Scroll for more columns  \2192';display:block;text-align:center;font-size:10px;color:var(--light);padding:2px;background:#f8fafc;border-top:1px solid var(--border)}
+.tb{width:100%;border-collapse:collapse;font-size:13px;min-width:1100px}
+.tb th{padding:8px 8px;font-size:11px;font-weight:700;color:var(--muted);background:#f8fafc;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.tb td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 .tb tr:hover td{background:#fafafa}
-.tb .ri{width:100%;border:1px solid transparent;padding:5px 6px;font-size:12px;background:transparent;outline:none;border-radius:4px;font-family:inherit}
+.tb .ri{width:100%;border:1px solid transparent;padding:7px 8px;font-size:13px;background:transparent;outline:none;border-radius:4px;font-family:inherit;min-height:34px}
 .tb .ri:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(37,99,235,.1);outline:none;background:#fff}
 .tb .ri:disabled{background:transparent;color:var(--muted)}
 .tb .ri.rc{font-weight:700;border:none;background:transparent;color:var(--text)}
-.tb .rn{width:26px;text-align:center;color:var(--light);font-size:10px;font-weight:600}
-.tb .desc-col{min-width:200px;width:40%}
+.tb .rn{width:32px;text-align:center;color:var(--light);font-size:11px;font-weight:600}
+.tb .desc-col{min-width:240px;width:35%}
 .tb .num{text-align:right}
 /* Row actions */
 .ra{display:flex;gap:2px;justify-content:center;align-items:center}
@@ -109,7 +110,32 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
 .modal-b{background:#fff;padding:24px;border-radius:var(--radius);width:420px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.15)}
 .modal-b h3{margin:0 0 12px;font-size:16px}
 .modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
-@media print{.sidebar,.topbar,.ab,.ga,.toast-c,.ac-dd,.btn,.ra,.modal-o{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:none}body{background:#fff}}
+/* Mobile responsive */
+@media(max-width:768px){
+  .wrap{padding:12px}
+  .card-h{padding:10px 14px;flex-wrap:wrap;gap:8px}
+  .card-b{padding:12px 14px}
+  .hdr-g{grid-template-columns:1fr;gap:12px}
+  .pills{flex-wrap:wrap;gap:8px}
+  .btm{grid-template-columns:1fr}
+  .btm-l{border-right:none;border-bottom:1px solid var(--border)}
+  .sl{flex-wrap:wrap;gap:4px}
+  .sl .slv{min-width:auto}
+  .tb-w::after{content:'\2190  Scroll for more  \2192'}
+  .tb{font-size:12px;min-width:1000px}
+  .tb .ri{padding:5px 6px;font-size:12px;min-height:30px}
+  .ab{flex-wrap:wrap}
+  .btn{width:100%;justify-content:center}
+  .hdr-g>div>div{grid-template-columns:1fr!important}
+}
+@media(max-width:480px){
+  .wrap{padding:8px}
+  .card-h{font-size:10px}
+  .card-b{padding:8px 10px}
+  .tb-w{border-radius:0;border-left:none;border-right:none}
+  .modal-b{width:95vw;padding:16px}
+}
+@media print{.sidebar,.topbar,.ab,.ga,.toast-c,.ac-dd,.btn,.ra,.modal-o,.tb-w::after{display:none!important}.wrap{padding:0}.card{box-shadow:none;border:none}body{background:#fff}}
 </style>
 {% endblock %}
 
@@ -194,21 +220,21 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
         <table class="tb" id="itemsTable">
           <thead>
             <tr>
-              <th style="width:26px;">#</th>
-              <th style="width:70px;">SKU</th>
+              <th style="width:32px;">#</th>
+              <th style="width:90px;">SKU</th>
               <th class="desc-col">Description</th>
-              <th class="num" style="width:56px;">Qty</th>
-              <th style="width:44px;">Unit</th>
-              <th class="num" style="width:76px;">Rate</th>
-              <th class="c-disc num" style="width:54px;">Disc %</th>
-              <th class="c-disc num" style="width:64px;">Disc Amt</th>
-              <th class="c-exp num" style="width:54px;">Comm</th>
-              <th class="c-exp num" style="width:54px;">Frgt</th>
-              <th class="c-exp num" style="width:54px;">L/U</th>
-              <th class="c-tax num" style="width:54px;">S Tax %</th>
-              <th class="num" style="width:82px;">Amount</th>
-              <th class="num" style="width:82px;">Net Amt</th>
-              <th style="width:40px;"></th>
+              <th class="num" style="width:70px;">Qty</th>
+              <th style="width:52px;">Unit</th>
+              <th class="num" style="width:95px;">Rate</th>
+              <th class="c-disc num" style="width:68px;">Disc %</th>
+              <th class="c-disc num" style="width:80px;">Disc Amt</th>
+              <th class="c-exp num" style="width:68px;">Comm</th>
+              <th class="c-exp num" style="width:68px;">Frgt</th>
+              <th class="c-exp num" style="width:68px;">L/U</th>
+              <th class="c-tax num" style="width:68px;">S Tax %</th>
+              <th class="num" style="width:100px;">Amount</th>
+              <th class="num" style="width:100px;">Net Amt</th>
+              <th style="width:52px;"></th>
             </tr>
           </thead>
           <tbody id="itemsBody"></tbody>
