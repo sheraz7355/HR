@@ -8,7 +8,7 @@ from ..models.purchase_invoice import InvPurchaseInvoice, InvPurchaseInvoiceItem
 from ..models.supplier import InvSupplier
 from ..models.product import InvProduct
 from ..models.stock_movement import InvStockMovement
-from shared.ledger_utils import post_journal_entry, reverse_journal_entry
+from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 
 inv_preturn_bp = Blueprint("inv_purchase_return", __name__,
@@ -237,8 +237,8 @@ def save_return():
                 ))
 
     if action == "approve":
-        ap_acc = ChartOfAccount.query.filter_by(code="211").first()
-        inv_acc = ChartOfAccount.query.filter_by(code="113").first()
+        ap_acc = posting_account("ap")
+        inv_acc = posting_account("inventory")
         if ap_acc and inv_acc:
             post_journal_entry(
                 voucher_type="PR",

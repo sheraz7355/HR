@@ -8,7 +8,7 @@ from ..models.supplier import InvSupplier
 from ..models.product import InvProduct
 from ..models.stock_movement import InvStockMovement
 from shared.models.vouchers import ConsumptionItem as ConsItem, ScrapItem, StockAdjustmentItem as AdjItem
-from shared.ledger_utils import post_journal_entry, reverse_journal_entry, get_or_create_account
+from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 
 inv_pinv_bp = Blueprint("inv_purchase_invoice", __name__,
@@ -176,8 +176,8 @@ def save_invoice():
                 ))
 
     if action == "approve":
-        inv_acc = ChartOfAccount.query.filter_by(code="113").first()
-        ap_acc = ChartOfAccount.query.filter_by(code="211").first()
+        inv_acc = posting_account("inventory")
+        ap_acc = posting_account("ap")
         if inv_acc and ap_acc:
             # Goods value (subtotal net of discount, plus capitalised expenses)
             # is debited to Inventory; recoverable input sales tax is debited to
@@ -195,7 +195,7 @@ def save_invoice():
                  "description": f"Inventory - {inv.invoice_number}"},
             ]
             if input_tax > 0:
-                in_tax_acc = get_or_create_account("114", "Input Tax Recoverable", "asset", "11")
+                in_tax_acc = posting_account("input_tax")
                 lines.append(
                     {"account_id": in_tax_acc.id, "debit": input_tax, "credit": 0,
                      "description": f"Input Tax - {inv.invoice_number}"},
@@ -205,7 +205,7 @@ def save_invoice():
                  "description": f"AP - {inv.invoice_number}"},
             )
             if abs(wht) > 0.005:
-                wht_acc = get_or_create_account("214", "Withholding Tax Payable", "liability", "21")
+                wht_acc = posting_account("wht_payable")
                 lines.append(
                     {"account_id": wht_acc.id, "debit": 0, "credit": wht,
                      "description": f"WHT - {inv.invoice_number}"},

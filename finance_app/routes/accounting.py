@@ -109,6 +109,17 @@ def voucher_form(id=None):
                 c = Decimal("0")
             if d == 0 and c == 0:
                 continue
+            # For cash/bank vouchers the counter accounts must sit on the side
+            # OPPOSITE the cash/bank line (receipt -> cash Dr, counters Cr;
+            # payment -> cash Cr, counters Dr). Take the amount the user entered
+            # in either column and force it onto the correct side so the voucher
+            # can never post lopsided (the bug that unbalanced the BRV).
+            if voucher.voucher_type in CASH_BANK_TYPES:
+                amt = d + c
+                if voucher.voucher_type in ("CRV", "BRV"):
+                    d, c = Decimal("0"), amt
+                else:
+                    d, c = amt, Decimal("0")
             try:
                 acct_id = int(aid)
             except ValueError:

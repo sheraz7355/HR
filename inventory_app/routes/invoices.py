@@ -8,7 +8,7 @@ from ..models.customer import InvCustomer
 from ..models.product import InvProduct
 from ..models.stock_movement import InvStockMovement
 from ..models.sales_order import InvSalesOrder
-from shared.ledger_utils import post_journal_entry, reverse_journal_entry, get_or_create_account
+from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 
 inv_inv_bp = Blueprint("inv_invoices", __name__, url_prefix="/inventory/invoices")
@@ -171,10 +171,10 @@ def save_invoice():
                 ))
 
     if action == "approve":
-        ar_acc = ChartOfAccount.query.filter_by(code="112").first()
-        rev_acc = ChartOfAccount.query.filter_by(code="411").first()
-        cogs_acc = ChartOfAccount.query.filter_by(code="511").first()
-        inv_acc = ChartOfAccount.query.filter_by(code="113").first()
+        ar_acc = posting_account("ar")
+        rev_acc = posting_account("revenue")
+        cogs_acc = posting_account("cogs")
+        inv_acc = posting_account("inventory")
         # Split output sales tax into its own liability so revenue is stated
         # net of tax (Dr Receivable = gross, Cr Revenue = net, Cr Output Tax).
         total = float(inv.total_amount or 0)
@@ -187,7 +187,7 @@ def save_invoice():
              "description": f"Revenue - {inv.invoice_number}"},
         ]
         if output_tax > 0:
-            out_tax_acc = get_or_create_account("213", "Sales Tax Payable", "liability", "21")
+            out_tax_acc = posting_account("sales_tax_payable")
             lines.append(
                 {"account_id": out_tax_acc.id, "debit": 0, "credit": output_tax,
                  "description": f"Output Tax - {inv.invoice_number}"},
@@ -289,8 +289,8 @@ def pay_invoice(id):
             inv.payment_status = "paid"
         else:
             inv.payment_status = "partial"
-        cash_acc = ChartOfAccount.query.filter_by(code="111").first()
-        ar_acc = ChartOfAccount.query.filter_by(code="112").first()
+        cash_acc = posting_account("cash")
+        ar_acc = posting_account("ar")
         if cash_acc and ar_acc:
             post_journal_entry(
                 voucher_type="PMT",

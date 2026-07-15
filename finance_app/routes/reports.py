@@ -15,6 +15,7 @@ from shared.extensions import db
 from shared.models.ledger import ChartOfAccount, JournalEntry, JournalLine
 from shared.models.base import User
 from shared.models.company_settings import AccountingPeriod
+from shared.ledger_utils import posting_account
 
 finance_bp = Blueprint("finance", __name__, url_prefix="/finance")
 
@@ -49,6 +50,23 @@ def _parse_date(d):
     return None
 
 
+def _default_period():
+    """The period to default reports to: the one containing today (preferring an
+    active one), else the most recent active period. Robust even when several
+    periods are erroneously marked active at once."""
+    today = date.today()
+    p = (AccountingPeriod.query
+         .filter(AccountingPeriod.start_date <= today,
+                 AccountingPeriod.end_date >= today)
+         .order_by(AccountingPeriod.is_active.desc(),
+                   AccountingPeriod.start_date.desc())
+         .first())
+    if p:
+        return p
+    return (AccountingPeriod.query.filter_by(is_active=True)
+            .order_by(AccountingPeriod.start_date.desc()).first())
+
+
 def _resolve_period():
     filter_mode = request.args.get("filter_mode", "period")
     period_id = request.args.get("period_id", type=int)
@@ -67,14 +85,14 @@ def _resolve_period():
             to_date = period.end_date
 
     if not from_date and not to_date:
-        active = AccountingPeriod.query.filter_by(is_active=True).first()
+        active = _default_period()
         if active:
             from_date = active.start_date
             to_date = active.end_date
             if not selected_period_id:
                 selected_period_id = active.id
     elif not selected_period_id and filter_mode == "period":
-        active = AccountingPeriod.query.filter_by(is_active=True).first()
+        active = _default_period()
         if active:
             selected_period_id = active.id
 
@@ -733,13 +751,13 @@ def cash_flow():
 
     ni = _net_income(to_date)
 
-    cash_acct = ChartOfAccount.query.filter_by(code="111").first()
-    ar_acct = ChartOfAccount.query.filter_by(code="112").first()
-    inv_acct = ChartOfAccount.query.filter_by(code="113").first()
-    ap_acct = ChartOfAccount.query.filter_by(code="211").first()
-    accrued_acct = ChartOfAccount.query.filter_by(code="212").first()
-    loans_acct = ChartOfAccount.query.filter_by(code="221").first()
-    fa_acct = ChartOfAccount.query.filter_by(code="121").first()
+    cash_acct = posting_account("cash")
+    ar_acct = posting_account("ar")
+    inv_acct = posting_account("inventory")
+    ap_acct = posting_account("ap")
+    accrued_acct = posting_account("accrued")
+    loans_acct = posting_account("loans")
+    fa_acct = posting_account("fixed_assets")
 
     def change(acct):
         if not acct:
