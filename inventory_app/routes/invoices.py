@@ -8,7 +8,7 @@ from ..models.customer import InvCustomer
 from ..models.product import InvProduct
 from ..models.stock_movement import InvStockMovement
 from ..models.sales_order import InvSalesOrder
-from shared.ledger_utils import post_journal_entry, reverse_journal_entry
+from shared.ledger_utils import post_journal_entry, reverse_journal_entry, get_or_create_account
 from shared.models.ledger import ChartOfAccount
 
 inv_inv_bp = Blueprint("inv_invoices", __name__, url_prefix="/inventory/invoices")
@@ -132,8 +132,8 @@ def save_invoice():
         inv.voucher_status = "approved"
         inv.approved_by = current_user.id
         inv.approved_at = datetime.utcnow()
-    elif inv.voucher_status == "unapproved":
-        inv.voucher_status = "unpaid"
+    elif inv.voucher_status != "approved":
+        inv.voucher_status = "unapproved"
 
     db.session.flush()
 
@@ -175,12 +175,23 @@ def save_invoice():
         rev_acc = ChartOfAccount.query.filter_by(code="411").first()
         cogs_acc = ChartOfAccount.query.filter_by(code="511").first()
         inv_acc = ChartOfAccount.query.filter_by(code="113").first()
+        # Split output sales tax into its own liability so revenue is stated
+        # net of tax (Dr Receivable = gross, Cr Revenue = net, Cr Output Tax).
+        total = float(inv.total_amount or 0)
+        output_tax = float(inv.total_tax or 0)
+        revenue = round(total - output_tax, 2)
         lines = [
-            {"account_id": ar_acc.id, "debit": float(inv.total_amount), "credit": 0,
+            {"account_id": ar_acc.id, "debit": total, "credit": 0,
              "description": f"AR - {inv.invoice_number}"},
-            {"account_id": rev_acc.id, "debit": 0, "credit": float(inv.total_amount),
+            {"account_id": rev_acc.id, "debit": 0, "credit": revenue,
              "description": f"Revenue - {inv.invoice_number}"},
         ]
+        if output_tax > 0:
+            out_tax_acc = get_or_create_account("213", "Sales Tax Payable", "liability", "21")
+            lines.append(
+                {"account_id": out_tax_acc.id, "debit": 0, "credit": output_tax,
+                 "description": f"Output Tax - {inv.invoice_number}"},
+            )
         total_cogs = Decimal("0")
         for item in InvInvoiceItem.query.filter_by(invoice_id=inv.id).all():
             if item.product_id:
@@ -229,7 +240,7 @@ def unapprove_invoice(id):
 
     reverse_journal_entry("SI", inv.id, current_user.id)
 
-    inv.voucher_status = "unpaid"
+    inv.voucher_status = "unapproved"
     inv.payment_status = "unpaid"
     inv.approved_by = None
     inv.approved_at = None
@@ -245,7 +256,7 @@ def unapprove_invoice(id):
                 prod.current_stock += item.quantity
 
     db.session.commit()
-    return jsonify({"ok": True, "voucher_status": "unpaid",
+    return jsonify({"ok": True, "voucher_status": "unapproved",
                     "message": "Invoice unapproved and unlocked"})
 
 

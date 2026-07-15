@@ -81,6 +81,94 @@ def _create_app():
     return app
 
 
+def _migrate_schema(db):
+    """Idempotent, cross-dialect schema migrations.
+
+    Each ALTER runs in its OWN autocommit transaction (``engine.begin()``) so a
+    single failure can never roll back the others — the previous design shared
+    one session, so one bad statement aborted the whole batch. This MUST run
+    before any ORM query touches the affected tables, otherwise SQLAlchemy emits
+    SELECTs listing model columns that do not yet exist (the production
+    "column chart_of_accounts.level does not exist" 500s).
+    """
+    from sqlalchemy import inspect
+
+    engine = db.engine
+    is_pg = engine.dialect.name == "postgresql"
+    # Postgres rejects `BOOLEAN DEFAULT 0` — it needs FALSE/TRUE literals.
+    bool_false = "BOOLEAN DEFAULT FALSE" if is_pg else "BOOLEAN DEFAULT 0"
+    bool_true = "BOOLEAN DEFAULT TRUE" if is_pg else "BOOLEAN DEFAULT 1"
+    ts_type = "TIMESTAMP" if is_pg else "DATETIME"
+
+    # (table, column, column_type_ddl)
+    migrations = [
+        ("chart_of_accounts", "level", "INTEGER DEFAULT 4"),
+        ("chart_of_accounts", "is_fixed", bool_false),
+        ("accounting_periods", "is_active", bool_true),
+        ("users", "has_hr_access", bool_false),
+        ("users", "has_inventory_access", bool_false),
+        ("inv_suppliers", "mobile", "VARCHAR(200) DEFAULT ''"),
+        ("inv_suppliers", "tax_id", "VARCHAR(200) DEFAULT ''"),
+        ("inv_suppliers", "payment_terms", "VARCHAR(200) DEFAULT ''"),
+        ("inv_suppliers", "website", "VARCHAR(200) DEFAULT ''"),
+        ("inv_suppliers", "notes", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "contact_person", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "mobile", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "tax_id", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "payment_terms", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "website", "VARCHAR(200) DEFAULT ''"),
+        ("inv_customers", "notes", "VARCHAR(200) DEFAULT ''"),
+        ("inventory_settings", "purchase_flow", "VARCHAR(200) DEFAULT ''"),
+        ("inventory_settings", "sales_flow", "VARCHAR(200) DEFAULT ''"),
+        ("inv_invoices", "discount_mode", "VARCHAR(200) DEFAULT ''"),
+        ("inv_invoices", "tax_mode", "VARCHAR(200) DEFAULT ''"),
+        ("inv_invoices", "global_discount_pct", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "global_discount_value", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "global_sales_tax_pct", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "subtotal", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "total_discount", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "total_tax", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "notes", "VARCHAR(200) DEFAULT ''"),
+        ("inv_invoices", "created_by", "INTEGER"),
+        ("inv_invoices", "voucher_number", "VARCHAR(50) DEFAULT ''"),
+        ("inv_invoices", "voucher_status", "VARCHAR(20) DEFAULT 'unapproved'"),
+        ("inv_invoices", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
+        ("inv_invoices", "charges_mode", "VARCHAR(20) DEFAULT 'general'"),
+        ("inv_invoices", "total_charges", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "global_delivery", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "global_installation", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "approved_by", "INTEGER"),
+        ("inv_invoices", "approved_at", ts_type),
+        ("inv_invoice_items", "delivery", "FLOAT DEFAULT 0"),
+        ("inv_invoice_items", "installation", "FLOAT DEFAULT 0"),
+        ("inv_invoice_items", "comments", "TEXT"),
+    ]
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table, col, ddl in migrations:
+        if table not in existing_tables:
+            continue
+        cols = {c["name"] for c in inspector.get_columns(table)}
+        if col in cols:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+        except Exception as e:
+            print(f"MIGRATION SKIP {table}.{col}: {e}")
+
+    # Unique index for invoice voucher numbers (best-effort).
+    try:
+        with engine.begin() as conn:
+            conn.execute(db.text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_inv_invoices_voucher_number "
+                "ON inv_invoices(voucher_number)"
+            ))
+    except Exception as e:
+        print("MIGRATION SKIP ix_inv_invoices_voucher_number:", e)
+
+
 def _seed_all_data(app):
     with app.app_context():
         from shared.extensions import db
@@ -88,6 +176,10 @@ def _seed_all_data(app):
         from shared.models.ledger import ChartOfAccount
         from shared.models.stock_ledger import VoucherNumber, StockLedger
         from shared.models.inventory_settings import InventorySettings
+
+        # Run schema migrations FIRST, before any ORM query, so model columns
+        # added after the initial deploy are guaranteed to exist.
+        _migrate_schema(db)
 
         Role.seed()
         admin_role = Role.query.filter_by(name=Role.ADMIN).first()
@@ -134,26 +226,6 @@ def _seed_all_data(app):
         for prefix in ["PI", "PR", "CONS", "SCRAP", "ADJ", "ST", "CPV", "CRV", "BPV", "BRV", "JV", "PRL"]:
             if not VoucherNumber.query.filter_by(prefix=prefix).first():
                 db.session.add(VoucherNumber(prefix=prefix, next_number=1))
-
-        from sqlalchemy import inspect
-        _inspector = inspect(db.engine)
-        _coa_cols = {c["name"] for c in _inspector.get_columns("chart_of_accounts")}
-        if "level" not in _coa_cols:
-            try:
-                db.session.execute(db.text("ALTER TABLE chart_of_accounts ADD COLUMN level INTEGER DEFAULT 4"))
-            except Exception:
-                db.session.rollback()
-        if "is_fixed" not in _coa_cols:
-            try:
-                db.session.execute(db.text("ALTER TABLE chart_of_accounts ADD COLUMN is_fixed BOOLEAN DEFAULT 0"))
-            except Exception:
-                db.session.rollback()
-        _acct_period_cols = {c["name"] for c in _inspector.get_columns("accounting_periods")}
-        if "is_active" not in _acct_period_cols:
-            try:
-                db.session.execute(db.text("ALTER TABLE accounting_periods ADD COLUMN is_active BOOLEAN DEFAULT 1"))
-            except Exception:
-                db.session.rollback()
 
         def _add_acct(code, name, type_, parent_id=None, level=4, fixed=False):
             if not ChartOfAccount.query.filter_by(code=str(code)).first():
@@ -212,66 +284,6 @@ def _seed_all_data(app):
             _add_acct("2124", "Loan Deductions Clearing", "liability", l3["Accrued Expenses"].id, 4)
 
         _seed_4level_coa()
-
-        # Migration: add missing columns
-        from sqlalchemy import inspect
-        inspector = inspect(db.engine)
-        user_cols = {c["name"] for c in inspector.get_columns("users")}
-        if "has_hr_access" not in user_cols:
-            db.session.execute(db.text("ALTER TABLE users ADD COLUMN has_hr_access BOOLEAN DEFAULT 0"))
-        if "has_inventory_access" not in user_cols:
-            db.session.execute(db.text("ALTER TABLE users ADD COLUMN has_inventory_access BOOLEAN DEFAULT 0"))
-        for tbl, cols in {
-            "inv_suppliers": ["mobile", "tax_id", "payment_terms", "website", "notes"],
-            "inv_customers": ["contact_person", "mobile", "tax_id", "payment_terms", "website", "notes"],
-            "inv_invoices": ["discount_mode", "tax_mode", "global_discount_pct", "global_discount_value", "global_sales_tax_pct", "subtotal", "total_discount", "total_tax", "notes", "created_by"],
-            "inventory_settings": ["purchase_flow", "sales_flow"],
-        }.items():
-            existing = {c["name"] for c in inspector.get_columns(tbl)}
-            for col in cols:
-                if col not in existing:
-                    try:
-                        db.session.execute(db.text(f"ALTER TABLE {tbl} ADD COLUMN {col} VARCHAR(200) DEFAULT ''"))
-                    except Exception:
-                        db.session.rollback()
-        # Migration: add typed columns to inv_invoices and inv_invoice_items
-        inv_cols = {c["name"] for c in inspector.get_columns("inv_invoices")}
-        inv_item_cols = {c["name"] for c in inspector.get_columns("inv_invoice_items")}
-        new_inv_cols = {
-            "voucher_number": "VARCHAR(50) DEFAULT ''",
-            "voucher_status": "VARCHAR(20) DEFAULT 'unapproved'",
-            "payment_status": "VARCHAR(20) DEFAULT 'unpaid'",
-            "charges_mode": "VARCHAR(20) DEFAULT 'general'",
-            "total_charges": "FLOAT DEFAULT 0",
-            "global_delivery": "FLOAT DEFAULT 0",
-            "global_installation": "FLOAT DEFAULT 0",
-            "approved_by": "INTEGER",
-            "approved_at": "TIMESTAMP",
-        }
-        for col, dtype in new_inv_cols.items():
-            if col not in inv_cols:
-                try:
-                    db.session.execute(db.text(f"ALTER TABLE inv_invoices ADD COLUMN {col} {dtype}"))
-                except Exception:
-                    db.session.rollback()
-        if "voucher_number" not in inv_cols:
-            try:
-                db.session.execute(db.text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_inv_invoices_voucher_number ON inv_invoices(voucher_number)"
-                ))
-            except Exception:
-                db.session.rollback()
-
-        new_item_cols = {
-            "delivery": "FLOAT DEFAULT 0",
-            "installation": "FLOAT DEFAULT 0",
-        }
-        for col, dtype in new_item_cols.items():
-            if col not in inv_item_cols:
-                try:
-                    db.session.execute(db.text(f"ALTER TABLE inv_invoice_items ADD COLUMN {col} {dtype}"))
-                except Exception:
-                    db.session.rollback()
 
         db.session.commit()
 

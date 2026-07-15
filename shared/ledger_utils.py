@@ -31,42 +31,26 @@ def post_journal_entry(voucher_type, voucher_id, voucher_number, description,
 
 
 def reverse_journal_entry(voucher_type, voucher_id, created_by=1):
+    """Un-post the active journal entries for a voucher (used on unapprove).
+
+    Every balance/ledger query filters ``is_posted == True``, so flipping the
+    flag removes the entry's effect and returns the affected account balances to
+    zero. The rows are retained (not deleted) as an audit trail.
+
+    The previous implementation ALSO created an equal-and-opposite reversal
+    entry with ``is_posted=True``. Because the original was simultaneously set
+    ``is_posted=False`` (i.e. excluded from every report), only the reversal was
+    counted — which *inverted* each affected account's balance instead of
+    cancelling it. Marking the original un-posted is sufficient and correct.
+
+    ``created_by`` is accepted for call-site compatibility; it is unused now
+    that no new entry is created.
+    """
     entries = JournalEntry.query.filter_by(
-        voucher_type=voucher_type, voucher_id=voucher_id
+        voucher_type=voucher_type, voucher_id=voucher_id, is_posted=True
     ).all()
     for entry in entries:
         entry.is_posted = False
-    db.session.flush()
-
-    for entry in entries:
-        lines = []
-        for line in entry.lines:
-            lines.append({
-                "account_id": line.account_id,
-                "debit": line.credit,
-                "credit": line.debit,
-                "description": f"Reversal: {line.description}"
-            })
-        je = JournalEntry(
-            voucher_type=voucher_type,
-            voucher_id=voucher_id,
-            voucher_number=entry.voucher_number + "-REV",
-            description=f"Reversal of {entry.voucher_number}",
-            entry_date=entry.entry_date,
-            created_by=created_by,
-            is_posted=True
-        )
-        db.session.add(je)
-        db.session.flush()
-        for line in lines:
-            jl = JournalLine(
-                journal_entry_id=je.id,
-                account_id=line["account_id"],
-                debit=Decimal(str(line["debit"])),
-                credit=Decimal(str(line["credit"])),
-                description=line["description"]
-            )
-            db.session.add(jl)
     db.session.flush()
 
 

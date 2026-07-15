@@ -8,7 +8,7 @@ from ..models.supplier import InvSupplier
 from ..models.product import InvProduct
 from ..models.stock_movement import InvStockMovement
 from shared.models.vouchers import ConsumptionItem as ConsItem, ScrapItem, StockAdjustmentItem as AdjItem
-from shared.ledger_utils import post_journal_entry, reverse_journal_entry
+from shared.ledger_utils import post_journal_entry, reverse_journal_entry, get_or_create_account
 from shared.models.ledger import ChartOfAccount
 
 inv_pinv_bp = Blueprint("inv_purchase_invoice", __name__,
@@ -179,17 +179,43 @@ def save_invoice():
         inv_acc = ChartOfAccount.query.filter_by(code="113").first()
         ap_acc = ChartOfAccount.query.filter_by(code="211").first()
         if inv_acc and ap_acc:
+            # Goods value (subtotal net of discount, plus capitalised expenses)
+            # is debited to Inventory; recoverable input sales tax is debited to
+            # its own asset; any withholding deducted from the payable is
+            # credited to WHT Payable so the entry still balances:
+            #   Dr Inventory (goods) + Dr Input Tax (sales tax)
+            #   Cr Accounts Payable (net_payable) + Cr WHT Payable (residual)
+            net_payable = float(inv.net_payable or 0)
+            input_tax = float(inv.total_tax or 0)
+            goods = round(float(inv.subtotal or 0) - float(inv.total_discount or 0)
+                          + float(inv.total_expenses or 0), 2)
+            wht = round(goods + input_tax - net_payable, 2)
+            lines = [
+                {"account_id": inv_acc.id, "debit": goods, "credit": 0,
+                 "description": f"Inventory - {inv.invoice_number}"},
+            ]
+            if input_tax > 0:
+                in_tax_acc = get_or_create_account("114", "Input Tax Recoverable", "asset", "11")
+                lines.append(
+                    {"account_id": in_tax_acc.id, "debit": input_tax, "credit": 0,
+                     "description": f"Input Tax - {inv.invoice_number}"},
+                )
+            lines.append(
+                {"account_id": ap_acc.id, "debit": 0, "credit": net_payable,
+                 "description": f"AP - {inv.invoice_number}"},
+            )
+            if abs(wht) > 0.005:
+                wht_acc = get_or_create_account("214", "Withholding Tax Payable", "liability", "21")
+                lines.append(
+                    {"account_id": wht_acc.id, "debit": 0, "credit": wht,
+                     "description": f"WHT - {inv.invoice_number}"},
+                )
             post_journal_entry(
                 voucher_type="PI",
                 voucher_id=inv.id,
                 voucher_number=inv.voucher_number,
                 description=f"Purchase Invoice {inv.invoice_number} - {inv.supplier.name if inv.supplier else ''}",
-                lines=[
-                    {"account_id": inv_acc.id, "debit": float(inv.net_payable), "credit": 0,
-                     "description": f"Inventory - {inv.invoice_number}"},
-                    {"account_id": ap_acc.id, "debit": 0, "credit": float(inv.net_payable),
-                     "description": f"AP - {inv.invoice_number}"},
-                ],
+                lines=lines,
                 entry_date=datetime.utcnow(),
                 created_by=current_user.id,
             )
