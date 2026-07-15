@@ -2,13 +2,13 @@
 {% block title %}Trial Balance{% endblock %}
 {% block heading %}Trial Balance{% endblock %}
 {% block actions %}
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&to={{ to_str }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&to={{ to_str }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}
 <form method="get" class="card mb-6 no-print">
-  {% with filter_mode=filter_mode, selected_period_id=selected_period_id, periods=periods, to_val=to_str %}
+  {% with filter_mode=filter_mode, selected_period_id=selected_period_id, periods=periods, from_val=from_str, to_val=to_str %}
   {% include "accounting/_period_filter.html" %}
   {% endwith %}
   <div class="mt-3">
@@ -17,12 +17,20 @@
 </form>
 
 <div class="card">
-  <p class="text-sm text-slate-500 mb-4">As of <strong>{{ as_of.strftime('%d %B %Y') }}</strong></p>
+  <p class="text-sm text-slate-500 mb-4">
+    {% if from_date %}Period: <strong>{{ from_date.strftime('%d %B %Y') }}</strong> to {% endif %}
+    <strong>{{ as_of.strftime('%d %B %Y') }}</strong>
+  </p>
   {% if rows %}
   <div class="overflow-x-auto">
     <table class="report-table">
       <thead>
-        <tr><th>Code</th><th>Account</th><th>Type</th><th class="num">Debit</th><th class="num">Credit</th></tr>
+        <tr>
+          <th>Code</th><th>Account</th><th>Type</th>
+          <th class="num">Dr Opening</th><th class="num">Cr Opening</th>
+          <th class="num">Dr Movement</th><th class="num">Cr Movement</th>
+          <th class="num">Dr Closing</th><th class="num">Cr Closing</th>
+        </tr>
       </thead>
       <tbody>
         {% for r in rows %}
@@ -30,8 +38,12 @@
           <td>{{ r.code }}</td>
           <td>{{ r.name }}</td>
           <td><span class="badge {% if r.type == 'Asset' %}badge-blue{% elif r.type == 'Liability' %}badge-purple{% elif r.type == 'Equity' %}badge-green{% elif r.type == 'Revenue' %}badge-green{% else %}badge-blue{% endif %}">{{ r.type }}</span></td>
-          <td class="num">{{ "{:,.2f}".format(r.debit) if r.debit else "—" }}</td>
-          <td class="num">{{ "{:,.2f}".format(r.credit) if r.credit else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.dr_opening) if r.dr_opening else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.cr_opening) if r.cr_opening else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.dr_movement) if r.dr_movement else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.cr_movement) if r.cr_movement else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.dr_closing) if r.dr_closing else "—" }}</td>
+          <td class="num">{{ "{:,.2f}".format(r.cr_closing) if r.cr_closing else "—" }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -40,15 +52,19 @@
           <td></td>
           <td>TOTAL</td>
           <td></td>
-          <td class="num">{{ "{:,.2f}".format(total_dr) }}</td>
-          <td class="num">{{ "{:,.2f}".format(total_cr) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_dr_opening) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_cr_opening) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_dr_movement) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_cr_movement) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_dr_closing) }}</td>
+          <td class="num">{{ "{:,.2f}".format(total_cr_closing) }}</td>
         </tr>
       </tfoot>
     </table>
   </div>
-  <p class="mt-2 text-sm {% if total_dr == total_cr %}text-green-600{% else %}text-red-600{% endif %}">
-    <i class="fas {% if total_dr == total_cr %}fa-check-circle{% else %}fa-exclamation-triangle{% endif %}"></i>
-    {% if total_dr == total_cr %}Trial Balance is <strong>IN BALANCE</strong>{% else %}Difference: {{ "{:,.2f}".format(total_dr - total_cr) }}{% endif %}
+  <p class="mt-2 text-sm {% if total_dr_closing == total_cr_closing %}text-green-600{% else %}text-red-600{% endif %}">
+    <i class="fas {% if total_dr_closing == total_cr_closing %}fa-check-circle{% else %}fa-exclamation-triangle{% endif %}"></i>
+    {% if total_dr_closing == total_cr_closing %}Trial Balance is <strong>IN BALANCE</strong>{% else %}Difference: {{ "{:,.2f}".format(total_dr_closing - total_cr_closing) }}{% endif %}
   </p>
   {% else %}
   <p class="text-slate-500 text-center py-8">No journal entries posted yet.</p>

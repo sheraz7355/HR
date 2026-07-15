@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 from flask import Blueprint, render_template, request, jsonify, Response, send_file
 from flask_login import login_required
@@ -356,50 +356,109 @@ def ledger():
 @finance_bp.route("/trial-balance")
 @login_required
 def trial_balance():
-    _, to_date, periods, selected_period_id, filter_mode, from_str, to_str = _resolve_period()
+    from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str = _resolve_period()
     as_of = to_date or date.today()
-    balances = _all_account_balances(as_of)
+
+    opening_as_of = None
+    if from_date:
+        opening_as_of = from_date - timedelta(days=1)
+
+    opening_balances = _all_account_balances(opening_as_of) if opening_as_of else []
+    closing_balances = _all_account_balances(as_of)
+
+    # Index closing by account code
+    closing_map = {}
+    for b in closing_balances:
+        closing_map[b.code] = b
+
+    opening_map = {}
+    for b in opening_balances:
+        opening_map[b.code] = b
+
+    all_codes = set(closing_map.keys()) | set(opening_map.keys())
 
     rows = []
-    total_dr = Decimal("0")
-    total_cr = Decimal("0")
-    for b in balances:
-        dr = b.dr
-        cr = b.cr
-        if dr == cr == 0:
+    total_dr_op = Decimal("0")
+    total_cr_op = Decimal("0")
+    total_dr_mv = Decimal("0")
+    total_cr_mv = Decimal("0")
+    total_dr_cl = Decimal("0")
+    total_cr_cl = Decimal("0")
+
+    for code in sorted(all_codes):
+        cb = closing_map.get(code)
+        ob = opening_map.get(code)
+
+        dr_op = ob.dr if ob else Decimal("0")
+        cr_op = ob.cr if ob else Decimal("0")
+        dr_cl = cb.dr if cb else Decimal("0")
+        cr_cl = cb.cr if cb else Decimal("0")
+        dr_mv = dr_cl - dr_op
+        cr_mv = cr_cl - cr_op
+
+        if dr_cl == cr_cl == 0 and dr_op == cr_op == 0:
             continue
-        total_dr += dr
-        total_cr += cr
+
+        name = (cb or ob).name
+        type_ = ACCOUNT_TYPES.get((cb or ob).type, (cb or ob).type)
+
+        total_dr_op += dr_op
+        total_cr_op += cr_op
+        total_dr_mv += dr_mv
+        total_cr_mv += cr_mv
+        total_dr_cl += dr_cl
+        total_cr_cl += cr_cl
+
         rows.append({
-            "code": b.code,
-            "name": b.name,
-            "type": ACCOUNT_TYPES.get(b.type, b.type),
-            "debit": float(dr),
-            "credit": float(cr),
+            "code": code,
+            "name": name,
+            "type": type_,
+            "dr_opening": float(dr_op),
+            "cr_opening": float(cr_op),
+            "dr_movement": float(dr_mv),
+            "cr_movement": float(cr_mv),
+            "dr_closing": float(dr_cl),
+            "cr_closing": float(cr_cl),
         })
 
     fmt = request.args.get("format")
+    headers = ["Code", "Account", "Type", "Dr Opening", "Cr Opening",
+               "Dr Movement", "Cr Movement", "Dr Closing", "Cr Closing"]
     if fmt == "excel":
-        headers = ["Code", "Account", "Type", "Debit", "Credit"]
-        data = [[r["code"], r["name"], r["type"], r["debit"], r["credit"]] for r in rows]
-        data.append(["", "TOTAL", "", float(total_dr), float(total_cr)])
-        wb_out = _build_excel_wb(f"Trial Balance as of {as_of}", headers, data, [12, 40, 16, 18, 18])
+        data = [[r["code"], r["name"], r["type"],
+                 r["dr_opening"], r["cr_opening"],
+                 r["dr_movement"], r["cr_movement"],
+                 r["dr_closing"], r["cr_closing"]] for r in rows]
+        data.append(["", "TOTAL", "",
+                      float(total_dr_op), float(total_cr_op),
+                      float(total_dr_mv), float(total_cr_mv),
+                      float(total_dr_cl), float(total_cr_cl)])
+        wb_out = _build_excel_wb(f"Trial Balance as of {as_of}", headers, data,
+                                 [10, 36, 14, 16, 16, 16, 16, 16, 16])
         return send_file(wb_out, as_attachment=True, download_name="trial_balance.xlsx",
                          mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     if fmt == "pdf":
-        headers = ["Code", "Account", "Type", "Debit", "Credit"]
         data = [[r["code"], r["name"], r["type"],
-                 f"{r['debit']:,.2f}" if r['debit'] else "0.00",
-                 f"{r['credit']:,.2f}" if r['credit'] else "0.00"] for r in rows]
-        data.append(["", "TOTAL", "", f"{float(total_dr):,.2f}", f"{float(total_cr):,.2f}"])
+                 f"{r['dr_opening']:,.2f}", f"{r['cr_opening']:,.2f}",
+                 f"{r['dr_movement']:,.2f}", f"{r['cr_movement']:,.2f}",
+                 f"{r['dr_closing']:,.2f}", f"{r['cr_closing']:,.2f}"] for r in rows]
+        data.append(["", "TOTAL", "",
+                      f"{float(total_dr_op):,.2f}", f"{float(total_cr_op):,.2f}",
+                      f"{float(total_dr_mv):,.2f}", f"{float(total_cr_mv):,.2f}",
+                      f"{float(total_dr_cl):,.2f}", f"{float(total_cr_cl):,.2f}"])
         pdf_out = _build_pdf_landscape(f"Trial Balance as of {as_of}", headers, data,
-                                        [16, 60, 28, 30, 30])
+                                        [12, 48, 14, 28, 28, 28, 28, 28, 28])
         return send_file(pdf_out, as_attachment=True, download_name="trial_balance.pdf",
                          mimetype="application/pdf")
 
     return render_template("finance/trial_balance.html", rows=rows,
-                           total_dr=float(total_dr), total_cr=float(total_cr),
-                           as_of=as_of,
+                           total_dr_opening=float(total_dr_op),
+                           total_cr_opening=float(total_cr_op),
+                           total_dr_movement=float(total_dr_mv),
+                           total_cr_movement=float(total_cr_mv),
+                           total_dr_closing=float(total_dr_cl),
+                           total_cr_closing=float(total_cr_cl),
+                           as_of=as_of, from_date=from_date,
                            periods=periods, selected_period_id=selected_period_id,
                            filter_mode=filter_mode, from_str=from_str, to_str=to_str,
                            now=datetime.utcnow())

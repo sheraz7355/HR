@@ -63,15 +63,27 @@ def voucher_form(id=None):
 
         dt_str = request.form.get("voucher_date", "")
         if dt_str:
-            try:
-                voucher.voucher_date = datetime.strptime(dt_str, "%Y-%m-%dT%H:%M")
-            except ValueError:
-                voucher.voucher_date = datetime.strptime(dt_str, "%Y-%m-%d")
+            parsed = False
+            for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+                try:
+                    voucher.voucher_date = datetime.strptime(dt_str, fmt)
+                    parsed = True
+                    break
+                except ValueError:
+                    continue
+            if not parsed:
+                voucher.voucher_date = datetime.utcnow()
         else:
             voucher.voucher_date = datetime.utcnow()
 
-        cb_id = request.form.get("cash_bank_account_id")
-        voucher.cash_bank_account_id = int(cb_id) if cb_id and cb_id.strip() else None
+        cb_id = request.form.get("cash_bank_account_id", "").strip()
+        if cb_id:
+            try:
+                voucher.cash_bank_account_id = int(cb_id)
+            except ValueError:
+                voucher.cash_bank_account_id = None
+        else:
+            voucher.cash_bank_account_id = None
         voucher.notes = request.form.get("notes", "")
         action = request.form.get("action", "save")
 
@@ -87,14 +99,24 @@ def voucher_form(id=None):
             aid = accounts[i].strip() if i < len(accounts) else ""
             if not aid:
                 continue
-            d = Decimal(str(float(debits[i]) if i < len(debits) and debits[i].strip() else 0))
-            c = Decimal(str(float(credits[i]) if i < len(credits) and credits[i].strip() else 0))
+            try:
+                d = Decimal(str(float(debits[i]))) if i < len(debits) and debits[i].strip() else Decimal("0")
+            except (ValueError, TypeError):
+                d = Decimal("0")
+            try:
+                c = Decimal(str(float(credits[i]))) if i < len(credits) and credits[i].strip() else Decimal("0")
+            except (ValueError, TypeError):
+                c = Decimal("0")
             if d == 0 and c == 0:
+                continue
+            try:
+                acct_id = int(aid)
+            except ValueError:
                 continue
             line = AccountingVoucherLine(
                 voucher_id=voucher.id,
                 line_no=i + 1,
-                account_id=int(aid),
+                account_id=acct_id,
                 description=descs[i] if i < len(descs) else "",
                 debit=d,
                 credit=c,
@@ -114,11 +136,16 @@ def voucher_form(id=None):
             if not voucher.cash_bank_account_id:
                 flash("Select a Cash/Bank account.", "error")
                 return render_template("accounting/voucher_form.html", voucher=voucher, **_err_ctx)
+            def _safe_dec(val):
+                try:
+                    return Decimal(str(float(val)))
+                except (ValueError, TypeError):
+                    return Decimal("0")
             total = sum(
-                (Decimal(str(float(d))) for d in debits if d.strip()),
+                (_safe_dec(d) for d in debits if d.strip()),
                 Decimal("0"),
             ) + sum(
-                (Decimal(str(float(c))) for c in credits if c.strip()),
+                (_safe_dec(c) for c in credits if c.strip()),
                 Decimal("0"),
             )
             if total == 0:
@@ -143,17 +170,17 @@ def voucher_form(id=None):
         if voucher.voucher_type == "JV":
             total_d = sum(
                 (
-                    Decimal(str(float(d)))
+                    _safe_dec(d)
                     for i, d in enumerate(debits)
-                    if d.strip() and accounts[i].strip()
+                    if d.strip() and i < len(accounts) and accounts[i].strip()
                 ),
                 Decimal("0"),
             )
             total_c = sum(
                 (
-                    Decimal(str(float(c)))
+                    _safe_dec(c)
                     for i, c in enumerate(credits)
-                    if c.strip() and accounts[i].strip()
+                    if c.strip() and i < len(accounts) and accounts[i].strip()
                 ),
                 Decimal("0"),
             )
@@ -217,12 +244,18 @@ def _approve_voucher(v):
 
 
 def _resolve_voucher_period():
+    from .reports import _parse_date
+
     filter_mode = request.args.get("filter_mode", "period")
     period_id = request.args.get("period_id", type=int)
     from_str = request.args.get("from", "").strip()
     to_str = request.args.get("to", "").strip()
-    from_date = datetime.strptime(from_str, "%Y-%m-%d") if from_str else None
-    to_date = datetime.strptime(to_str, "%Y-%m-%d") if to_str else None
+    from_date = _parse_date(from_str) if from_str else None
+    to_date = _parse_date(to_str) if to_str else None
+    if from_date:
+        from_date = datetime.combine(from_date, datetime.min.time())
+    if to_date:
+        to_date = datetime.combine(to_date, datetime.max.time())
 
     periods = AccountingPeriod.query.order_by(AccountingPeriod.start_date.desc()).all()
     selected_period_id = period_id

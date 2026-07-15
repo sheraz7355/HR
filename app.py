@@ -246,7 +246,7 @@ def _seed_all_data(app):
             "global_delivery": "FLOAT DEFAULT 0",
             "global_installation": "FLOAT DEFAULT 0",
             "approved_by": "INTEGER",
-            "approved_at": "DATETIME",
+            "approved_at": "TIMESTAMP",
         }
         for col, dtype in new_inv_cols.items():
             if col not in inv_cols:
