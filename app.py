@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, redirect, url_for, request
 from flask_login import current_user
+from werkzeug.exceptions import HTTPException
 
 
 def _create_app():
@@ -70,12 +71,43 @@ def _create_app():
                 print("DB INIT ERROR:", e)
                 _tb.print_exc()
 
-    @app.errorhandler(500)
-    def handle_500(e):
-        return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>{_tb.format_exc()}</pre>", 500
+    def _friendly_error_page(code, title, message):
+        return f"""<!doctype html><html><head><meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>{code} · {title}</title>
+<style>
+body{{font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+background:#f1f5f9;color:#1e293b;display:flex;align-items:center;justify-content:center;
+min-height:100vh;margin:0}}
+.box{{background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.06);
+padding:40px 44px;max-width:440px;text-align:center}}
+.code{{font-size:56px;font-weight:800;color:#2563eb;line-height:1;margin:0}}
+h1{{font-size:20px;margin:12px 0 6px}}
+p{{color:#64748b;font-size:14px;margin:0 0 22px}}
+a{{display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:9px 20px;
+border-radius:6px;font-size:14px;font-weight:600}}
+a:hover{{background:#1d4ed8}}
+</style></head><body><div class='box'>
+<p class='code'>{code}</p><h1>{title}</h1><p>{message}</p>
+<a href='/'>&larr; Back to dashboard</a></div></body></html>"""
+
+    @app.errorhandler(HTTPException)
+    def handle_http(e):
+        # Proper pages for expected HTTP errors (404 missing record, 403 denied,
+        # 405, etc.) instead of dumping a traceback — this is what made links to
+        # deleted/forbidden records look like a crash.
+        messages = {
+            403: "You don't have permission to view this page.",
+            404: "The page or record you're looking for doesn't exist.",
+            405: "That action isn't allowed here.",
+        }
+        msg = messages.get(e.code, e.description or "Something went wrong.")
+        return _friendly_error_page(e.code, e.name, msg), e.code
 
     @app.errorhandler(Exception)
     def handle_all(e):
+        # Genuine unexpected server error — keep the traceback (useful while the
+        # app is being stabilised) but only for real 500s, not HTTP errors.
         return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>{_tb.format_exc()}</pre>", 500
 
     return app
