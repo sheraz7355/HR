@@ -32,11 +32,34 @@ class Permission(db.Model):
     can_delete = db.Column(db.Boolean, default=False)
 
 
+class UserPermission(db.Model):
+    """Per-user fine-grained rights, managed by admin in the Settings module.
+
+    One row per (user, resource/section). A user with NO row for a resource
+    keeps full access (backward compatible); once admin saves that user's
+    rights, every section is stored explicitly and the flags govern.
+    """
+    __tablename__ = "user_permissions"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    resource = db.Column(db.String(100), nullable=False)
+    can_view = db.Column(db.Boolean, default=True)
+    can_create = db.Column(db.Boolean, default=False)
+    can_edit = db.Column(db.Boolean, default=False)
+    can_approve = db.Column(db.Boolean, default=False)
+    can_delete = db.Column(db.Boolean, default=False)
+
+    __table_args__ = (db.UniqueConstraint("user_id", "resource", name="uq_user_perm"),)
+
+
 class User(UserMixin, db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     employee_code = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
+    # Login identifier — distinct from email, but may hold the same value.
+    # Users sign in with this; defaults to the email at creation.
+    login_id = db.Column(db.String(120), unique=True)
     password_hash = db.Column(db.String(256), nullable=False)
     full_name = db.Column(db.String(100), nullable=False)
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
@@ -57,10 +80,27 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     has_hr_access = db.Column(db.Boolean, default=False)
     has_inventory_access = db.Column(db.Boolean, default=False)
+    has_invoicing_access = db.Column(db.Boolean, default=False)
+    has_finance_access = db.Column(db.Boolean, default=False)
+    has_accounting_access = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     manager = db.relationship("User", remote_side=[id], backref="direct_reports")
+
+    @classmethod
+    def employees(cls):
+        """Query for users visible inside the HR module.
+
+        Admin accounts are regulators, not employees — they must never appear
+        in HR lists, payroll, attendance or team views. Admin is managed only
+        from the ERP hub Settings.
+        """
+        admin_role = Role.query.filter_by(name=Role.ADMIN).first()
+        q = cls.query
+        if admin_role:
+            q = q.filter(cls.role_id != admin_role.id)
+        return q
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -79,6 +119,32 @@ class User(UserMixin, db.Model):
         if action == "delete":
             return perm.can_delete
         return False
+
+    def module_access(self, module_key):
+        """Whether this user may open a module. Admin sees everything."""
+        if self.is_admin():
+            return True
+        flags = {
+            "hr": self.has_hr_access,
+            "inventory": self.has_inventory_access,
+            "invoicing": self.has_invoicing_access,
+            "finance": self.has_finance_access,
+            "accounting": self.has_accounting_access,
+        }
+        return bool(flags.get(module_key))
+
+    def can(self, resource, action="view"):
+        """Per-user section rights (view/create/edit/approve/delete).
+
+        No UserPermission row for the resource means unrestricted — admin
+        restricts users explicitly via the Settings module.
+        """
+        if self.is_admin():
+            return True
+        perm = UserPermission.query.filter_by(user_id=self.id, resource=resource).first()
+        if perm is None:
+            return True
+        return bool(getattr(perm, f"can_{action}", False))
 
     def is_admin(self):
         return self.role_obj and self.role_obj.name == Role.ADMIN

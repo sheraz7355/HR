@@ -33,7 +33,7 @@ def index():
     if not _require_manager():
         return redirect(url_for("dashboard"))
     if current_user.is_admin():
-        reports = User.query.filter(User.is_active == True, User.id != current_user.id).order_by(User.full_name).all()
+        reports = User.employees().filter(User.is_active == True, User.id != current_user.id).order_by(User.full_name).all()
     else:
         reports = User.query.filter_by(manager_id=current_user.id, is_active=True).all()
     pending_leaves = LeaveRequest.query.filter(
@@ -130,6 +130,10 @@ def approve_loan(lid):
         loan.status = "approved"
         loan.approved_by = current_user.id
         loan.approved_at = datetime.utcnow()
+        # Loans created before ledger integration get their account on approval.
+        from shared.ledger_utils import create_entity_account
+        create_entity_account("loan", loan.id,
+                              f"{loan.request_type.title()} #{loan.id} - {loan.user.full_name}")
         loan.queue_for_payroll = True
         _notify(loan.user_id, "Loan Approved", f"Your loan of Rs.{loan.amount:,.0f} has been approved.", "success")
     else:
@@ -160,7 +164,7 @@ def team():
     if not _require_manager():
         return redirect(url_for("dashboard"))
     if current_user.is_admin():
-        reports = User.query.filter(User.is_active == True, User.id != current_user.id).order_by(User.full_name).all()
+        reports = User.employees().filter(User.is_active == True, User.id != current_user.id).order_by(User.full_name).all()
     else:
         reports = User.query.filter_by(manager_id=current_user.id, is_active=True).all()
     return render_template("mss/team.html", members=reports)

@@ -29,6 +29,7 @@ def _create_app():
         jinja2.FileSystemLoader([
             os.path.join(os.path.dirname(__file__), "hr_app", "templates"),
             os.path.join(os.path.dirname(__file__), "inventory_app", "templates"),
+            os.path.join(os.path.dirname(__file__), "invoicing_app", "templates"),
             os.path.join(os.path.dirname(__file__), "finance_app", "templates"),
         ]),
     ])
@@ -40,11 +41,17 @@ def _create_app():
     from shared.routes.dashboard import dashboard_bp
     app.register_blueprint(dashboard_bp)
 
+    from shared.routes.admin_settings import admin_settings_bp
+    app.register_blueprint(admin_settings_bp)
+
     from hr_app.app import register_hr_blueprints
     register_hr_blueprints(app)
 
     from inventory_app.app import register_inventory_blueprints
     register_inventory_blueprints(app)
+
+    from invoicing_app.app import register_invoicing_blueprints
+    register_invoicing_blueprints(app)
 
     from finance_app.app import register_finance_blueprints
     register_finance_blueprints(app)
@@ -148,6 +155,10 @@ def _migrate_schema(db):
         ("accounting_periods", "is_active", bool_true),
         ("users", "has_hr_access", bool_false),
         ("users", "has_inventory_access", bool_false),
+        ("users", "has_invoicing_access", bool_false),
+        ("users", "has_finance_access", bool_false),
+        ("users", "has_accounting_access", bool_false),
+        ("users", "login_id", "VARCHAR(120)"),
         ("inv_suppliers", "mobile", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "tax_id", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "payment_terms", "VARCHAR(200) DEFAULT ''"),
@@ -333,7 +344,17 @@ def _seed_all_data(app):
                 u.has_hr_access = True
                 u.has_inventory_access = (u.role_id == admin_role.id or u.role_id == mgr_role.id)
 
+        # One-time backfill: invoicing was split out of inventory, so users who
+        # had inventory access keep working in the new Invoicing module.
+        if not User.query.filter_by(has_invoicing_access=True).first():
+            for u in User.query.all():
+                u.has_invoicing_access = bool(u.has_inventory_access)
+
         seed_users = [
+            # Built-in system administrator — always present, hidden from the HR
+            # module, manageable only via ERP hub Settings. Created once; a
+            # changed password is never reset by seeding.
+            ("SYSADMIN", "admin@gmail.com", "Administrator", admin_role.id, "admin123", True, True, "System Administrator"),
             ("ADM001", "admin@solarkon.com", "System Admin", admin_role.id, "admin123", True, True, "Administrator"),
             ("MGR002", "manager@solarkon.com", "Manager User", mgr_role.id, "mgr123", True, True, "Manager"),
             ("EMP001", "emp@solarkon.com", "Employee User", emp_role.id, "emp123", True, False, "Employee"),
@@ -423,6 +444,26 @@ def _seed_all_data(app):
         from shared.models.company_settings import CompanyInfo, AccountingPeriod
         CompanyInfo.get()
         AccountingPeriod.seed_current_year()
+
+        # Backfill level-4 subledger accounts for entities created before the
+        # auto-ledger feature (idempotent — keyed on deterministic codes).
+        from shared.ledger_utils import create_entity_account
+        from hr_app.models.loan import LoanAdvanceRequest
+        for s in InvSupplier.query.all():
+            create_entity_account("supplier", s.id, s.name)
+        for c in InvCustomer.query.all():
+            create_entity_account("customer", c.id, c.name)
+        for p in InvProduct.query.all():
+            create_entity_account("product", p.id, f"{p.name} ({p.sku})")
+        for u in User.query.all():
+            create_entity_account("employee", u.id, f"{u.full_name} ({u.employee_code})")
+            # Login id defaults to the email until the user/admin changes it.
+            if not u.login_id:
+                u.login_id = u.email
+        for ln in LoanAdvanceRequest.query.filter(
+                LoanAdvanceRequest.status.in_(["pending", "approved"])).all():
+            create_entity_account("loan", ln.id,
+                                  f"{ln.request_type.title()} #{ln.id} - {ln.user.full_name if ln.user else ''}")
 
         db.session.commit()
         print("Seed data OK")

@@ -12,7 +12,14 @@
   <a href="{{ url_for('inv_auth.dashboard') }}" style="display:flex;flex-direction:column;align-items:center;text-align:center;background:#fff;border-radius:10px;padding:36px 20px;text-decoration:none;color:#1f2937;border:1px solid #e5e7eb;transition:all .15s;" onmouseover="this.style.borderColor='#2563eb';this.style.boxShadow='0 4px 12px rgba(37,99,235,.1)';" onmouseout="this.style.borderColor='#e5e7eb';this.style.boxShadow='none';">
     <div style="font-size:40px;margin-bottom:12px;">&#128230;</div>
     <h3 style="margin:0 0 6px;font-size:16px;font-weight:600;">Inventory Management</h3>
-    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.4;">Products, Purchases, Sales, Invoices, Stock Control</p>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.4;">Products, Categories, Stock Movements, Vouchers, Reports</p>
+  </a>
+  {% endif %}
+  {% if has_invoicing %}
+  <a href="{{ url_for('invoicing.dashboard') }}" style="display:flex;flex-direction:column;align-items:center;text-align:center;background:#fff;border-radius:10px;padding:36px 20px;text-decoration:none;color:#1f2937;border:1px solid #e5e7eb;transition:all .15s;" onmouseover="this.style.borderColor='#0d9488';this.style.boxShadow='0 4px 12px rgba(13,148,136,.1)';" onmouseout="this.style.borderColor='#e5e7eb';this.style.boxShadow='none';">
+    <div style="font-size:40px;margin-bottom:12px;">&#129534;</div>
+    <h3 style="margin:0 0 6px;font-size:16px;font-weight:600;">Invoicing</h3>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.4;">Suppliers, Customers, Purchase &amp; Sales Orders, Invoices, Returns</p>
   </a>
   {% endif %}
   {% if has_finance %}
@@ -27,6 +34,13 @@
     <div style="font-size:40px;margin-bottom:12px;">&#128202;</div>
     <h3 style="margin:0 0 6px;font-size:16px;font-weight:600;">Accounting</h3>
     <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.4;">Vouchers (CPV, CRV, BPV, BRV, JV), Chart of Accounts</p>
+  </a>
+  {% endif %}
+  {% if has_settings %}
+  <a href="{{ url_for('admin_settings.users') }}" style="display:flex;flex-direction:column;align-items:center;text-align:center;background:#fff;border-radius:10px;padding:36px 20px;text-decoration:none;color:#1f2937;border:1px solid #e5e7eb;transition:all .15s;" onmouseover="this.style.borderColor='#1f2937';this.style.boxShadow='0 4px 12px rgba(31,41,55,.1)';" onmouseout="this.style.borderColor='#e5e7eb';this.style.boxShadow='none';">
+    <div style="font-size:40px;margin-bottom:12px;">&#9881;&#65039;</div>
+    <h3 style="margin:0 0 6px;font-size:16px;font-weight:600;">Settings</h3>
+    <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.4;">Users, Module Access &amp; Rights (Admin only)</p>
   </a>
   {% endif %}
 {% endblock %}

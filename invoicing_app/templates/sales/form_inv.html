@@ -1,0 +1,171 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Sales Order{% endblock %}
+{% block page_title %}Sales Order{% endblock %}
+{% block extra_css %}
+<style>
+:root {
+  --qb-bg: #f5f5f5; --qb-card: #ffffff; --qb-border: #d1d5db;
+  --qb-text: #1f2937; --qb-text-muted: #6b7280; --qb-text-light: #9ca3af;
+  --qb-primary: #2563eb; --qb-primary-hover: #1d4ed8;
+  --qb-input-border: #d1d5db; --qb-table-header-bg: #f3f4f6; --qb-table-border: #e5e7eb;
+}
+body { background: var(--qb-bg); }
+.invoice-wrap { max-width: 1000px; margin: 0 auto; padding: 20px 0; }
+.qb-card { background: var(--qb-card); margin-bottom: 1px; border: none; }
+.qb-card .card-header { padding: 14px 20px; background: var(--qb-table-header-bg); border-bottom: 1px solid var(--qb-table-border); font-size: 13px; font-weight: 600; color: var(--qb-text); letter-spacing: 0.3px; }
+.qb-card .card-body { padding: 16px 20px; }
+.qb-field { margin-bottom: 10px; }
+.qb-field label { display: block; font-size: 11px; font-weight: 600; color: var(--qb-text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.qb-field .qb-input { display: block; width: 100%; padding: 6px 8px; font-size: 13px; color: var(--qb-text); background: #fff; border: 1px solid var(--qb-input-border); box-sizing: border-box; }
+.qb-field .qb-input:focus { border-color: var(--qb-primary); outline: none; box-shadow: 0 0 0 2px rgba(37,99,235,.1); }
+.qb-field select.qb-input { cursor: pointer; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--qb-table-border); }
+.qb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qb-table th { background: var(--qb-table-header-bg); padding: 8px 10px; font-size: 11px; font-weight: 600; color: var(--qb-text-muted); text-align: left; border-bottom: 2px solid var(--qb-table-border); text-transform: uppercase; letter-spacing: 0.4px; white-space: nowrap; }
+.qb-table td { padding: 4px 6px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; white-space: nowrap; }
+.qb-table .ri { width: 100%; border: 1px solid transparent; padding: 7px 8px; font-size: 13px; background: transparent; box-sizing: border-box; min-height: 34px; }
+.qb-table .ri:focus { border-color: var(--qb-primary); box-shadow: 0 0 0 2px rgba(37,99,235,.1); outline: none; background: #fff; }
+.qb-table .ri.rc { background: transparent; color: var(--qb-text); font-weight: 600; border: none; }
+.qb-table .rn { width: 24px; text-align: center; color: var(--qb-text-light); font-size: 11px; }
+.qb-table tr:hover td { background: #fafafa; }
+.action-bar { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; padding: 12px 0; border-top: 1px solid var(--qb-table-border); }
+.btn-qb { padding: 8px 22px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+.btn-qb-primary { background: var(--qb-primary); color: #fff; }
+.btn-qb-primary:hover { background: var(--qb-primary-hover); }
+.btn-qb-outline { background: #fff; color: var(--qb-text); border: 1px solid var(--qb-input-border); }
+.btn-qb-outline:hover { background: #f3f4f6; }
+@media(max-width:768px){.invoice-wrap{padding:12px}.qb-card .card-body{padding:12px 14px}.qb-card .card-header{padding:10px 14px}.table-wrap::after{content:'\2190  Scroll for more  \2192';display:block;text-align:center;font-size:10px;color:var(--qb-text-light);padding:2px;background:var(--qb-table-header-bg);border-top:1px solid var(--qb-table-border)}.qb-table{font-size:12px}.qb-table th{padding:6px 6px;font-size:10px}.qb-table .ri{padding:5px 6px;font-size:12px;min-height:30px}.action-bar{flex-wrap:wrap}.btn-qb{width:100%;justify-content:center}}
+@media(max-width:480px){.invoice-wrap{padding:8px}}
+@media print { .sidebar, .topbar, .action-bar, .table-wrap::after { display: none !important; } body { background: #fff; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice-wrap">
+  <form method="POST" id="soForm">
+    <div class="qb-card">
+      <div class="card-header">Sales Order</div>
+      <div class="card-body">
+        <div class="qb-field">
+          <label>Customer</label>
+          <select name="customer_id" class="qb-input" required>
+            <option value="">Select Customer</option>
+            {% for c in customers %}
+            <option value="{{ c.id }}">{{ c.name }} ({{ c.city or '' }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="qb-field">
+          <label>Notes</label>
+          <textarea name="notes" class="qb-input" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="qb-card">
+      <div class="card-header">Items</div>
+      <div class="card-body" style="padding:8px 0;">
+        <div class="table-wrap">
+          <table class="qb-table">
+            <thead>
+              <tr>
+                <th style="width:28px;">#</th>
+                <th style="min-width:80px;">Code</th>
+                <th style="min-width:140px;">Description</th>
+                <th class="num">Quantity</th>
+                <th class="num" style="min-width:80px;">Unit Price</th>
+                <th class="num">Amount</th>
+                <th style="width:44px;"></th>
+              </tr>
+            </thead>
+            <tbody id="itemsBody"></tbody>
+          </table>
+        </div>
+        <button type="button" class="btn-qb btn-qb-outline" onclick="addRow({})" style="margin-top:8px;margin-left:8px;">+ Add Row</button>
+      </div>
+    </div>
+
+    <div class="qb-card">
+      <div class="card-body">
+        <div style="text-align:right;padding:8px 0;">
+          <span style="font-size:13px;color:var(--qb-text-muted);">Total Amount: </span>
+          <span style="font-size:20px;font-weight:800;color:var(--qb-text);" id="soTotal">0.00</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar">
+      <button type="submit" class="btn-qb btn-qb-primary">&#128190; Create SO</button>
+      <a href="{{ url_for('inv_sales.list_sales') }}" class="btn-qb btn-qb-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+var products = {{ products|tojson }};
+var rowCount = 0;
+function fmt(v){var n=parseFloat(v)||0;return n.toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2})}
+
+function addRow(data) {
+  var tbody = document.getElementById('itemsBody');
+  var tr = document.createElement('tr');
+  rowCount++;
+  tr.innerHTML =
+    '<td class="rn">' + rowCount + '</td>' +
+    '<td><input type="text" class="ri" data-col="code" placeholder="SKU" value="' + ((data && data.sku) || '') + '"></td>' +
+    '<td><select name="product_id[]" class="ri" data-col="product" required style="cursor:pointer;">' +
+      '<option value="">Select Product</option>' +
+      products.map(function(p) {
+        var sel = (data && data.product_id == p.id) ? 'selected' : '';
+        return '<option value="' + p.id + '" data-price="' + p.unit_price + '" data-stock="' + p.current_stock + '" ' + sel + '>' + p.name + ' (' + p.sku + ') - Stock: ' + p.current_stock + '</option>';
+      }).join('') +
+    '</select></td>' +
+    '<td><input type="number" name="quantity[]" class="ri" data-col="quantity" value="' + ((data && data.quantity) || 1) + '" min="1" required></td>' +
+    '<td><input type="number" step="0.01" name="unit_price[]" class="ri" data-col="unit_price" value="' + ((data && data.unit_price) || 0) + '" min="0" required></td>' +
+    '<td><input type="text" class="ri rc" data-col="amount" value="0" readonly></td>' +
+    '<td><button type="button" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:16px;padding:2px;" onclick="removeRow(this)">&times;</button></td>';
+  tbody.appendChild(tr);
+
+  tr.querySelectorAll('input[data-col], select[data-col]').forEach(function(el) {
+    el.addEventListener('input', function() { recalcRow(tr); recalcTotal(); });
+    el.addEventListener('change', function() { recalcRow(tr); recalcTotal(); });
+  });
+
+  var sel = tr.querySelector('select[data-col="product"]');
+  if (sel) {
+    sel.addEventListener('change', function() {
+      var opt = this.options[this.selectedIndex];
+      var price = opt?.dataset?.price || 0;
+      var priceInput = tr.querySelector('[data-col="unit_price"]');
+      if (priceInput && !parseFloat(priceInput.value)) { priceInput.value = price; recalcRow(tr); recalcTotal(); }
+    });
+  }
+  return tr;
+}
+
+function removeRow(btn) {
+  var tr = btn.closest('tr');
+  var tbody = document.getElementById('itemsBody');
+  if (tbody.children.length <= 1) return;
+  tr.remove();
+  document.querySelectorAll('#itemsBody .rn').forEach(function(el, i) { el.textContent = i + 1; });
+  recalcTotal();
+}
+
+function recalcRow(tr) {
+  var qty = parseFloat(tr.querySelector('[data-col="quantity"]').value) || 0;
+  var price = parseFloat(tr.querySelector('[data-col="unit_price"]').value) || 0;
+  tr.querySelector('[data-col="amount"]').value = fmt(qty * price);
+}
+
+function recalcTotal() {
+  var total = 0;
+  document.querySelectorAll('#itemsBody tr').forEach(function(tr) {
+    total += parseFloat((tr.querySelector('[data-col="amount"]').value||'0').replace(/,/g,'')) || 0;
+  });
+  document.getElementById('soTotal').textContent = 'Rs. '+fmt(total);
+}
+
+addRow({});
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Purchase Invoices{% endblock %}
+{% block page_title %}Purchase Invoices{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="{{ url_for('inv_purchase_invoice.invoice_form') }}" class="btn btn-primary">+ New Invoice</a>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr><th>Invoice #</th><th>Voucher #</th><th>Supplier</th><th>Date</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for inv in invoices %}
+        <tr>
+          <td><strong>{{ inv.invoice_number }}</strong></td>
+          <td>{{ inv.voucher_number }}</td>
+          <td>{{ inv.supplier.name }}</td>
+          <td>{{ inv.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>{{ "%.2f"|format(inv.net_payable) }}</td>
+          <td>
+            <span class="badge badge-{{ inv.status }}">
+              {% if inv.status == 'new' %}New
+              {% elif inv.status == 'unapproved' %}Unapproved
+              {% elif inv.status == 'approved' %}Approved
+              {% else %}{{ inv.status }}{% endif %}
+            </span>
+          </td>
+          <td class="actions" style="display:flex;gap:4px;">
+            <a href="{{ url_for('inv_purchase_invoice.invoice_form', id=inv.id) }}" class="btn btn-sm btn-outline" title="View">&#128065; View</a>
+            {% if inv.status != 'approved' %}
+            <a href="{{ url_for('inv_purchase_invoice.invoice_form', id=inv.id) }}" class="btn btn-sm btn-outline" title="Edit">&#9998; Edit</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No purchase invoices</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<style>
+.badge-new { background:#e2e8f0; color:#475569; }
+.badge-unapproved { background:#fef3c7; color:#92400e; }
+.badge-approved { background:#dcfce7; color:#16a34a; }
+</style>
+{% endblock %}

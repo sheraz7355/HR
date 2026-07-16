@@ -13,17 +13,10 @@
       </div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: #dcfce7; color: #16a34a;">S</div>
-      <div class="stat-body">
-        <div class="stat-value">{{ total_suppliers }}</div>
-        <div class="stat-label">Suppliers</div>
-      </div>
-    </div>
-    <div class="stat-card">
       <div class="stat-icon" style="background: #dbeafe; color: #2563eb;">C</div>
       <div class="stat-body">
-        <div class="stat-value">{{ total_customers }}</div>
-        <div class="stat-label">Customers</div>
+        <div class="stat-value">{{ total_categories }}</div>
+        <div class="stat-label">Categories</div>
       </div>
     </div>
     <div class="stat-card">
@@ -51,21 +44,6 @@
 
   <!-- Alerts -->
   <div class="alert-grid">
-    {% if pending_po > 0 %}
-    <div class="alert-card alert-warning">
-      <strong>{{ pending_po }}</strong> pending purchase order{% if pending_po != 1 %}s{% endif %} &mdash; <a href="{{ url_for('inv_purchases.list_purchases') }}">View</a>
-    </div>
-    {% endif %}
-    {% if pending_so > 0 %}
-    <div class="alert-card alert-info">
-      <strong>{{ pending_so }}</strong> pending sales order{% if pending_so != 1 %}s{% endif %} &mdash; <a href="{{ url_for('inv_sales.list_sales') }}">View</a>
-    </div>
-    {% endif %}
-    {% if unpaid_invoices > 0 %}
-    <div class="alert-card alert-danger">
-      <strong>{{ unpaid_invoices }}</strong> unpaid invoice{% if unpaid_invoices != 1 %}s{% endif %} &mdash; <a href="{{ url_for('inv_invoices.list_invoices') }}">View</a>
-    </div>
-    {% endif %}
     {% if low_stock > 0 %}
     <div class="alert-card alert-danger">
       <strong>{{ low_stock }}</strong> product{% if low_stock != 1 %}s{% endif %} below reorder level &mdash; <a href="{{ url_for('inv_reports.low_stock_report') }}">Report</a>
@@ -107,8 +85,8 @@
       <div class="card-body">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
           <a href="{{ url_for('inv_products.create_product') }}" class="btn btn-primary" style="text-align:center;">+ Product</a>
-          <a href="{{ url_for('inv_purchases.create_purchase') }}" class="btn btn-outline" style="text-align:center;">+ Purchase Order</a>
-          <a href="{{ url_for('inv_sales.create_sale') }}" class="btn btn-outline" style="text-align:center;">+ Sales Order</a>
+          <a href="{{ url_for('inv_stock.list_stock') }}" class="btn btn-outline" style="text-align:center;">Stock Movements</a>
+          <a href="{{ url_for('inv_vouchers.adjustment_form') }}" class="btn btn-outline" style="text-align:center;">+ Adjustment</a>
           <a href="{{ url_for('inv_vouchers.consumption_form') }}" class="btn btn-outline" style="text-align:center;">+ Consumption</a>
           <a href="{{ url_for('inv_vouchers.scrap_form') }}" class="btn btn-outline" style="text-align:center;">+ Scrap</a>
           <a href="{{ url_for('inv_vouchers.stock_take_form') }}" class="btn btn-outline" style="text-align:center;">+ Stock Take</a>

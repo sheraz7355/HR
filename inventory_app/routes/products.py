@@ -4,6 +4,8 @@ from ..extensions import db
 from ..models.product import InvProduct
 from ..models.category import InvCategory
 from ..models.stock_movement import InvStockMovement
+from shared.ledger_utils import create_entity_account
+from shared.permissions import deny_page
 
 inv_prod_bp = Blueprint("inv_products", __name__, url_prefix="/inventory/products")
 
@@ -26,6 +28,8 @@ def list_products():
 @inv_prod_bp.route("/create", methods=["GET", "POST"])
 @login_required
 def create_product():
+    if deny_page("products", "create"):
+        return redirect(url_for("inv_products.list_products"))
     if request.method == "POST":
         prod = InvProduct(
             sku=request.form["sku"],
@@ -39,8 +43,10 @@ def create_product():
             unit=request.form.get("unit", "pcs"),
         )
         db.session.add(prod)
+        db.session.flush()
+        create_entity_account("product", prod.id, f"{prod.name} ({prod.sku})")
         db.session.commit()
-        flash("Product created", "success")
+        flash(f"Product created — ledger account '{prod.name} ({prod.sku})' added under Inventory", "success")
         return redirect(url_for("inv_products.list_products"))
     categories = InvCategory.query.filter_by(is_active=True).all()
     return render_template("products/form_inv.html", product=None, categories=categories)
@@ -49,6 +55,8 @@ def create_product():
 @inv_prod_bp.route("/edit/<int:id>", methods=["GET", "POST"])
 @login_required
 def edit_product(id):
+    if deny_page("products", "edit"):
+        return redirect(url_for("inv_products.list_products"))
     prod = InvProduct.query.get_or_404(id)
     if request.method == "POST":
         prod.sku = request.form["sku"]
@@ -60,6 +68,7 @@ def edit_product(id):
         prod.reorder_level = request.form.get("reorder_level", 0, type=int)
         prod.unit = request.form.get("unit", "pcs")
         prod.is_active = request.form.get("is_active") == "on"
+        create_entity_account("product", prod.id, f"{prod.name} ({prod.sku})")
         db.session.commit()
         flash("Product updated", "success")
         return redirect(url_for("inv_products.list_products"))
@@ -70,6 +79,8 @@ def edit_product(id):
 @inv_prod_bp.route("/delete/<int:id>")
 @login_required
 def delete_product(id):
+    if deny_page("products", "delete"):
+        return redirect(url_for("inv_products.list_products"))
     prod = InvProduct.query.get_or_404(id)
     if prod.po_items.count() > 0 or prod.so_items.count() > 0:
         flash("Cannot delete product with order history", "error")

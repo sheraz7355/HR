@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Invoicing{% endblock %} - Solarkon ERP</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  {% if current_user.is_authenticated %}
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar" style="overflow-y:auto;overflow-x:hidden;">
+      <div class="sidebar-header">
+        <div class="brand-icon" style="background:linear-gradient(135deg,#0d9488,#14b8a6);">V</div>
+        <h2>Solarkon Invoicing</h2>
+      </div>
+      <div class="sidebar-user">
+        <div class="sidebar-user-avatar" style="background:linear-gradient(135deg,#0d9488,#14b8a6);">
+          {{ current_user.full_name[:1] }}
+        </div>
+        <div class="sidebar-user-info">
+          <div class="sidebar-user-name">{{ current_user.full_name }}</div>
+          <div class="sidebar-user-role">{{ current_user.role_obj.name|title if current_user.role_obj else '' }}</div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="{{ url_for('invoicing.dashboard') }}" class="nav-item {{ 'active' if request.endpoint == 'invoicing.dashboard' else '' }}">
+          <span class="nav-icon">&#9679;</span><span>Dashboard</span>
+        </a>
+        <div class="nav-group {{ 'expanded' if request.endpoint and (request.endpoint.startswith('inv_suppliers') or request.endpoint.startswith('inv_purchases') or request.endpoint.startswith('inv_purchase_invoice') or request.endpoint.startswith('inv_purchase_return')) else '' }}" data-group="procurement">
+          <div class="nav-group-header">
+            <span class="nav-icon">&#128230;</span><span>Procurement</span><span class="group-chevron">&#9662;</span>
+          </div>
+          <div class="nav-group-items">
+            <a href="{{ url_for('inv_suppliers.list_suppliers') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_suppliers') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>Suppliers</span>
+            </a>
+            {% if purchase_flow == 'with_po' %}
+            <a href="{{ url_for('inv_purchases.list_purchases') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchases') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>Purchase Orders</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchase_invoice') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>{% if purchase_flow == 'with_po' %}Invoice Against PO{% else %}Purchase Invoice{% endif %}</span>
+            </a>
+            <a href="{{ url_for('inv_purchase_return.list_returns') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchase_return') else '' }}">
+              <span class="nav-icon" style="color:#dc2626;">&#9632;</span><span>Purchase Return</span>
+            </a>
+          </div>
+        </div>
+        <div class="nav-group {{ 'expanded' if request.endpoint and (request.endpoint.startswith('inv_customers') or request.endpoint.startswith('inv_sales') or request.endpoint.startswith('inv_invoices')) else '' }}" data-group="sales">
+          <div class="nav-group-header">
+            <span class="nav-icon">&#128176;</span><span>Sales</span><span class="group-chevron">&#9662;</span>
+          </div>
+          <div class="nav-group-items">
+            <a href="{{ url_for('inv_customers.list_customers') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_customers') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>Customers</span>
+            </a>
+            {% if sales_flow == 'with_so' %}
+            <a href="{{ url_for('inv_sales.list_sales') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_sales') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>Sales Orders</span>
+            </a>
+            {% endif %}
+            <a href="{{ url_for('inv_invoices.list_invoices') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_invoices') else '' }}">
+              <span class="nav-icon">&#9632;</span><span>{% if sales_flow == 'with_so' %}Invoice Against SO{% else %}Sales Invoice{% endif %}</span>
+            </a>
+          </div>
+        </div>
+      </nav>
+      <div class="sidebar-footer" style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.06);">
+        <a href="{{ url_for('inv_settings.settings_page') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_settings') else '' }}" style="color:rgba(255,255,255,0.5);">
+          <span class="nav-icon">&#9881;</span><span>Invoice Settings</span>
+        </a>
+        <a href="{{ url_for('auth.logout') }}" class="nav-item" style="color:rgba(255,255,255,0.5);">
+          <span class="nav-icon">&#9654;</span><span>Logout</span>
+        </a>
+        <a href="{{ url_for('dashboard.hub') }}" class="nav-item" style="color:rgba(255,255,255,0.5);">
+          <span class="nav-icon">&#9632;</span><span>ERP Hub</span>
+        </a>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <button class="sidebar-toggle" id="sidebar-toggle">&#9776;</button>
+        <h2 class="page-title" style="font-size:16px;font-weight:600;flex:1;margin:0 16px;">{% block page_title %}Dashboard{% endblock %}</h2>
+        <div class="topbar-right">
+          <span style="font-size:11px;background:#ccfbf1;color:#0d9488;padding:2px 8px;border-radius:4px;font-weight:600;">INVOICING</span>
+          <div class="user-menu">
+            <div class="avatar" style="background:linear-gradient(135deg,#0d9488,#14b8a6);">
+              {{ current_user.full_name[:1] }}
+            </div>
+            <span class="user-name">{{ current_user.full_name }}</span>
+            <span class="user-role">{{ current_user.role_obj.name|title if current_user.role_obj else '' }}</span>
+            <a href="{{ url_for('auth.logout') }}" class="btn-link" style="font-size:13px;color:#6b7280;">Logout</a>
+          </div>
+        </div>
+      </header>
+      <div class="content-area">
+        {% include '_flash.html' %}
+        {% block content %}{% endblock %}
+      </div>
+    </main>
+  </div>
+
+  <script>
+    document.querySelectorAll('.nav-group-header').forEach(function(header) {
+      header.addEventListener('click', function() {
+        var group = this.closest('.nav-group');
+        group.classList.toggle('expanded');
+      });
+    });
+    document.getElementById('sidebar-toggle')?.addEventListener('click', function() {
+      document.getElementById('sidebar').classList.toggle('collapsed');
+    });
+  </script>
+  {% block extra_scripts %}{% endblock %}
+  {% else %}
+  <div class="login-layout">
+    {% block login_content %}{% endblock %}
+  </div>
+  {% endif %}
+</body>
+</html>

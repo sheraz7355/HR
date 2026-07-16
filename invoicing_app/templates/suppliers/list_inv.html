@@ -1,0 +1,40 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Suppliers{% endblock %}
+{% block page_title %}Suppliers{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="{{ url_for('inv_suppliers.create_supplier') }}" class="btn btn-primary">+ New Supplier</a>
+</div>
+<div class="card">
+  <div class="card-body" style="padding-bottom:8px;">
+    <form method="GET" class="search-form">
+      <input type="text" name="q" class="form-control focus-ring" placeholder="Search by name or city..." value="{{ request.args.get('q','') }}">
+      <button type="submit" class="btn btn-outline">Search</button>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table">
+      <thead><tr><th>Name</th><th>Contact</th><th>Phone</th><th>Email</th><th>City</th><th>Orders</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for s in suppliers %}
+        <tr class="{% if not s.is_active %}inactive-row{% endif %}">
+          <td><strong>{{ s.name }}</strong></td>
+          <td>{{ s.contact_person or '-' }}</td>
+          <td>{{ s.phone or '-' }}</td>
+          <td>{{ s.email or '-' }}</td>
+          <td>{{ s.city or '-' }}</td>
+          <td>{{ s.purchase_orders.count() }}</td>
+          <td><span class="badge {% if s.is_active %}badge-success{% else %}badge-secondary{% endif %}">{{ 'Active' if s.is_active else 'Inactive' }}</span></td>
+          <td class="actions">
+            <a href="{{ url_for('inv_suppliers.edit_supplier', id=s.id) }}" class="btn btn-sm btn-outline">Edit</a>
+            <a href="{{ url_for('inv_suppliers.delete_supplier', id=s.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">Delete</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No suppliers</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

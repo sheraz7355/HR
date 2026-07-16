@@ -20,6 +20,7 @@
         <div class="form-group">
             <label>Full Name *</label>
             <input type="text" name="full_name" class="form-control" required value="{{ user.full_name if user else '' }}">
+            <small style="display:block;margin-top:4px;color:#2563eb;font-weight:500;">&#9432; This name will appear in ledgers — a 4th-level employee ledger account is created automatically.</small>
         </div>
         <div class="form-row">
             <div class="form-group">

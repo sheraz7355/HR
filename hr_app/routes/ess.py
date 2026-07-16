@@ -137,6 +137,10 @@ def loans():
         loan.monthly_installment = round(loan.amount / loan.installment_months, 2)
         loan.remaining_amount = loan.amount
         db.session.add(loan)
+        db.session.flush()
+        from shared.ledger_utils import create_entity_account
+        create_entity_account("loan", loan.id,
+                              f"{loan.request_type.title()} #{loan.id} - {current_user.full_name}")
         if current_user.manager_id:
             notif = Notification(title="Loan Request", message=f"{current_user.full_name} requests a loan of Rs.{loan.amount:,.0f}",
                                  notification_type="info", module="loans", reference_id=loan.id, created_by=current_user.id)

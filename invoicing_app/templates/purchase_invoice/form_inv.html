@@ -1,0 +1,476 @@
+{% extends "layouts/base_invoicing.html" %}
+{% set status = invoice.status if invoice else 'new' %}
+{% set is_new = status == 'new' %}
+{% set is_unapproved = status == 'unapproved' %}
+{% set is_approved = status == 'approved' %}
+{% block title %}{{ 'Approved' if is_approved else ('Unapproved' if is_unapproved else 'New') }} Purchase Invoice{% endblock %}
+{% block page_title %}{{ 'Approved' if is_approved else ('Unapproved' if is_unapproved else 'New') }} Purchase Invoice{% endblock %}
+{% block extra_css %}
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{--bg:#f1f5f9;--card:#fff;--border:#e2e8f0;--text:#1e293b;--muted:#64748b;--light:#94a3b8;--primary:#2563eb;--primary-hover:#1d4ed8;--primary-light:#eff6ff;--danger:#ef4444;--success:#22c55e;--warning:#f59e0b;--radius:8px;--shadow:0 1px 3px 0 rgba(0,0,0,0.06),0 1px 2px -1px rgba(0,0,0,0.06)}
+body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:var(--text);margin:0;font-size:14px}
+.wrap{max-width:1240px;margin:0 auto;padding:24px}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);margin-bottom:16px;overflow:hidden}
+.card-h{padding:12px 20px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;justify-content:space-between;background:#f8fafc}
+.card-b{padding:16px 20px}
+.lbl{display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.inp,.sel{display:block;width:100%;padding:7px 10px;font-size:13px;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:5px;outline:none;transition:border-color .12s,box-shadow .12s}
+.inp:focus,.sel:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.inp:disabled,.sel:disabled{background:#f8fafc;color:var(--light)}
+.inp-plain{background:transparent;border-color:transparent;padding-left:0;padding-right:0;color:var(--text);font-weight:500;cursor:default}
+.inp-plain:focus{box-shadow:none;border-color:transparent;background:transparent}
+.inp-plain:disabled{background:transparent;color:var(--text);opacity:.85}
+.inp-sm{padding:5px 8px;font-size:12px}
+.hdr-g{display:grid;grid-template-columns:1.6fr 1.2fr 1fr;gap:20px;align-items:start}
+.ac-wrap{position:relative}
+.ac-dd{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:0 0 5px 5px;z-index:200;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.1);display:none}
+.ac-dd.show{display:block}
+.ac-it{padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center}
+.ac-it:hover,.ac-it.hl{background:var(--primary-light)}
+.ac-it .ac-n{font-weight:600}
+.ac-it .ac-s{font-size:11px;color:var(--light)}
+/* Pill toggles */
+.pills{display:flex;gap:16px;align-items:center}
+.pill-g{display:flex;align-items:center;gap:6px}
+.pill-lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+.pill{display:inline-flex;gap:0}
+.pill-b{padding:4px 12px;font-size:11px;font-weight:600;color:var(--muted);border:1px solid var(--border);cursor:pointer;background:#fff;user-select:none;transition:all .1s;line-height:1.5}
+.pill-b:first-child{border-radius:12px 0 0 12px}
+.pill-b:last-child{border-radius:0 12px 12px 0}
+.pill-b:not(:last-child){border-right:none}
+.pill-b.active{background:var(--primary-light);border-color:var(--primary);color:var(--primary);z-index:1}
+.pill-b:disabled{opacity:.4;cursor:not-allowed}
+/* Table */
+.tb-w{overflow-x:auto;border:1px solid var(--border);border-radius:5px;-webkit-overflow-scrolling:touch}
+.tb-w::after{content:'\2190  Scroll for more columns  \2192';display:block;text-align:center;font-size:10px;color:var(--light);padding:2px;background:#f8fafc;border-top:1px solid var(--border)}
+.tb{width:100%;border-collapse:collapse;font-size:13px}
+.tb th{padding:8px 10px;font-size:11px;font-weight:700;color:var(--muted);background:#f8fafc;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.tb td{padding:4px 6px;border-bottom:1px solid #f1f5f9;vertical-align:middle;white-space:nowrap}
+.tb tr:hover td{background:#fafafa}
+.tb .ri{width:100%;border:1px solid transparent;padding:7px 8px;font-size:13px;background:transparent;outline:none;border-radius:4px;font-family:inherit;min-height:34px;box-sizing:border-box}
+.tb .ri:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(37,99,235,.1);outline:none;background:#fff}
+.tb .ri:disabled{background:transparent;color:var(--muted)}
+.tb .ri.rc{font-weight:700;border:none;background:transparent;color:var(--text)}
+.tb .rn{width:32px;text-align:center;color:var(--light);font-size:11px;font-weight:600}
+.tb .desc-col{min-width:200px}
+.tb .num{text-align:right}
+.tb th.num{padding-right:14px}
+/* Row actions */
+.ra{display:flex;gap:2px;justify-content:center;align-items:center}
+.ra button{width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:all .12s}
+.ra button:hover{border-color:var(--primary);color:var(--primary)}
+.ra button.del:hover{border-color:var(--danger);color:var(--danger)}
+/* Grid actions */
+.ga{display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--border);background:#fafafa;align-items:center}
+.bsm{padding:5px 14px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:#fff;color:var(--text);cursor:pointer;font-weight:600;transition:all .12s;font-family:inherit}
+.bsm:hover{background:#f1f5f9;border-color:var(--primary);color:var(--primary)}
+.bsm-d{color:var(--danger);border-color:#fecaca}
+.bsm-d:hover{background:#fef2f2;border-color:var(--danger)}
+/* Bottom section */
+.btm{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.btm-l{padding:16px 20px;border-right:1px solid var(--border)}
+.btm-r{padding:16px 20px;background:#fafbfc}
+.sl{display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:13px;gap:8px}
+.sl .sll{color:var(--muted);white-space:nowrap}
+.sl .slv{font-weight:600;min-width:60px;text-align:right}
+.sl .sli{width:60px;text-align:center;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;outline:none;font-family:inherit;background:#fff}
+.sl .sli:focus{border-color:var(--primary);box-shadow:0 0 0 2px rgba(37,99,235,.1)}
+.sl .sli:disabled{background:#f8fafc;color:var(--muted)}
+.sl .sli-amt{width:70px;text-align:right}
+.sl .sli-pct{width:50px;text-align:center}
+.tl{border-top:2px solid var(--text);margin-top:4px;padding-top:8px}
+.tl .slv{font-size:20px;font-weight:800}
+/* Action bar */
+.ab{display:flex;gap:10px;justify-content:flex-end;align-items:center;padding:14px 20px;border-top:1px solid var(--border)}
+.btn{padding:8px 22px;border:none;font-size:13px;font-weight:600;cursor:pointer;border-radius:5px;transition:all .12s;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-p{background:var(--primary);color:#fff}
+.btn-p:hover:not(:disabled){background:var(--primary-hover)}
+.btn-o{background:#fff;color:var(--text);border:1px solid var(--border)}
+.btn-o:hover:not(:disabled){background:#f1f5f9}
+.btn-d{background:var(--danger);color:#fff}
+.btn-d:hover:not(:disabled){background:#dc2626}
+.btn-s{background:var(--success);color:#fff}
+.btn-s:hover:not(:disabled){background:#16a34a}
+/* Badge */
+.bdg{display:inline-block;padding:3px 12px;font-size:11px;font-weight:700;border-radius:12px}
+.bdg-new{background:#f1f5f9;color:var(--muted)}
+.bdg-unapproved{background:#fef3c7;color:#92400e}
+.bdg-approved{background:#dcfce7;color:#16a34a}
+/* Approved banner */
+.ap-b{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--radius);padding:10px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#166534}
+.ap-b .ap-t{font-weight:700;display:flex;align-items:center;gap:6px}
+.toast-c{position:fixed;top:16px;right:16px;z-index:3000;display:flex;flex-direction:column;gap:6px}
+.toast{padding:10px 18px;color:#fff;font-size:13px;font-weight:500;border-radius:5px;box-shadow:0 4px 16px rgba(0,0,0,.12);display:flex;align-items:center;gap:8px;min-width:240px}
+.toast-s{background:var(--success)}
+.toast-e{background:var(--danger)}
+.toast-i{background:var(--primary)}
+.modal-o{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2000;justify-content:center;align-items:center}
+.modal-o.show{display:flex}
+.modal-b{background:#fff;padding:24px;border-radius:var(--radius);width:420px;max-width:90vw;box-shadow:0 10px 40px rgba(0,0,0,.15)}
+.modal-b h3{margin:0 0 12px;font-size:16px}
+.modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+/* Mobile responsive */
+@media(max-width:768px){
+  .wrap{padding:12px}
+  .card-h{padding:10px 14px;flex-wrap:wrap;gap:8px}
+  .card-b{padding:12px 14px}
+  .hdr-g{grid-template-columns:1fr;gap:12px}
+  .pills{flex-wrap:wrap;gap:8px}
+  .btm{grid-template-columns:1fr}
+  .btm-l{border-right:none;border-bottom:1px solid var(--border)}
+  .sl{flex-wrap:wrap;gap:4px}
+  .sl .slv{min-width:auto}
+  .tb-w::after{content:'\2190  Scroll for more  \2192'}
+  .tb{font-size:12px}
+  .tb .ri{padding:5px 6px;font-size:12px;min-height:30px}
+  .tb th{padding:6px 6px;font-size:10px}
+  .ab{flex-wrap:wrap}
+  .btn{width:100%;justify-content:center}
+  .hdr-g>div>div{grid-template-columns:1fr!important}
+}
+@media(max-width:480px){
+  .wrap{padding:8px}
+  .card-h{font-size:10px}
+  .card-b{padding:8px 10px}
+  .tb-w{border-radius:0;border-left:none;border-right:none}
+  .modal-b{width:95vw;padding:16px}
+}
+@media print{
+@page{margin:14mm}
+.sidebar,.topbar,.ab,.ga,.toast-c,.ac-dd,.btn,.ra,.modal-o,.tb-w::after,.vtype-pills,.sli,.pills,.app-flash-wrap{display:none!important}
+.wrap{padding:0;max-width:none}
+.card{box-shadow:none;border:1px solid #cbd5e1;margin-bottom:10px}
+.card-h{font-size:10px;padding:6px 12px;background:#f1f5f9!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.card-b{padding:10px 12px}
+.tb-w{overflow:visible!important;border:none}
+.tb{font-size:10px}
+.tb th{background:#1e293b!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tb th,.tb td{padding:4px 6px;border:1px solid #cbd5e1}
+.inp,.sel{padding:2px 4px;font-size:10px;border:none;background:transparent}
+.inp:disabled,textarea:disabled{background:transparent!important;color:#0f172a!important}
+.lbl{font-size:8px}
+.hdr-g{gap:10px}
+.btm{font-size:10px}
+.tl .slv{font-size:15px}
+.bdg{border:1px solid currentColor;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{background:#fff;font-size:10px}
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wrap">
+  {% with doc_title = 'Purchase Invoice' %}{% include '_print_header.html' %}{% endwith %}
+  <div class="toast-c" id="toastContainer"></div>
+  <input type="hidden" id="invoiceId" value="{{ invoice.id if invoice else '' }}">
+  <input type="hidden" id="invoiceStatus" value="{{ status }}">
+  {% set editable = not is_approved %}
+
+  {% if is_approved %}
+  <div class="ap-b"><span class="ap-t">&#10003; APPROVED</span><span>{{ invoice.approver.full_name if invoice.approver else '' }} @ {{ invoice.approved_at.strftime('%Y-%m-%d %H:%M') if invoice.approved_at else '' }}</span></div>
+  {% elif is_unapproved %}
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--radius);padding:10px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">&#9888; Unapproved — all fields editable</div>
+  {% endif %}
+
+  <!-- HEADER: Entity | Logistics | Metadata -->
+  <div class="card">
+    <div class="card-h">Transaction Details</div>
+    <div class="card-b">
+      <div class="hdr-g">
+        <div>
+          <div class="ac-wrap" style="margin-bottom:8px;">
+            <label class="lbl">Supplier <span style="color:var(--danger);">*</span></label>
+            <input type="text" class="inp" id="supplierSearch" placeholder="Search or press Space..." value="{{ invoice.supplier.name if invoice else '' }}" autocomplete="off" {{ 'disabled' if not editable else '' }}>
+            <input type="hidden" id="supplierId" value="{{ invoice.supplier_id if invoice else '' }}">
+            <div class="ac-dd" id="supplierDropdown"></div>
+          </div>
+          <div>
+            <label class="lbl">Billing Address</label>
+            <textarea class="inp {{ 'inp-plain' if not editable else '' }}" id="billingAddress" rows="2" style="resize:none;" readonly>{{ invoice.supplier.address if invoice and invoice.supplier else '' }}</textarea>
+          </div>
+        </div>
+        <div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label class="lbl">Driver Name</label><input type="text" class="inp" id="driverName" value="{{ invoice.driver_name if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+            <div><label class="lbl">Phone</label><input type="text" class="inp" id="driverContact" value="{{ invoice.driver_contact if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+          </div>
+          <div><label class="lbl">Vehicle Number</label><input type="text" class="inp" id="vehicleNumber" value="{{ invoice.vehicle_number if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+        </div>
+        <div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label class="lbl">Date</label><input type="date" class="inp" id="invDate" value="{{ invoice.created_at.strftime('%Y-%m-%d') if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+            <div><label class="lbl">Time</label><input type="time" class="inp" id="invTime" value="{{ invoice.created_at.strftime('%H:%M') if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <div><label class="lbl">Voucher #</label><input type="text" class="inp" readonly style="background:#f8fafc;" id="invVoucher" value="{{ invoice.voucher_number if invoice else '(auto)' }}"></div>
+            <div><label class="lbl">Status</label><div><span class="bdg bdg-{{ status }}" id="statusBadge">{{ status|title }}</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OPTIONS BAR: Pill toggles right-aligned above items table -->
+  <div class="card">
+    <div class="card-h">
+      <span>Items</span>
+      <div class="pills">
+        <div class="pill-g"><span class="pill-lbl">Discount</span>
+          <div class="pill" id="discountMode">
+            <button type="button" class="pill-b {{ 'active' if not invoice or invoice.discount_mode == 'general' else '' }}" data-value="general" {{ 'disabled' if not editable else '' }}>Combined</button>
+            <button type="button" class="pill-b {{ 'active' if invoice and invoice.discount_mode == 'individual' else '' }}" data-value="individual" {{ 'disabled' if not editable else '' }}>Per Item</button>
+          </div>
+        </div>
+        <div class="pill-g"><span class="pill-lbl">Expenses</span>
+          <div class="pill" id="expensesMode">
+            <button type="button" class="pill-b {{ 'active' if not invoice or invoice.expenses_mode == 'general' else '' }}" data-value="general" {{ 'disabled' if not editable else '' }}>Combined</button>
+            <button type="button" class="pill-b {{ 'active' if invoice and invoice.expenses_mode == 'individual' else '' }}" data-value="individual" {{ 'disabled' if not editable else '' }}>Per Item</button>
+          </div>
+        </div>
+        <div class="pill-g"><span class="pill-lbl">Tax</span>
+          <div class="pill" id="taxMode">
+            <button type="button" class="pill-b {{ 'active' if not invoice or invoice.tax_mode == 'general' else '' }}" data-value="general" {{ 'disabled' if not editable else '' }}>Combined</button>
+            <button type="button" class="pill-b {{ 'active' if invoice and invoice.tax_mode == 'individual' else '' }}" data-value="individual" {{ 'disabled' if not editable else '' }}>Per Item</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:0;">
+      <div class="tb-w" style="border:none;border-radius:0;">
+        <table class="tb" id="itemsTable">
+          <thead>
+            <tr>
+              <th style="width:32px;">#</th>
+              <th style="min-width:80px;">Code</th>
+              <th class="desc-col">Description</th>
+              <th class="num">Quantity</th>
+              <th>Unit</th>
+              <th class="num" style="min-width:80px;">Rate</th>
+              <th class="num">Amount</th>
+              <th class="c-disc num" style="{{ 'display:none;' if not invoice or invoice.discount_mode != 'individual' else '' }}">Discount %</th>
+              <th class="c-disc num" style="{{ 'display:none;' if not invoice or invoice.discount_mode != 'individual' else '' }}">Disc. Amount</th>
+              <th class="c-exp num" style="{{ 'display:none;' if not invoice or invoice.expenses_mode != 'individual' else '' }}">Commission</th>
+              <th class="c-exp num" style="{{ 'display:none;' if not invoice or invoice.expenses_mode != 'individual' else '' }}">Freight</th>
+              <th class="c-exp num" style="{{ 'display:none;' if not invoice or invoice.expenses_mode != 'individual' else '' }}">Load/Unload</th>
+              <th class="c-tax num" style="{{ 'display:none;' if not invoice or invoice.tax_mode != 'individual' else '' }}">Sales Tax %</th>
+              <th class="num">Net Amount</th>
+              <th style="width:52px;"></th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+      </div>
+      <div class="ga">
+        {% if editable %}
+        <button type="button" class="bsm" id="addLineBtn">+ Add lines</button>
+        <button type="button" class="bsm bsm-d" id="clearAllBtn">&#10005; Clear all lines</button>
+        {% endif %}
+        <span style="flex:1;"></span>
+        <span style="font-size:11px;color:var(--muted);">Space to search &bull; Enter to add row</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM: Notes left, Summary right -->
+  <div class="card">
+    <div class="card-b" style="padding:0;">
+      <div class="btm">
+        <div class="btm-l">
+          <label class="lbl">Notes / Comments</label>
+          <textarea id="invoiceNotes" class="inp" rows="4" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
+        </div>
+        <div class="btm-r">
+          <div class="sl"><span class="sll">Subtotal</span><span class="slv" id="summarySubtotal">0.00</span></div>
+          <div class="sl">
+            <span class="sll">Discount</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="color:var(--muted);font-size:11px;">%</span>
+              <input type="number" class="sli sli-pct" id="globalDiscPct" placeholder="%" step="0.01" min="0" max="100" value="{{ invoice.global_discount_pct if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <input type="number" class="sli sli-amt" id="globalDiscVal" placeholder="Val" step="0.01" min="0" value="{{ invoice.global_discount_value if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <span class="slv" id="summaryDiscount" style="color:var(--danger);width:70px;text-align:right;min-width:auto;">-0.00</span>
+            </span>
+          </div>
+          <div class="sl">
+            <span class="sll">Commission</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span class="sli sli-amt" style="width:60px;"><input type="number" class="sli" style="border:none;padding:0;margin:0;width:100%;background:transparent;text-align:right;" id="globalCommission" step="0.01" min="0" value="{{ invoice.global_commission if invoice else '0' }}" {{ 'disabled' if not editable else '' }}></span>
+              <span class="slv" id="summaryCommission" style="width:70px;text-align:right;min-width:auto;">0.00</span>
+            </span>
+          </div>
+          <div class="sl">
+            <span class="sll">Freight</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <input type="number" class="sli sli-amt" id="globalFreight" step="0.01" min="0" value="{{ invoice.global_freight if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <span class="slv" id="summaryFreight" style="width:70px;text-align:right;min-width:auto;">0.00</span>
+            </span>
+          </div>
+          <div class="sl">
+            <span class="sll">Loading/Unld</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <input type="number" class="sli sli-amt" id="globalLoading" step="0.01" min="0" value="{{ invoice.global_loading if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <span class="slv" id="summaryLoading" style="width:70px;text-align:right;min-width:auto;">0.00</span>
+            </span>
+          </div>
+          <div class="sl" style="border-top:1px dashed var(--border);padding-top:6px;margin-top:2px;"><span class="sll" style="font-weight:700;">Total Expenses</span><span class="slv" id="summaryExpensesTotal" style="font-weight:700;">0.00</span></div>
+          <div class="sl">
+            <span class="sll">Sales Tax</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="color:var(--muted);font-size:11px;">%</span>
+              <input type="number" class="sli sli-pct" id="globalSalesTaxPct" placeholder="%" step="0.01" min="0" max="100" value="{{ invoice.global_sales_tax_pct if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <span class="slv" id="summarySalesTax" style="width:70px;text-align:right;min-width:auto;">0.00</span>
+            </span>
+          </div>
+          <div class="sl" style="display:none;"><span class="sll">Subtotal Tax</span><span class="slv" id="summaryTaxTotal" style="width:70px;text-align:right;">0.00</span></div>
+          <div class="sl">
+            <span class="sll">W/H Tax</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="color:var(--muted);font-size:11px;">%</span>
+              <input type="number" class="sli sli-pct" id="globalWithholdingTaxPct" placeholder="%" step="0.01" min="0" max="100" value="{{ invoice.global_withholding_tax_pct if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
+              <span class="slv" id="summaryWithholdingTax" style="color:var(--danger);width:70px;text-align:right;min-width:auto;">-0.00</span>
+            </span>
+          </div>
+          <div class="sl tl"><span class="sll" style="font-weight:700;">Net Payable</span><span class="slv" id="summaryNetPayable" style="font-size:20px;font-weight:800;">0.00</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ACTION BAR -->
+    <div class="ab">
+      {% set can_approve = current_user.is_admin() or current_user.is_manager() %}
+      {% if is_new %}
+        <button type="button" class="btn btn-p" id="saveBtn">Save</button>
+        {% if can_approve %}
+        <button type="button" class="btn btn-s" id="saveApproveBtn">Save &amp; Approve</button>
+        {% endif %}
+      {% elif is_unapproved %}
+        <button type="button" class="btn btn-o" id="saveChangesBtn">Save Changes</button>
+        {% if can_approve %}
+        <button type="button" class="btn btn-p" id="approveBtn">Approve</button>
+        {% endif %}
+        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
+        <button type="button" class="btn btn-d" id="deleteBtn" onclick="showConfirm('Delete Invoice','Are you sure you want to delete this invoice? This action cannot be undone.',deleteInvoice)">Delete</button>
+      {% elif is_approved %}
+        <button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button>
+        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
+      {% endif %}
+      <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" class="btn btn-o">Cancel</a>
+    </div>
+  </div>
+</div>
+
+<div class="modal-o" id="confirmModal">
+  <div class="modal-b">
+    <h3 id="confirmTitle">Confirm</h3>
+    <p id="confirmMsg" style="color:var(--muted);font-size:14px;margin:0 0 16px;"></p>
+    <div class="modal-acts">
+      <button type="button" class="btn btn-o" onclick="closeConfirm()">Cancel</button>
+      <button type="button" class="btn btn-p" id="confirmOkBtn">Yes, Continue</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// ============================================================
+// STATE
+// ============================================================
+let allProducts = [], rowCount = 0;
+const editable = {{ 'false' if is_approved else 'true' }};
+var confirmCallback = null;
+
+function qs(s,c){return(c||document).querySelector(s)}
+function qsa(s,c){return(c||document).querySelectorAll(s)}
+function getMode(n){var t=document.getElementById(n+'Mode');if(!t)return'general';var a=t.querySelector('.pill-b.active');return a?a.dataset.value:'general'}
+function toast(m,t){var c=document.getElementById('toastContainer'),d=document.createElement('div');d.className='toast toast-'+t;d.innerHTML=m+'<button style="background:none;border:none;color:inherit;font-size:16px;cursor:pointer;margin-left:auto;padding:0;line-height:1;" onclick="this.parentElement.remove()">&times;</button>';c.appendChild(d);setTimeout(function(){d.style.opacity='0';d.style.transition='opacity .3s';setTimeout(function(){d.remove()},300)},4000)}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function showConfirm(t,m,cb){document.getElementById('confirmTitle').textContent=t;document.getElementById('confirmMsg').textContent=m;document.getElementById('confirmModal').classList.add('show');confirmCallback=cb}
+function closeConfirm(){document.getElementById('confirmModal').classList.remove('show');confirmCallback=null}
+document.getElementById('confirmOkBtn').addEventListener('click',function(){var cb=confirmCallback;closeConfirm();if(cb)cb()});
+
+async function fetchJSON(u){var r=await fetch(u);return r.json()}
+async function loadProducts(q){return fetchJSON('/inventory/purchase-invoice/api/products?q='+encodeURIComponent(q))}
+async function loadSuppliers(q){return fetchJSON('/inventory/purchase-invoice/api/suppliers?q='+encodeURIComponent(q))}
+
+// SUPPLIER AUTOCOMPLETE
+var si=document.getElementById('supplierSearch'),sd=document.getElementById('supplierDropdown'),sid=document.getElementById('supplierId'),sa=document.getElementById('billingAddress'),shl=-1,sl=[];
+function rSup(l){sl=l;shl=-1;if(!l||!l.length){sd.classList.remove('show');return}sd.innerHTML=l.map(function(s,i){return'<div class="ac-it" data-index="'+i+'" data-id="'+s.id+'" data-name="'+s.name.replace(/'/g,"\\'")+'" data-addr="'+(s.address||'').replace(/'/g,"\\'")+'"><span class="ac-n">'+s.name+'</span><span class="ac-s">'+(s.city||'')+' '+(s.phone||'')+'</span></div>'}).join('');sd.classList.add('show')}
+si.addEventListener('keydown',async function(e){if(!editable)return;if(e.key===' '){e.preventDefault();rSup(await loadSuppliers(''));return}if(e.key==='ArrowDown'){e.preventDefault();shl=Math.min(shl+1,sl.length-1);hSup();return}if(e.key==='ArrowUp'){e.preventDefault();shl=Math.max(shl-1,0);hSup();return}if(e.key==='Enter'&&sd.classList.contains('show')&&shl>=0){sSup(shl);return}if(e.key==='Escape'){sd.classList.remove('show');return}})
+si.addEventListener('input',async function(){if(!editable)return;var q=this.value.trim();if(!q.length){sd.classList.remove('show');return}rSup(await loadSuppliers(q))})
+si.addEventListener('blur',function(){setTimeout(function(){sd.classList.remove('show')},200)})
+function hSup(){sd.querySelectorAll('.ac-it').forEach(function(e,i){e.classList.toggle('hl',i===shl)})}
+function sSup(i){var t=sl[i];if(!t)return;sid.value=t.id;si.value=t.name;sd.classList.remove('show');if(sa&&t.address)sa.value=t.address}
+sd.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');if(!t)return;shl=parseInt(t.dataset.index);sSup(shl)})
+
+// PILL TOGGLES
+qsa('.pill-b').forEach(function(b){b.addEventListener('click',function(){if(this.disabled)return;var g=this.closest('.pill');g.querySelectorAll('.pill-b').forEach(function(x){x.classList.remove('active')});this.classList.add('active');refreshCols();recalc()})})
+function refreshCols(){var d=getMode('discount'),e=getMode('expenses'),t=getMode('tax'),id=d==='individual',ie=e==='individual',it=t==='individual';qsa('.c-disc').forEach(function(el){el.style.display=id?'':'none'});qsa('.c-exp').forEach(function(el){el.style.display=ie?'':'none'});qsa('.c-tax').forEach(function(el){el.style.display=it?'':'none'});qsa('#itemsBody tr').forEach(function(tr){qsa('.row-disc input',tr).forEach(function(i){i.disabled=!id||!editable});qsa('.row-exp input',tr).forEach(function(i){i.disabled=!ie||!editable});qsa('.row-tax input',tr).forEach(function(i){i.disabled=!it||!editable})})}
+
+// PRODUCT AUTOCOMPLETE PER ROW
+function setupDescInput(inp){var row=inp.closest('tr'),drop=row.querySelector('.ac-dd'),hl=-1,list=[];
+function render(l){hl=-1;if(!l||!l.length){drop.classList.remove('show');return}drop.innerHTML=l.map(function(p,i){return'<div class="ac-it" data-index="'+i+'" data-id="'+p.id+'" data-name="'+p.name+'" data-sku="'+p.sku+'" data-price="'+p.unit_price+'" data-stock="'+p.current_stock+'" data-unit="'+p.unit+'"><span class="ac-n">'+p.name+'</span><span class="ac-s">'+p.sku+' &bull; Stock: '+p.current_stock+'</span></div>'}).join('');drop.classList.add('show')}
+inp.addEventListener('keydown',async function(e){if(e.key===' '){e.preventDefault();list=await loadProducts('');render(list);return}if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(hl+1,list.length-1);hlr();return}if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(hl-1,0);hlr();return}if(e.key==='Enter'){if(e.shiftKey)return;e.preventDefault();if(drop.classList.contains('show')&&hl>=0&&list[hl]){selP(hl);return}var inputs=row.querySelectorAll('.ri:not(:disabled):not(.rc)'),last=inputs[inputs.length-1];if(e.target===last){addRow({});setTimeout(function(){var nr=document.getElementById('itemsBody').lastElementChild,ni=nr.querySelectorAll('.ri:not(:disabled):not(.rc)');if(ni.length)ni[0].focus()},50)}return}if(e.key==='Escape'){drop.classList.remove('show');return}})
+inp.addEventListener('input',async function(){var q=this.value.trim();if(!q.length){drop.classList.remove('show');return}list=await loadProducts(q);render(list)})
+inp.addEventListener('blur',function(){setTimeout(function(){drop.classList.remove('show')},200)})
+if(inp.tagName==='TEXTAREA'){inp.addEventListener('input',function(){this.style.height='auto';this.style.height=this.scrollHeight+'px'})}
+function hlr(){drop.querySelectorAll('.ac-it').forEach(function(e,i){e.classList.toggle('hl',i===hl)})}
+function selP(i){var p=list[i];if(!p)return;row.dataset.productId=p.id;row.querySelector('.ac-code').value=p.sku;inp.value=p.name;row.querySelector('.ac-unit').textContent=p.unit;row.querySelector('[data-col="unit_price"]').value=p.unit_price;row.querySelector('.info-badge').innerHTML='Stock: <strong>'+p.current_stock+'</strong>';drop.classList.remove('show');recalcRow(row);recalc();var qty=row.querySelector('[data-col="quantity"]');if(qty)qty.focus()}
+drop.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');if(!t)return;hl=parseInt(t.dataset.index);selP(hl)})}
+
+// ROW MANAGEMENT
+function addRow(data){var tbody=document.getElementById('itemsBody'),tr=document.createElement('tr');rowCount++;var d=getMode('discount'),e=getMode('expenses'),t=getMode('tax'),id=d==='individual',ie=e==='individual',it=t==='individual',dis=editable?'':'disabled';tr.dataset.productId=(data&&data.product_id)||'';
+tr.innerHTML='<td class="rn">'+rowCount+'</td><td><input type="text" class="ri ac-code" data-col="code" placeholder="SKU" value="'+((data&&data.product&&data.product.sku)||'')+'" '+dis+'></td><td><div class="ac-wrap"><textarea class="ri ac-desc-input" data-col="description" placeholder="Search or Space..." rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(data&&data.description||'')+'</textarea><div class="ac-dd"></div><div class="info-badge" style="font-size:10px;color:var(--light);"></div></div></td><td><input type="number" class="ri num" data-col="quantity" value="'+((data&&data.quantity)||1)+'" min="0.01" step="any" '+dis+'></td><td><span class="ri rc ac-unit">'+((data&&data.unit)||'pcs')+'</span></td><td><input type="number" class="ri num" data-col="unit_price" value="'+((data&&data.unit_price)||0)+'" step="0.01" min="0" '+dis+'></td><td><input type="text" class="ri rc num" data-col="amount" value="0" readonly></td><td class="c-disc" style="'+(id?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_pct" value="'+((data&&data.discount_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&id?'':'disabled')+'></div></td><td class="c-disc" style="'+(id?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_amount" value="'+((data&&data.discount_amount)||0)+'" step="0.01" min="0" '+(editable&&id?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="commission" value="'+((data&&data.commission)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="freight" value="'+((data&&data.freight)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="loading_unloading" value="'+((data&&data.loading_unloading)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-tax" style="'+(it?'':'display:none;')+'"><div class="row-tax"><input type="number" class="ri num" data-col="sales_tax_pct" value="'+((data&&data.sales_tax_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&it?'':'disabled')+'></div></td><td><input type="text" class="ri rc num" data-col="net_amount" value="0" readonly></td><td><div class="ra">'+(editable?'<button class="del" onclick="removeRow(this)" title="Delete row">&times;</button>':'')+'</div></td>';tbody.appendChild(tr)
+var di=tr.querySelector('.ac-desc-input');if(di)setupDescInput(di);tr.querySelectorAll('input[data-col]').forEach(function(inp){inp.addEventListener('input',function(){recalcRow(tr);recalc()});inp.addEventListener('change',function(){recalcRow(tr);recalc()})})
+var ci=tr.querySelector('.ac-code');if(ci){ci.addEventListener('input',function(){var v=this.value.trim().toLowerCase();if(v.length===1)autoAddCheck();var m=allProducts.find(function(p){return p.sku.toLowerCase()===v});if(m){tr.dataset.productId=m.id;tr.querySelector('.ac-desc-input').value=m.name;tr.querySelector('.ac-unit').textContent=m.unit;tr.querySelector('[data-col="unit_price"]').value=m.unit_price;tr.querySelector('.info-badge').innerHTML='Stock: <strong>'+m.current_stock+'</strong>';recalcRow(tr);recalc()}})}
+if(di){di.addEventListener('input',function(){if(this.value.length===1)autoAddCheck()})}
+if(editable)setTimeout(function(){var f=tr.querySelector('.ac-code');if(f)f.focus()},30);return tr}
+function autoAddCheck(){var rows=qsa('#itemsBody tr');if(!rows.length)return;var last=rows[rows.length-1],code=last.querySelector('.ac-code')?.value||'',desc=last.querySelector('.ac-desc-input')?.value||'';if(code.length||desc.length)addRow({})}
+function removeRow(btn){var tr=btn.closest('tr');var tbody=document.getElementById('itemsBody');if(tbody.children.length<=1)return;tr.remove();renumberRows();recalc()}
+function renumberRows(){qsa('#itemsBody .rn').forEach(function(e,i){e.textContent=i+1})}
+function clearAllRows(){document.getElementById('itemsBody').innerHTML='';rowCount=0;addRow({});recalc();toast('Cleared all lines','info')}
+document.getElementById('addLineBtn')?.addEventListener('click',function(){addRow({})})
+document.getElementById('clearAllBtn')?.addEventListener('click',function(){showConfirm('Clear All Lines','This will remove all rows. Are you sure?',clearAllRows)})
+
+// CALCULATIONS
+// Per-row: amount = qty × rate (comma-fmt)
+// Per-row net = (amount - discount) + expenses + tax_on(after_discount+expenses)
+function recalcRow(tr){var qty=parseFloat(tr.querySelector('[data-col="quantity"]')?.value)||0,price=parseFloat(tr.querySelector('[data-col="unit_price"]')?.value)||0,amt=qty*price;tr.querySelector('[data-col="amount"]').value=fmt(amt);var dp=parseFloat(tr.querySelector('[data-col="discount_pct"]')?.value)||0,da=parseFloat(tr.querySelector('[data-col="discount_amount"]')?.value)||0;if(dp>0&&da===0){da=amt*dp/100;var dai=tr.querySelector('[data-col="discount_amount"]');if(dai)dai.value=da.toFixed(2)}var ta=Math.max(0,amt-da);tr.querySelector('[data-col="net_amount"]').value=fmt(ta)}
+// Summary: subtotal - discount + expenses = taxBase; salesTax on taxBase; WHT on taxBase
+function recalc(){var subtotal=0,totalDisc=0,totalExp=0,totalSalesTax=0,d=getMode('discount'),e=getMode('expenses'),t=getMode('tax');qsa('#itemsBody tr').forEach(function(tr){var amt=cv(tr.querySelector('[data-col="amount"]')?.value),na=cv(tr.querySelector('[data-col="net_amount"]')?.value);subtotal+=amt;if(d==='individual'){var damt=parseFloat(tr.querySelector('[data-col="discount_amount"]')?.value)||0,dpct=parseFloat(tr.querySelector('[data-col="discount_pct"]')?.value)||0;totalDisc+=damt>0?damt:(amt*dpct/100)}if(e==='individual'){totalExp+=parseFloat(tr.querySelector('[data-col="commission"]')?.value)||0;totalExp+=parseFloat(tr.querySelector('[data-col="freight"]')?.value)||0;totalExp+=parseFloat(tr.querySelector('[data-col="loading_unloading"]')?.value)||0}if(t==='individual'){var st=parseFloat(tr.querySelector('[data-col="sales_tax_pct"]')?.value)||0;var baseTa=cv(tr.querySelector('[data-col="net_amount"]')?.value)+(parseFloat(tr.querySelector('[data-col="commission"]')?.value)||0)+(parseFloat(tr.querySelector('[data-col="freight"]')?.value)||0)+(parseFloat(tr.querySelector('[data-col="loading_unloading"]')?.value)||0);totalSalesTax+=baseTa*st/100}});subtotal=Math.round(subtotal*100)/100;document.getElementById('summarySubtotal').textContent=fmt(subtotal)
+if(d==='general'){var gPct=parseFloat(document.getElementById('globalDiscPct').value)||0,gVal=parseFloat(document.getElementById('globalDiscVal').value)||0;totalDisc=gVal>0?gVal:(subtotal*gPct/100)}document.getElementById('summaryDiscount').textContent='-'+fmt(totalDisc)
+var globalExp=0;if(e==='general'){globalExp+=parseFloat(document.getElementById('globalCommission').value)||0;globalExp+=parseFloat(document.getElementById('globalFreight').value)||0;globalExp+=parseFloat(document.getElementById('globalLoading').value)||0;totalExp=globalExp}
+document.getElementById('summaryCommission').textContent=fmt(parseFloat(document.getElementById('globalCommission').value)||0)
+document.getElementById('summaryFreight').textContent=fmt(parseFloat(document.getElementById('globalFreight').value)||0)
+document.getElementById('summaryLoading').textContent=fmt(parseFloat(document.getElementById('globalLoading').value)||0)
+document.getElementById('summaryExpensesTotal').textContent=fmt(totalExp)
+var taxBase=subtotal-totalDisc+totalExp,salesTax=0,withholdingTax=0;if(t==='general'){var stPct=parseFloat(document.getElementById('globalSalesTaxPct').value)||0;salesTax=taxBase*stPct/100}else{salesTax=totalSalesTax}var whPct=parseFloat(document.getElementById('globalWithholdingTaxPct').value)||0;withholdingTax=taxBase*whPct/100;document.getElementById('summarySalesTax').textContent=fmt(salesTax);document.getElementById('summaryWithholdingTax').textContent='-'+fmt(withholdingTax);document.getElementById('summaryTaxTotal').textContent=fmt(salesTax);document.getElementById('summaryNetPayable').textContent='Rs. '+fmt(taxBase+salesTax-withholdingTax)}
+
+// COLLECT DATA
+function collectData(){var items=[];qsa('#itemsBody tr').forEach(function(tr){items.push({product_id:tr.dataset.productId||null,description:tr.querySelector('.ac-desc-input')?.value||'',quantity:parseFloat(tr.querySelector('[data-col="quantity"]')?.value)||0,unit:tr.querySelector('.ac-unit')?.textContent||'pcs',unit_price:parseFloat(tr.querySelector('[data-col="unit_price"]')?.value)||0,discount_pct:parseFloat(tr.querySelector('[data-col="discount_pct"]')?.value)||0,discount_amount:parseFloat(tr.querySelector('[data-col="discount_amount"]')?.value)||0,commission:parseFloat(tr.querySelector('[data-col="commission"]')?.value)||0,freight:parseFloat(tr.querySelector('[data-col="freight"]')?.value)||0,loading_unloading:parseFloat(tr.querySelector('[data-col="loading_unloading"]')?.value)||0,sales_tax_pct:parseFloat(tr.querySelector('[data-col="sales_tax_pct"]')?.value)||0,total_before_discount:cv(tr.querySelector('[data-col="amount"]')?.value),total_after_discount:cv(tr.querySelector('[data-col="net_amount"]')?.value),comments:tr.querySelector('[data-col="comments"]')?.value||''})});return{id:document.getElementById('invoiceId').value||null,invoice_number:document.getElementById('invVoucher').value,supplier_id:parseInt(document.getElementById('supplierId').value)||null,driver_name:document.getElementById('driverName').value,driver_contact:document.getElementById('driverContact').value,vehicle_number:document.getElementById('vehicleNumber').value,gate_pass:'',discount_mode:getMode('discount'),expenses_mode:getMode('expenses'),tax_mode:getMode('tax'),global_discount_pct:parseFloat(document.getElementById('globalDiscPct').value)||0,global_discount_value:parseFloat(document.getElementById('globalDiscVal').value)||0,global_commission:parseFloat(document.getElementById('globalCommission').value)||0,global_freight:parseFloat(document.getElementById('globalFreight').value)||0,global_loading:parseFloat(document.getElementById('globalLoading').value)||0,global_sales_tax_pct:parseFloat(document.getElementById('globalSalesTaxPct').value)||0,global_withholding_tax_pct:parseFloat(document.getElementById('globalWithholdingTaxPct').value)||0,subtotal:cv(document.getElementById('summarySubtotal').textContent),total_discount:cv(document.getElementById('summaryDiscount').textContent),total_expenses:cv(document.getElementById('summaryExpensesTotal').textContent),total_tax:cv(document.getElementById('summaryTaxTotal').textContent),net_payable:cv(document.getElementById('summaryNetPayable').textContent),notes:document.getElementById('invoiceNotes').value,items:items}}
+
+// DISABLE / REBUILD ACTION BAR
+function disableAll(frozen){qsa('#itemsBody input, #itemsBody button, .inp, .sel, .sli, .btn-p, .btn-s, .btn-d, #saveBtn, #saveApproveBtn, #saveChangesBtn, #approveBtn, #deleteBtn, #unapproveBtn').forEach(function(el){if(frozen){el.disabled=true}else{el.disabled=false}});qsa('.pill-b').forEach(function(b){b.disabled=frozen||!editable});qs('#addLineBtn')&&(qs('#addLineBtn').disabled=frozen||!editable);qs('#clearAllBtn')&&(qs('#clearAllBtn').disabled=frozen||!editable)}
+function rebuildActionBar(st){var bar=qs('.ab');if(!bar)return;var can_approve={{ 'true' if current_user.is_admin() or current_user.is_manager() else 'false' }};bar.innerHTML='';if(st==='approved'){var btns='<button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button><button type="button" class="btn btn-o" onclick="window.print()">Print</button><a href="{{ url_for("inv_purchase_invoice.list_invoices") }}" class="btn btn-o">New Invoice</a>';bar.innerHTML=btns;var ub=document.getElementById('unapproveBtn');if(ub)ub.addEventListener('click',function(){showConfirm('Unapprove Invoice','Unapprove this invoice? Items will be checked for utilization.',unapproveInvoice)})}else if(st==='unapproved'){var btns='<button type="button" class="btn btn-o" onclick="window.print()">Print</button><button type="button" class="btn btn-d" id="deleteBtn">Delete</button><a href="{{ url_for("inv_purchase_invoice.list_invoices") }}" class="btn btn-o">New Invoice</a>';bar.innerHTML=btns;var db=document.getElementById('deleteBtn');if(db)db.addEventListener('click',function(){showConfirm('Delete Invoice','Are you sure you want to delete this invoice? This action cannot be undone.',deleteInvoice)})}else if(st==='new'){var btns='<button type="button" class="btn btn-p" id="saveBtn">Save</button>';if(can_approve)btns+='<button type="button" class="btn btn-s" id="saveApproveBtn">Save &amp; Approve</button>';btns+='<a href="{{ url_for("inv_purchase_invoice.list_invoices") }}" class="btn btn-o">Cancel</a>';bar.innerHTML=btns;qs('#saveBtn')&&qs('#saveBtn').addEventListener('click',function(){saveInvoice('save')});qs('#saveApproveBtn')&&qs('#saveApproveBtn').addEventListener('click',function(){showConfirm('Save & Approve','Save and approve this invoice? Stock will be updated.',function(){saveInvoice('approve')})})}}
+
+// SAVE / APPROVE / UNAPPROVE
+function fmt(v){var n=parseFloat(v)||0;return n.toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function cv(s){return parseFloat((s||'').replace(/Rs\.\s*/,'').replace(/,/g,''))||0}
+async function saveInvoice(action){var data=collectData();if(!data.supplier_id){toast('Please select a supplier','error');return}if(data.items.length===0){toast('Add at least one item','error');return}data.action=action;var r=await fetch('/inventory/purchase-invoice/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});var res=await r.json();if(!res.ok){toast(res.error||'Save failed','error');return}toast(res.message,'success');document.getElementById('invoiceId').value=res.id;document.getElementById('invVoucher').value=res.voucher;var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-'+res.status;badge.textContent=res.status.charAt(0).toUpperCase()+res.status.slice(1)}if(res.status==='approved'){var eb=document.querySelector('.ap-b');if(!eb){var nb=document.createElement('div');nb.className='ap-b';nb.innerHTML='<span class="ap-t">&#10003; APPROVED</span><span>'+new Date().toLocaleString()+'</span>';var w=document.querySelector('.wrap');if(w)w.insertBefore(nb,w.querySelector('.card'))}}else{var eb2=document.querySelector('.ap-b');if(eb2)eb2.remove()}disableAll(true);rebuildActionBar(res.status);recalc()}
+async function unapproveInvoice(){var id=document.getElementById('invoiceId').value;if(!id)return;var btn=document.getElementById('unapproveBtn');if(btn){btn.disabled=true;btn.textContent='Checking...'}var r=await fetch('/inventory/purchase-invoice/unapprove/'+id,{method:'POST'});var res=await r.json();if(!res.ok){toast(res.error,'error');if(btn){btn.disabled=false;btn.textContent='Unapprove'}return}toast(res.message,'success');var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-unapproved';badge.textContent='Unapproved'}disableAll(false);rebuildActionBar('unapproved')}
+document.getElementById('saveBtn')?.addEventListener('click',function(){saveInvoice('save')})
+document.getElementById('saveApproveBtn')?.addEventListener('click',function(){showConfirm('Save & Approve','Save and approve this invoice? Stock will be updated.',function(){saveInvoice('approve')})})
+document.getElementById('saveChangesBtn')?.addEventListener('click',function(){saveInvoice('save')})
+document.getElementById('approveBtn')?.addEventListener('click',function(){showConfirm('Approve Invoice','Approve this invoice? It will be locked and stock updated.',function(){saveInvoice('approve')})})
+document.getElementById('unapproveBtn')?.addEventListener('click',function(){showConfirm('Unapprove Invoice','Unapprove this invoice? Items will be checked for utilization.',unapproveInvoice)})
+async function deleteInvoice(){var id=document.getElementById('invoiceId').value;if(!id){toast('No invoice to delete','error');return}var r=await fetch('/inventory/purchase-invoice/delete/'+id,{method:'POST'});var res=await r.json();if(!res.ok){toast(res.error||'Delete failed','error');return}toast(res.message,'success');setTimeout(function(){window.location.href='{{ url_for("inv_purchase_invoice.list_invoices") }}'},500)}
+
+// GLOBAL INPUT LISTENERS
+['globalDiscPct','globalDiscVal','globalCommission','globalFreight','globalLoading','globalSalesTaxPct','globalWithholdingTaxPct'].forEach(function(id){var el=document.getElementById(id);if(el)el.addEventListener('input',recalc)})
+
+// INIT — addRow runs synchronously FIRST, then async setup for products
+{% if invoice_items %}try{var items={{ invoice_items|tojson }};if(items.length===0){addRow({})}else{items.forEach(function(item){addRow(item)})}}catch(e){addRow({})}{% else %}addRow({});{% endif %}
+(async function init(){try{allProducts=await loadProducts('')}catch(e){console.warn('Product load failed',e)}setTimeout(function(){qsa('#itemsBody tr').forEach(function(tr){recalcRow(tr)});refreshCols();recalc();var d=document.getElementById('invDate');if(d&&!d.value){var n=new Date();d.value=n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0')}var t=document.getElementById('invTime');if(t&&!t.value){var n2=new Date();t.value=String(n2.getHours()).padStart(2,'0')+':'+String(n2.getMinutes()).padStart(2,'0')}},50)})();
+</script>
+{% endblock %}

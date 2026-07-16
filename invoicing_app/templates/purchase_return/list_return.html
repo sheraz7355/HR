@@ -1,0 +1,58 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Purchase Returns{% endblock %}
+{% block page_title %}Purchase Returns (Debit Notes){% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="{{ url_for('inv_purchase_return.return_form') }}" class="btn btn-primary" style="background:#dc2626;">+ New Return</a>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Return #</th>
+          <th>Original Invoice</th>
+          <th>Supplier</th>
+          <th>Date</th>
+          <th>Gross Return</th>
+          <th>Net Return</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ret in returns %}
+        <tr>
+          <td><strong>{{ ret.return_number }}</strong></td>
+          <td>{{ ret.original_invoice.invoice_number if ret.original_invoice else '-' }}</td>
+          <td>{{ ret.supplier.name if ret.supplier else '-' }}</td>
+          <td>{{ ret.created_at.strftime('%Y-%m-%d') if ret.created_at else '' }}</td>
+          <td>{{ "%.2f"|format(ret.gross_return_value) }}</td>
+          <td>{{ "%.2f"|format(ret.net_return_amount) }}</td>
+          <td>
+            <span class="badge badge-{{ ret.status }}">
+              {% if ret.status == 'new' %}New
+              {% elif ret.status == 'unapproved' %}Unapproved
+              {% elif ret.status == 'approved' %}Approved
+              {% else %}{{ ret.status }}{% endif %}
+            </span>
+          </td>
+          <td class="actions">
+            <a href="{{ url_for('inv_purchase_return.return_form', id=ret.id) }}" class="btn btn-sm btn-outline">
+              {{ 'View' if ret.status == 'approved' else 'Edit' }}
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No purchase returns</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<style>
+.badge-new { background:#f1f5f9; color:#475569; }
+.badge-unapproved { background:#fef3c7; color:#92400e; }
+.badge-approved { background:#dcfce7; color:#16a34a; }
+</style>
+{% endblock %}

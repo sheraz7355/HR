@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
 from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.models.stock_ledger import VoucherNumber
@@ -8,6 +8,7 @@ from shared.models.ledger import ChartOfAccount
 from shared.models.accounting_voucher import AccountingVoucher, AccountingVoucherLine
 from shared.models.company_settings import AccountingPeriod
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry
+from shared.permissions import VOUCHER_SECTION, deny_page
 
 acct_bp = Blueprint("accounting", __name__, url_prefix="/accounting",
                      template_folder="../finance_app/templates")
@@ -46,9 +47,14 @@ def dashboard():
 def voucher_form(id=None):
     voucher = AccountingVoucher.query.get(id) if id else None
     is_approved = voucher and voucher.status == "approved"
+    edit_mode = request.args.get("edit") == "1" if (voucher and not is_approved) else False
 
     if request.method == "POST" and not is_approved:
         is_new = voucher is None
+        vtype_for_perm = voucher.voucher_type if voucher else request.form.get("voucher_type", "CPV")
+        if deny_page(VOUCHER_SECTION.get(vtype_for_perm, "journal_vouchers"),
+                     "create" if is_new else "edit"):
+            return redirect(url_for("accounting.voucher_list"))
         if is_new:
             vtype = request.form.get("voucher_type", "CPV")
             voucher = AccountingVoucher(
@@ -137,7 +143,8 @@ def voucher_form(id=None):
 
         _err_ctx = {"accounts": ChartOfAccount.query.filter_by(is_active=True)
                      .order_by(ChartOfAccount.code).all(),
-                     "labels": VOUCHER_LABELS, "initial_type": ""}
+                     "labels": VOUCHER_LABELS, "initial_type": "",
+                     "edit_mode": edit_mode}
 
         if not has_lines:
             flash("Add at least one line with amount.", "error")
@@ -215,7 +222,7 @@ def voucher_form(id=None):
             f"{VOUCHER_LABELS[voucher.voucher_type]} {voucher.voucher_number} {'approved' if action == 'approve' else 'saved'}.",
             "success",
         )
-        return redirect(url_for("accounting.voucher_list"))
+        return redirect(url_for("accounting.voucher_form", id=voucher.id))
 
     accounts = ChartOfAccount.query.filter_by(is_active=True).order_by(ChartOfAccount.code).all()
     initial_type = request.args.get("type", "")
@@ -227,6 +234,7 @@ def voucher_form(id=None):
         accounts=accounts,
         labels=VOUCHER_LABELS,
         initial_type=initial_type,
+        edit_mode=edit_mode,
     )
 
 
@@ -301,6 +309,9 @@ def voucher_list():
     status = request.args.get("status", "")
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str = _resolve_voucher_period()
 
+    # Exclude auto-generated reversal vouchers (no UI to create/manage them)
+    q = q.filter(~AccountingVoucher.voucher_number.like("%-REV"))
+
     if vtype:
         q = q.filter_by(voucher_type=vtype)
     if status:
@@ -328,9 +339,11 @@ def voucher_list():
 @login_required
 def approve_voucher(id):
     v = AccountingVoucher.query.get_or_404(id)
+    if deny_page(VOUCHER_SECTION.get(v.voucher_type, "journal_vouchers"), "approve"):
+        return redirect(url_for("accounting.voucher_list"))
     if v.status == "approved":
         flash("Already approved.", "error")
-        return redirect(url_for("accounting.voucher_list"))
+        return redirect(url_for("accounting.voucher_form", id=v.id))
     err = _approve_voucher(v)
     if err:
         flash(err, "error")
@@ -338,13 +351,15 @@ def approve_voucher(id):
     v.status = "approved"
     db.session.commit()
     flash(f"{VOUCHER_LABELS[v.voucher_type]} {v.voucher_number} approved.", "success")
-    return redirect(url_for("accounting.voucher_list"))
+    return redirect(url_for("accounting.voucher_form", id=v.id))
 
 
 @acct_bp.route("/vouchers/<int:id>/unapprove", methods=["POST"])
 @login_required
 def unapprove_voucher(id):
     v = AccountingVoucher.query.get_or_404(id)
+    if deny_page(VOUCHER_SECTION.get(v.voucher_type, "journal_vouchers"), "approve"):
+        return redirect(url_for("accounting.voucher_list"))
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("accounting.voucher_list"))
@@ -354,7 +369,7 @@ def unapprove_voucher(id):
     v.approved_at = None
     db.session.commit()
     flash(f"{VOUCHER_LABELS[v.voucher_type]} {v.voucher_number} unapproved.", "success")
-    return redirect(url_for("accounting.voucher_list"))
+    return redirect(url_for("accounting.voucher_form", id=v.id))
 
 
 @acct_bp.route("/vouchers/<int:id>/preview")
@@ -369,10 +384,43 @@ def voucher_preview(id):
                            total_debit=total_debit, total_credit=total_credit,
                            labels=VOUCHER_LABELS)
 
+@acct_bp.route("/vouchers/<int:id>/export")
+@login_required
+def voucher_export(id):
+    fmt = request.args.get("fmt", "pdf")
+    v = AccountingVoucher.query.get_or_404(id)
+    lines = v.lines.order_by(AccountingVoucherLine.line_no).all()
+    total_debit = sum(float(l.debit) for l in lines)
+    total_credit = sum(float(l.credit) for l in lines)
+
+    headers = ["#", "A/c Code", "Account Name", "Description", "Debit", "Credit"]
+    rows = []
+    for i, line in enumerate(lines, 1):
+        rows.append([i, line.account.code, line.account.name,
+                     line.description or "",
+                     float(line.debit) or 0, float(line.credit) or 0])
+    rows.append(["", "", "", "Total", total_debit, total_credit])
+
+    title = f"{VOUCHER_LABELS[v.voucher_type]} - {v.voucher_number}"
+
+    if fmt == "excel":
+        from .reports import _build_excel_wb
+        out = _build_excel_wb(title, headers, rows, [6, 14, 30, 30, 14, 14])
+        return send_file(out, as_attachment=True,
+                         download_name=f"voucher_{v.voucher_number}.xlsx")
+
+    from .reports import _build_pdf_landscape
+    pdf_out = _build_pdf_landscape(title, headers, rows, [6, 14, 30, 30, 14, 14])
+    return send_file(pdf_out, as_attachment=True,
+                     download_name=f"voucher_{v.voucher_number}.pdf",
+                     mimetype="application/pdf")
+
 @acct_bp.route("/vouchers/<int:id>/delete", methods=["POST"])
 @login_required
 def delete_voucher(id):
     v = AccountingVoucher.query.get_or_404(id)
+    if deny_page(VOUCHER_SECTION.get(v.voucher_type, "journal_vouchers"), "delete"):
+        return redirect(url_for("accounting.voucher_list"))
     if v.status == "approved":
         flash("Cannot delete an approved voucher. Unapprove it first.", "error")
         return redirect(url_for("accounting.voucher_list"))

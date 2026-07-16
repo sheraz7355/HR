@@ -45,45 +45,6 @@
             </a>
           </div>
         </div>
-        <div class="nav-group {{ 'expanded' if request.endpoint and (request.endpoint.startswith('inv_suppliers') or request.endpoint.startswith('inv_purchases') or request.endpoint.startswith('inv_purchase_invoice') or request.endpoint.startswith('inv_purchase_return')) else '' }}" data-group="procurement">
-          <div class="nav-group-header">
-            <span class="nav-icon">&#128230;</span><span>Procurement</span><span class="group-chevron">&#9662;</span>
-          </div>
-          <div class="nav-group-items">
-            <a href="{{ url_for('inv_suppliers.list_suppliers') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_suppliers') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>Suppliers</span>
-            </a>
-            {% if purchase_flow == 'with_po' %}
-            <a href="{{ url_for('inv_purchases.list_purchases') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchases') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>Purchase Orders</span>
-            </a>
-            {% endif %}
-            <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchase_invoice') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>{% if purchase_flow == 'with_po' %}Invoice Against PO{% else %}Purchase Invoice{% endif %}</span>
-            </a>
-            <a href="{{ url_for('inv_purchase_return.list_returns') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_purchase_return') else '' }}">
-              <span class="nav-icon" style="color:#dc2626;">&#9632;</span><span>Purchase Return</span>
-            </a>
-          </div>
-        </div>
-        <div class="nav-group {{ 'expanded' if request.endpoint and (request.endpoint.startswith('inv_customers') or request.endpoint.startswith('inv_sales') or request.endpoint.startswith('inv_invoices')) else '' }}" data-group="sales">
-          <div class="nav-group-header">
-            <span class="nav-icon">&#128176;</span><span>Sales</span><span class="group-chevron">&#9662;</span>
-          </div>
-          <div class="nav-group-items">
-            <a href="{{ url_for('inv_customers.list_customers') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_customers') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>Customers</span>
-            </a>
-            {% if sales_flow == 'with_so' %}
-            <a href="{{ url_for('inv_sales.list_sales') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_sales') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>Sales Orders</span>
-            </a>
-            {% endif %}
-            <a href="{{ url_for('inv_invoices.list_invoices') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('inv_invoices') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>{% if sales_flow == 'with_so' %}Invoice Against SO{% else %}Sales Invoice{% endif %}</span>
-            </a>
-          </div>
-        </div>
         <div class="nav-group {{ 'expanded' if request.endpoint and request.endpoint.startswith('inv_vouchers') else '' }}" data-group="vouchers">
           <div class="nav-group-header">
             <span class="nav-icon">&#128196;</span><span>Vouchers</span><span class="group-chevron">&#9662;</span>
@@ -100,19 +61,6 @@
             </a>
             <a href="{{ url_for('inv_vouchers.stock_take_list') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint == 'inv_vouchers.stock_take_list' or request.endpoint == 'inv_vouchers.stock_take_form' else '' }}">
               <span class="nav-icon">&#9632;</span><span>Stock Taking</span>
-            </a>
-          </div>
-        </div>
-        <div class="nav-group {{ 'expanded' if request.endpoint and request.endpoint.startswith('accounting.') else '' }}" data-group="accounting">
-          <div class="nav-group-header">
-            <span class="nav-icon">&#128202;</span><span>Accounting</span><span class="group-chevron">&#9662;</span>
-          </div>
-          <div class="nav-group-items">
-            <a href="{{ url_for('accounting.voucher_list') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint.startswith('accounting.voucher') else '' }}">
-              <span class="nav-icon">&#9632;</span><span>Vouchers</span>
-            </a>
-            <a href="{{ url_for('accounting.voucher_form') }}" class="nav-item {{ 'active' if request.endpoint and request.endpoint == 'accounting.voucher_form' else '' }}">
-              <span class="nav-icon">&#9632;</span><span>+ New Voucher</span>
             </a>
           </div>
         </div>
@@ -137,9 +85,6 @@
         </div>
       </nav>
       <div class="sidebar-footer" style="padding:12px 18px;border-top:1px solid rgba(255,255,255,0.06);">
-        <a href="{{ url_for('inv_settings.settings_page') }}" class="nav-item" style="color:rgba(255,255,255,0.5);">
-          <span class="nav-icon">&#9881;</span><span>Settings</span>
-        </a>
         <a href="{{ url_for('auth.logout') }}" class="nav-item" style="color:rgba(255,255,255,0.5);">
           <span class="nav-icon">&#9654;</span><span>Logout</span>
         </a>

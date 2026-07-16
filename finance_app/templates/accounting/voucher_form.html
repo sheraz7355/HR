@@ -4,6 +4,7 @@
 {% set vtype = v.voucher_type if v else (initial_type if initial_type else 'CPV') %}
 {% set is_approved = v and v.status == 'approved' %}
 {% set editable = not is_approved %}
+{% set form_active = editable and (is_new or edit_mode) %}
 {% set is_cb = vtype in ('CPV','CRV','BPV','BRV') %}
 {% set is_receipt = vtype in ('CRV','BRV') %}
 {% set cb_label = {'CPV':'Cash Account','CRV':'Cash Account','BPV':'Bank Account','BRV':'Bank Account'} %}
@@ -78,12 +79,13 @@
 .bal-bad{background:#fee2e2;color:#b91c1c}
 /* autocomplete */
 .ac-wrap{position:relative}
-.ac-dd{position:absolute;top:100%;left:0;right:0;min-width:280px;background:#fff;border:1px solid #e2e8f0;border-radius:0 0 6px 6px;z-index:300;max-height:240px;overflow-y:auto;box-shadow:0 10px 28px rgba(0,0,0,.12);display:none}
+.ac-dd{position:fixed;min-width:280px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;z-index:9999;max-height:240px;overflow-y:auto;box-shadow:0 10px 28px rgba(0,0,0,.12);display:none}
 .ac-dd.show{display:block}
-.ac-it{padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.ac-it{padding:7px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;gap:8px;align-items:center;word-break:break-word}
 .ac-it:hover,.ac-it.hl{background:#e0f2f1}
 .ac-it .ac-n{font-weight:600;color:#1e293b}
 .ac-it .ac-c{font-size:11px;color:#94a3b8;font-family:ui-monospace,monospace;white-space:nowrap}
+.vtb .acct-input{overflow:visible;white-space:nowrap}
 /* action bar */
 .vab{display:flex;gap:10px;justify-content:flex-end;align-items:center;padding:14px 18px;border-top:1px solid #e2e8f0;flex-wrap:wrap}
 .vbtn{padding:9px 24px;border:none;font-size:13px;font-weight:600;cursor:pointer;border-radius:6px;transition:all .12s;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
@@ -94,6 +96,11 @@
 .vbtn-s:hover:not(:disabled){background:#15803d}
 .vbtn-o{background:#fff;color:#1e293b;border:1px solid #e2e8f0}
 .vbtn-o:hover{background:#f1f5f9}
+.vbtn-d{background:#fff;color:#dc2626;border:1px solid #fecaca}
+.vbtn-d:hover:not(:disabled){background:#fef2f2}
+.vbtn-g{background:#fff;color:#9ca3af;border:1px solid #e5e7eb}
+.vbtn-e{background:#fff;color:#0f5257;border:1px solid #0f5257}
+.vbtn-e:hover{background:#f0fdfa}
 .ap-banner{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#166534}
 .grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 @media(max-width:760px){
@@ -140,27 +147,27 @@
           <label class="vlbl">Date &amp; Time</label>
           <input type="datetime-local" name="voucher_date" class="vinp" id="voucherDate"
                  value="{{ v.voucher_date.strftime('%Y-%m-%dT%H:%M') if v else '' }}"
-                 {{ 'disabled' if not editable else '' }}>
-        </div>
-        <div>
-          <label class="vlbl">Voucher #</label>
-          <input type="text" class="vinp" readonly value="{{ v.voucher_number if v else '(auto)' }}">
+                 {{ 'disabled' if not form_active else '' }}>
         </div>
         <div id="cbAccountWrap" {{ 'style=display:none' if not is_cb else '' }}>
           <label class="vlbl">{{ cb_label.get(vtype, 'Cash/Bank Account') }} <span style="color:#dc2626">*</span></label>
           <div class="ac-wrap">
             <input type="text" class="vinp" id="cbSearch" placeholder="Search cash/bank account..."
                    value="{{ v.cash_bank_account.name if v and v.cash_bank_account else '' }}" autocomplete="off"
-                   {{ 'disabled' if not editable else '' }}>
+                   {{ 'disabled' if not form_active else '' }}>
             <input type="hidden" name="cash_bank_account_id" id="cbAccountId"
                    value="{{ v.cash_bank_account_id if v else '' }}">
             <div class="ac-dd" id="cbDropdown"></div>
           </div>
         </div>
+        <div>
+          <label class="vlbl">Voucher #</label>
+          <input type="text" class="vinp" readonly value="{{ v.voucher_number if v else '(auto)' }}">
+        </div>
       </div>
       <div style="margin-top:12px">
         <label class="vlbl">Notes</label>
-        <textarea name="notes" class="vinp" rows="2" {{ 'disabled' if not editable else '' }}>{{ v.notes if v else '' }}</textarea>
+        <textarea name="notes" class="vinp" rows="2" {{ 'disabled' if not form_active else '' }}>{{ v.notes if v else '' }}</textarea>
       </div>
     </div>
   </div>
@@ -170,37 +177,14 @@
       <span>Entries</span>
       <span id="jvBalanceChip"></span>
     </div>
-    <div style="padding:12px 18px 0;">
-      {% if is_cb %}
-      <div class="flow-banner {{ 'flow-in' if is_receipt else 'flow-out' }}" id="flowBanner">
-        <span class="arrow">{{ '&#8595;' if is_receipt else '&#8593;' }}</span>
-        <span>
-          {% if is_receipt %}
-          <b>Money in.</b> <span id="flowCb">{{ v.cash_bank_account.name if v and v.cash_bank_account else cb_label.get(vtype,'Cash/Bank') }}</span> will be
-          <span class="side-tag side-dr">DEBITED</span> for the total &mdash; each account you list below is <span class="side-tag side-cr">CREDITED</span>
-          (the source of the money: income, a customer, capital&hellip;).
-          {% else %}
-          <b>Money out.</b> <span id="flowCb">{{ v.cash_bank_account.name if v and v.cash_bank_account else cb_label.get(vtype,'Cash/Bank') }}</span> will be
-          <span class="side-tag side-cr">CREDITED</span> for the total &mdash; each account you list below is <span class="side-tag side-dr">DEBITED</span>
-          (what the money paid for: an expense, a supplier, a loan&hellip;).
-          {% endif %}
-        </span>
-      </div>
-      {% else %}
-      <div class="flow-banner flow-jv">
-        <span class="arrow">&#9878;</span>
-        <span><b>Journal entry.</b> Enter both sides yourself &mdash; total <span class="side-tag side-dr">DEBIT</span> must equal total <span class="side-tag side-cr">CREDIT</span> before it can be approved.</span>
-      </div>
-      {% endif %}
-    </div>
     <div class="vtb-w">
       <table class="vtb" id="entriesTable">
         <thead>
           <tr>
             <th style="width:30px">#</th>
             <th style="width:78px">Code</th>
-            <th style="min-width:220px">Account</th>
-            <th style="min-width:160px">Description</th>
+            <th style="min-width:130px">Account</th>
+            <th style="min-width:280px">Description</th>
             {% if is_cb %}
             <th class="num amt-col">Amount <span class="side-tag {{ 'side-cr' if is_receipt else 'side-dr' }}" style="font-size:9px;">{{ 'CR' if is_receipt else 'DR' }}</span></th>
             {% else %}
@@ -213,7 +197,7 @@
         <tbody id="entriesBody"></tbody>
       </table>
     </div>
-    {% if editable %}
+    {% if form_active %}
     <div class="grid-acts">
       <button type="button" class="bsm" id="addRowBtn">+ Add line</button>
       <button type="button" class="bsm bsm-d" id="clearRowsBtn">&#10005; Clear all</button>
@@ -235,26 +219,48 @@
     </div>
   </div>
 
-  <div class="vcard">
-    <div class="vab">
-      {% if editable %}
-      <button type="submit" class="vbtn vbtn-p" id="saveBtn">Save</button>
-      <button type="submit" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
-      {% endif %}
-      {% if v %}
-      <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o">Print</a>
-      {% endif %}
-      <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o">Cancel</a>
-    </div>
-  </div>
 </form>
+
+<div class="vcard">
+  <div class="vab">
+    {% if is_new and editable %}
+    <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save</button>
+    <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
+    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o">Cancel</a>
+
+    {% elif v and not is_new and not is_approved and not edit_mode %}
+    <button type="submit" form="voucherForm" class="vbtn vbtn-g" disabled>Save</button>
+    <a href="{{ url_for('accounting.voucher_form', id=v.id, edit=1) }}" class="vbtn vbtn-e">Edit</a>
+    <form method="POST" action="{{ url_for('accounting.approve_voucher', id=v.id) }}" style="display:inline">
+      <button type="submit" class="vbtn vbtn-s" onclick="return confirm('Approve this voucher?')">Approve</button>
+    </form>
+    <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o">Print</a>
+    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-g" style="pointer-events:none;">Cancel</a>
+
+    {% elif v and not is_new and editable and edit_mode %}
+    <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save</button>
+    <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
+    <a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="vbtn vbtn-o">Cancel</a>
+
+    {% elif is_approved and v %}
+    <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o">Print</a>
+    <form method="POST" action="{{ url_for('accounting.unapprove_voucher', id=v.id) }}" style="display:inline">
+      <button type="submit" class="vbtn vbtn-d" onclick="return confirm('Unapprove this voucher? This will reverse journal entries.')">Unapprove</button>
+    </form>
+    <form method="POST" action="{{ url_for('accounting.delete_voucher', id=v.id) }}" style="display:inline" onsubmit="return confirm('Delete this voucher?')">
+      <button type="submit" class="vbtn vbtn-g" disabled>Delete</button>
+    </form>
+    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o">Cancel</a>
+    {% endif %}
+  </div>
+</div>
 </div>
 
 <script>
 // ================= state =================
 var IS_CB = {{ 'true' if is_cb else 'false' }};
 var IS_RECEIPT = {{ 'true' if is_receipt else 'false' }};
-var EDITABLE = {{ 'true' if editable else 'false' }};
+var EDITABLE = {{ 'true' if form_active else 'false' }};
 // amount column posts on the semantically correct side; the server also
 // enforces sides for cash/bank vouchers as defence in depth.
 var AMT_NAME = IS_CB ? (IS_RECEIPT ? 'credit[]' : 'debit[]') : null;
@@ -271,39 +277,48 @@ var EXISTING = [
 function qs(s,c){return (c||document).querySelector(s)}
 function qsa(s,c){return Array.prototype.slice.call((c||document).querySelectorAll(s))}
 function fmt(n){return (parseFloat(n)||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 // ================= account autocomplete =================
 function makeAuto(inp, fetchUrl, onPick){
   var wrap=inp.parentNode, dd=wrap.querySelector('.ac-dd'), list=[], hl=-1, timer;
-  if(!dd){dd=document.createElement('div');dd.className='ac-dd';wrap.classList.add('ac-wrap');wrap.appendChild(dd);}
+  if(!dd){dd=document.createElement('div');dd.className='ac-dd';}
+  if(dd.parentNode!==document.body){document.body.appendChild(dd);}
+  function pos(){
+    var r=inp.getBoundingClientRect();
+    dd.style.left=r.left+'px';dd.style.top=(r.bottom+2)+'px';dd.style.minWidth=Math.max(r.width,280)+'px';
+  }
   function render(){
     hl=-1;
     if(!list.length){dd.classList.remove('show');return}
     dd.innerHTML=list.map(function(a,i){
       return '<div class="ac-it" data-i="'+i+'"><span class="ac-n">'+a.name+'</span><span class="ac-c">'+a.code+' &bull; '+(a.type||'')+'</span></div>';
     }).join('');
-    dd.classList.add('show');
+    pos();dd.classList.add('show');
   }
   function paint(){qsa('.ac-it',dd).forEach(function(e,i){e.classList.toggle('hl',i===hl)})}
   function pick(i){var a=list[i];if(!a)return;dd.classList.remove('show');onPick(a);}
   function load(q){
     fetch(fetchUrl+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(d){list=d;render();});
   }
+  function hide(){dd.classList.remove('show')}
   inp.addEventListener('keydown',function(e){
     if(e.key===' ' && !inp.value.trim()){e.preventDefault();load('');return}
     if(!dd.classList.contains('show'))return;
     if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(hl+1,list.length-1);paint();}
     else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(hl-1,0);paint();}
     else if(e.key==='Enter'){e.preventDefault();pick(hl>=0?hl:0);}
-    else if(e.key==='Escape'){dd.classList.remove('show');}
+    else if(e.key==='Escape'){hide();}
   });
   inp.addEventListener('input',function(){
     clearTimeout(timer);var q=inp.value.trim();
-    if(!q){dd.classList.remove('show');return}
+    if(!q){hide();return}
     timer=setTimeout(function(){load(q)},200);
   });
-  inp.addEventListener('blur',function(){setTimeout(function(){dd.classList.remove('show')},180)});
-  dd.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');if(t)pick(parseInt(t.dataset.i,10));});
+  inp.addEventListener('blur',function(){setTimeout(hide,200)});
+  dd.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');if(t){pick(parseInt(t.dataset.i,10));e.preventDefault()}});
+  window.addEventListener('scroll',function(){if(dd.classList.contains('show'))pos()},{passive:true});
+  window.addEventListener('resize',function(){if(dd.classList.contains('show'))pos()},{passive:true});
 }
 
 // ================= rows =================
@@ -324,7 +339,7 @@ function rowHtml(d){
     +'<input type="hidden" name="account_id[]" value="'+(d.id||'')+'">'
     +'<input type="text" class="ri acct-input" placeholder="Type or press Space to search..." autocomplete="off" value="'+(d.name||'').replace(/"/g,'&quot;')+'" '+dis+'>'
     +'</div></td>'
-    +'<td><input type="text" name="description[]" class="ri desc-input" value="'+(d.desc||'').replace(/"/g,'&quot;')+'" '+dis+'></td>'
+    +'<td><textarea name="description[]" class="ri desc-input" rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(d.desc||'')+'</textarea></td>'
     +amtCells
     +'<td><div class="row-acts">'+(EDITABLE?'<button type="button" class="add-after" title="Insert line">+</button><button type="button" class="del" title="Remove line">&minus;</button>':'')+'</div></td>';
 }
@@ -340,13 +355,16 @@ function wireRow(tr){
       var nxt=qs('.desc-input',tr); if(nxt)nxt.focus();
     });
   }
-  qsa('input',tr).forEach(function(inp){
+  qsa('input,textarea',tr).forEach(function(inp){
     inp.addEventListener('input',recalc);
     inp.addEventListener('keydown',function(e){
       if(e.key!=='Enter')return;
-      // Enter in the LAST cell of the LAST row appends a new row (grid feel);
-      // otherwise Enter moves right.
-      var dd=tr.querySelector('.ac-dd.show'); if(dd)return; // dropdown handles Enter
+      // Description textarea: Shift+Enter inserts newline, Enter moves to next field
+      if(inp.tagName==='TEXTAREA' && inp.classList.contains('desc-input')){
+        if(e.shiftKey) return; // let default insert newline
+        e.preventDefault(); // stop Enter from inserting newline
+      }
+      var dd=tr.querySelector('.ac-dd.show'); if(dd)return;
       e.preventDefault();
       var cells=qsa('.ri:not([readonly]):not(:disabled)',tr);
       var i=cells.indexOf(e.target);
@@ -356,6 +374,10 @@ function wireRow(tr){
       else{var nr=tr.nextElementSibling;var f=nr&&qs('.ri:not([readonly]):not(:disabled)',nr);if(f)f.focus();}
     });
   });
+  var di=qs('.desc-input',tr);
+  if(di && di.tagName==='TEXTAREA'){
+    di.addEventListener('input',function(){this.style.height='auto';this.style.height=this.scrollHeight+'px'});
+  }
   var plus=qs('.add-after',tr);
   if(plus)plus.addEventListener('click',function(){
     var ntr=document.createElement('tr');ntr.innerHTML=rowHtml({});

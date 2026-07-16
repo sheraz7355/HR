@@ -24,11 +24,6 @@ def logout():
 @login_required
 def dashboard():
     from ..models.product import InvProduct
-    from ..models.supplier import InvSupplier
-    from ..models.customer import InvCustomer
-    from ..models.purchase_order import InvPurchaseOrder
-    from ..models.sales_order import InvSalesOrder
-    from ..models.invoice import InvInvoice
     from ..models.stock_movement import InvStockMovement
     from shared.models.stock_ledger import StockLedger
     from shared.models.vouchers import ConsumptionVoucher, ScrapVoucher, StockAdjustmentVoucher, StockTake
@@ -36,22 +31,10 @@ def dashboard():
     from sqlalchemy import func
 
     total_products = InvProduct.query.count()
-    total_suppliers = InvSupplier.query.count()
-    total_customers = InvCustomer.query.count()
-    total_purchase_orders = InvPurchaseOrder.query.count()
-    total_sales_orders = InvSalesOrder.query.count()
+    total_categories = db.session.query(func.count(func.distinct(InvProduct.category_id))).scalar() or 0
     low_stock = InvProduct.query.filter(
         InvProduct.current_stock <= InvProduct.reorder_level,
         InvProduct.reorder_level > 0
-    ).count()
-    pending_po = InvPurchaseOrder.query.filter(
-        InvPurchaseOrder.status.in_(["unapproved", "pending"])
-    ).count()
-    pending_so = InvSalesOrder.query.filter(
-        InvSalesOrder.status.in_(["unapproved", "confirmed"])
-    ).count()
-    unpaid_invoices = InvInvoice.query.filter(
-        InvInvoice.payment_status.in_(["unpaid", "partial"])
     ).count()
 
     # Stock valuation
@@ -84,14 +67,8 @@ def dashboard():
     return render_template(
         "dashboard/index_inv.html",
         total_products=total_products,
-        total_suppliers=total_suppliers,
-        total_customers=total_customers,
-        total_purchase_orders=total_purchase_orders,
-        total_sales_orders=total_sales_orders,
+        total_categories=total_categories,
         low_stock=low_stock,
-        pending_po=pending_po,
-        pending_so=pending_so,
-        unpaid_invoices=unpaid_invoices,
         total_stock_value=round(total_stock_value, 2),
         consumption_count=consumption_count,
         scrap_count=scrap_count,

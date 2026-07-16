@@ -1,0 +1,52 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Purchase Orders{% endblock %}
+{% block page_title %}Purchase Orders{% endblock %}
+{% block content %}
+<div class="page-header">
+  <a href="{{ url_for('inv_purchases.create_purchase') }}" class="btn btn-primary">+ New Purchase Order</a>
+</div>
+<div class="card">
+  <div class="card-body" style="padding-bottom:8px;">
+    <form method="GET" class="search-form">
+      <select name="status" class="form-control focus-ring" style="width:200px;display:inline-block;" onchange="this.form.submit()">
+        <option value="">All Status</option>
+        {% for s in ['unapproved', 'pending', 'received', 'cancelled'] %}
+        <option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s|title }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="table-responsive">
+    <table class="table">
+      <thead><tr><th>PO #</th><th>Supplier</th><th>Date</th><th>Expected</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td><strong>{{ o.po_number }}</strong></td>
+          <td>{{ o.supplier.name }}</td>
+          <td>{{ o.order_date }}</td>
+          <td>{{ o.expected_date or '-' }}</td>
+          <td>{{ "%.2f"|format(o.total_amount) }}</td>
+          <td><span class="badge badge-{{ o.status }}">{{ o.status|title }}</span></td>
+          <td class="actions">
+            {% if o.status in ('unapproved', 'pending') %}
+            <a href="{{ url_for('inv_purchases.receive_purchase', id=o.id) }}" class="btn btn-sm btn-success" onclick="return confirm('Receive this order?')">Receive</a>
+            <a href="{{ url_for('inv_purchases.cancel_purchase', id=o.id) }}" class="btn btn-sm btn-warning" onclick="return confirm('Cancel?')">Cancel</a>
+            <a href="{{ url_for('inv_purchases.delete_purchase', id=o.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete?')">Delete</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No purchase orders</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<style>
+.badge-unapproved { background:#e2e8f0; color:#475569; }
+.badge-pending { background:#fef3c7; color:#92400e; }
+.badge-received { background:#dcfce7; color:#16a34a; }
+.badge-cancelled { background:#fce4ec; color:#c62828; }
+</style>
+{% endblock %}

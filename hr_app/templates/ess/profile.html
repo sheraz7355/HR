@@ -20,6 +20,7 @@
     </div>
     <table>
         <tr><td style="font-weight:600;width:150px;">Employee Code</td><td>{{ user.employee_code }}</td></tr>
+        <tr><td style="font-weight:600;">User ID</td><td>{{ user.login_id or user.email }}</td></tr>
         <tr><td style="font-weight:600;">Email</td><td>{{ user.email }}</td></tr>
         <tr><td style="font-weight:600;">Phone</td><td>{{ user.phone or '-' }}</td></tr>
         <tr><td style="font-weight:600;">CNIC</td><td>{{ user.cnic or '-' }}</td></tr>
@@ -29,5 +30,29 @@
         <tr><td style="font-weight:600;">Account Number</td><td>{{ user.bank_account_number or '-' }}</td></tr>
     </table>
     <a href="{{ url_for('ess.index') }}" class="btn btn-primary mt-10">Edit Profile</a>
+</div>
+
+<div class="card" style="max-width:700px;margin-top:20px;">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px;">Account Settings</h3>
+    <p style="color:var(--muted);font-size:12.5px;margin-bottom:16px;">
+        Your <strong>User ID</strong> is what you type to sign in — it is separate from your email,
+        but you may set both to the same value.
+    </p>
+    <form method="post" action="{{ url_for('auth.account_settings') }}">
+        <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="form-group">
+                <label style="font-weight:600;font-size:13px;">User ID</label>
+                <input type="text" name="login_id" class="form-control" required value="{{ user.login_id or user.email }}">
+            </div>
+            <div class="form-group">
+                <label style="font-weight:600;font-size:13px;">Email</label>
+                <input type="email" name="email" class="form-control" required value="{{ user.email }}">
+            </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:14px;">
+            <button type="submit" class="btn btn-primary">Save Account Settings</button>
+            <a href="{{ url_for('auth.change_password') }}" class="btn btn-outline">Change Password</a>
+        </div>
+    </form>
 </div>
 {% endblock %}

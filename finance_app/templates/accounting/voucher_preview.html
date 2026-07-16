@@ -27,9 +27,12 @@ td{padding:7px 10px;border-bottom:1px solid #eef0f5}
 tfoot td{font-weight:700;background:#f8f9ff;border-top:2px solid #1a1a2e;padding:8px 10px}
 .notes{border-top:1px solid #eee;margin-top:14px;padding-top:10px;font-size:11px;color:#666}
 .app{border-top:1px solid #eee;margin-top:10px;padding-top:8px;font-size:11px;color:#666}
-.act{text-align:center;margin-top:20px}
+.act{text-align:center;margin-top:20px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap}
 .bp{padding:8px 28px;background:#6c63ff;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer}
-.bc{padding:8px 28px;background:#fff;color:#6b7280;border:1px solid #d0d5dd;border-radius:6px;font-size:14px;cursor:pointer;margin-left:8px;text-decoration:none;display:inline-block}
+.bx{padding:8px 28px;background:#fff;color:#0f5257;border:1px solid #0f5257;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+.bx:hover{background:#f0fdfa}
+.bc{padding:8px 28px;background:#6c63ff;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block}
+.bc:hover{background:#5b52e0}
 @media print{
   body{background:#fff;padding:0;font-size:11px}
   .pa{box-shadow:none;border-radius:0;padding:16px 20px;max-width:none}
@@ -90,6 +93,11 @@ tfoot td{font-weight:700;background:#f8f9ff;border-top:2px solid #1a1a2e;padding
 </div>
 <div class="act">
   <button class="bp" onclick="window.print()">Print</button>
+  <a href="{{ url_for('accounting.voucher_export', id=voucher.id) }}?fmt=pdf" class="bx">PDF</a>
+  <a href="{{ url_for('accounting.voucher_export', id=voucher.id) }}?fmt=excel" class="bx">Excel</a>
+  {% if voucher.status == 'unapproved' %}
+  <a href="{{ url_for('accounting.voucher_form', id=voucher.id, edit=1) }}" class="bx">Edit</a>
+  {% endif %}
   <a href="javascript:window.close()" class="bc">Close</a>
 </div>
 </body>

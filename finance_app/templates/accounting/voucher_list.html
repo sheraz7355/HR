@@ -61,7 +61,7 @@
             <th>Status</th>
             <th>Created By</th>
             <th>Approved By</th>
-            <th style="width:200px">Actions</th>
+            <th style="width:80px">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -80,24 +80,7 @@
             </td>
             <td>{{ v.creator.full_name if v.creator else '' }}</td>
             <td>{{ v.approver.full_name if v.approver else '' }}</td>
-            <td>
-              <div style="display:flex;gap:4px;flex-wrap:wrap;">
-                <a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="bsm">View</a>
-                {% if v.status == 'unapproved' %}
-                <a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="bsm">Edit</a>
-                <form method="POST" action="{{ url_for('accounting.approve_voucher', id=v.id) }}" style="display:inline">
-                  <button type="submit" class="bsm" style="color:var(--green);border-color:var(--green);">Approve</button>
-                </form>
-                <form method="POST" action="{{ url_for('accounting.delete_voucher', id=v.id) }}" style="display:inline" onsubmit="return confirm('Delete this voucher?')">
-                  <button type="submit" class="bsm bsm-d">Delete</button>
-                </form>
-                {% elif v.status == 'approved' %}
-                <form method="POST" action="{{ url_for('accounting.unapprove_voucher', id=v.id) }}" style="display:inline">
-                  <button type="submit" class="bsm" onclick="return confirm('Unapprove this voucher? This will reverse journal entries.')">Unapprove</button>
-                </form>
-                {% endif %}
-              </div>
-            </td>
+            <td><a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="btn btn-o" style="padding:4px 14px;font-size:12px;">View</a></td>
           </tr>
           {% else %}
           <tr><td colspan="8" style="text-align:center;padding:30px;color:var(--light);">No vouchers found.</td></tr>

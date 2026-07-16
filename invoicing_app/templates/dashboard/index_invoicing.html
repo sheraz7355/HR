@@ -1,0 +1,72 @@
+{% extends "layouts/base_invoicing.html" %}
+{% block title %}Invoicing Dashboard{% endblock %}
+{% block page_title %}Invoicing Dashboard{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:24px;">
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Suppliers</div>
+    <div style="font-size:32px;font-weight:700;color:#16a34a;">{{ supplier_total }}</div>
+    <a href="{{ url_for('inv_suppliers.list_suppliers') }}" style="font-size:12px;">View all</a>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Customers</div>
+    <div style="font-size:32px;font-weight:700;color:#2563eb;">{{ customer_total }}</div>
+    <a href="{{ url_for('inv_customers.list_customers') }}" style="font-size:12px;">View all</a>
+  </div>
+  {% if purchase_flow == 'with_po' %}
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Pending Purchase Orders</div>
+    <div style="font-size:32px;font-weight:700;color:#d97706;">{{ po_pending }}</div>
+    <a href="{{ url_for('inv_purchases.list_purchases') }}" style="font-size:12px;">View</a>
+  </div>
+  {% endif %}
+  {% if sales_flow == 'with_so' %}
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Pending Sales Orders</div>
+    <div style="font-size:32px;font-weight:700;color:#d97706;">{{ so_pending }}</div>
+    <a href="{{ url_for('inv_sales.list_sales') }}" style="font-size:12px;">View</a>
+  </div>
+  {% endif %}
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Sales Invoices</div>
+    <div style="font-size:32px;font-weight:700;color:#0d9488;">{{ sales_total }}</div>
+    <a href="{{ url_for('inv_invoices.list_invoices') }}" style="font-size:12px;">View all</a>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Unapproved Sales Invoices</div>
+    <div style="font-size:32px;font-weight:700;color:#d97706;">{{ sales_unapproved }}</div>
+    <a href="{{ url_for('inv_invoices.list_invoices') }}?status=unapproved" style="font-size:12px;">View</a>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Unpaid Sales Invoices</div>
+    <div style="font-size:32px;font-weight:700;color:#dc2626;">{{ sales_unpaid }}</div>
+    <a href="{{ url_for('inv_invoices.list_invoices') }}" style="font-size:12px;">View</a>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Purchase Invoices</div>
+    <div style="font-size:32px;font-weight:700;color:#7c3aed;">{{ purchase_total }}</div>
+    <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" style="font-size:12px;">View all</a>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div style="font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;">Purchase Returns</div>
+    <div style="font-size:32px;font-weight:700;color:#dc2626;">{{ return_total }}</div>
+    <a href="{{ url_for('inv_purchase_return.list_returns') }}" style="font-size:12px;">View all</a>
+  </div>
+</div>
+<div class="card" style="padding:20px;">
+  <h3 style="margin:0 0 12px;font-size:15px;">Quick Actions</h3>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-primary">+ New Sales Invoice</a>
+    <a href="{{ url_for('inv_purchase_invoice.invoice_form') }}" class="btn btn-primary">+ New Purchase Invoice</a>
+    <a href="{{ url_for('inv_purchase_return.return_form') }}" class="btn btn-secondary">+ New Purchase Return</a>
+    {% if purchase_flow == 'with_po' %}
+    <a href="{{ url_for('inv_purchases.create_purchase') }}" class="btn btn-outline">+ Purchase Order</a>
+    {% endif %}
+    {% if sales_flow == 'with_so' %}
+    <a href="{{ url_for('inv_sales.create_sale') }}" class="btn btn-outline">+ Sales Order</a>
+    {% endif %}
+    <a href="{{ url_for('inv_suppliers.create_supplier') }}" class="btn btn-outline">+ Supplier</a>
+    <a href="{{ url_for('inv_customers.create_customer') }}" class="btn btn-outline">+ Customer</a>
+  </div>
+</div>
+{% endblock %}

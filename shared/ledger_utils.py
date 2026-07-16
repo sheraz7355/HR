@@ -102,6 +102,40 @@ def reverse_journal_entry(voucher_type, voucher_id, created_by=1):
     db.session.flush()
 
 
+# ── Per-entity level-4 subledger accounts ───────────────────────────────────
+# Every supplier / customer / product / employee / loan gets its own level-4
+# account under the matching control account, so the name shows up in ledgers.
+# kind -> (posting role for the parent control account, code prefix, type)
+ENTITY_ACCOUNTS = {
+    "supplier": ("ap", "S", "liability"),        # under Trade Creditors / AP
+    "customer": ("ar", "C", "asset"),            # under Trade Debtors / AR
+    "product": ("inventory", "P", "asset"),      # under Inventory / Stock
+    "employee": ("accrued", "E", "liability"),   # payables under Accrued Expenses
+    "loan": ("ar", "L", "asset"),                # employee loan receivables
+}
+
+
+def create_entity_account(kind, entity_id, name):
+    """Create (or fetch) the level-4 ledger account for a business entity.
+
+    Idempotent: keyed on a deterministic code derived from the control
+    account's code + kind prefix + entity id. If the entity was renamed, the
+    account name is kept in sync so ledgers always show the current name.
+    """
+    role, prefix, type_ = ENTITY_ACCOUNTS[kind]
+    parent = posting_account(role)
+    code = f"{parent.code}-{prefix}{int(entity_id):04d}"
+    acct = ChartOfAccount.query.filter_by(code=code).first()
+    if not acct:
+        acct = ChartOfAccount(code=code, name=name, type=type_,
+                              parent_id=parent.id, level=4)
+        db.session.add(acct)
+        db.session.flush()
+    elif acct.name != name:
+        acct.name = name
+    return acct
+
+
 def get_account_by_code(code):
     return ChartOfAccount.query.filter_by(code=code).first()
 

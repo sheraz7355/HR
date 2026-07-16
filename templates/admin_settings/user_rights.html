@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access Rights - {{ u.full_name }} - Solarkon ERP</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body style="background:#f1f5f9;margin:0;">
+  <header style="background:#1f2937;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:14px;">
+    <div style="width:34px;height:34px;background:#374151;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;">&#9881;</div>
+    <div style="flex:1;">
+      <div style="font-size:16px;font-weight:700;">Access Rights — {{ u.full_name }}</div>
+      <div style="font-size:12px;color:#9ca3af;">{{ u.email }} &middot; {{ u.employee_code }} &middot; {{ u.role_obj.name|title if u.role_obj else '' }}</div>
+    </div>
+    <a href="{{ url_for('admin_settings.users') }}" style="color:#9ca3af;text-decoration:none;font-size:13px;">&larr; All Users</a>
+  </header>
+  <main style="max-width:1100px;margin:28px auto;padding:0 20px;">
+    {% include '_flash.html' %}
+    {% if not is_configured %}
+    <div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;">
+      This user has <strong>no rights configured yet</strong> — they currently have unrestricted access inside their allowed modules.
+      Saving this form makes every checkbox below the explicit rule.
+    </div>
+    {% endif %}
+    <form method="post">
+      {% for module_key, module_label, flag_attr, sections in modules %}
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:18px;overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 18px;background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;cursor:pointer;">
+            <input type="checkbox" name="module_{{ module_key }}" {{ 'checked' if u|attr(flag_attr) }}
+                   onchange="toggleModule(this, '{{ module_key }}')">
+            {{ module_label }}
+          </label>
+          <span style="font-size:12px;color:#6b7280;">— untick to hide this whole module from the user</span>
+        </div>
+        <table id="grid_{{ module_key }}" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="text-align:left;color:#6b7280;">
+              <th style="padding:8px 18px;">Section</th>
+              {% for a in actions %}<th style="padding:8px 10px;text-align:center;text-transform:capitalize;">{{ a }}</th>{% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for resource, res_label in sections %}
+            {% set p = perms.get(resource) %}
+            <tr style="border-top:1px solid #f3f4f6;">
+              <td style="padding:8px 18px;">{{ res_label }}</td>
+              {% for a in actions %}
+              <td style="padding:8px 10px;text-align:center;">
+                <input type="checkbox" name="perm_{{ resource }}_{{ a }}"
+                       {{ 'checked' if (p and p|attr('can_' ~ a)) or (not is_configured) }}>
+              </td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+      <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:18px;padding:16px 18px;">
+        <div style="font-weight:700;font-size:14px;margin-bottom:12px;">&#128274; Set New Password <span style="font-weight:400;font-size:12px;color:#6b7280;">(optional — leave both blank to keep the current password)</span></div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          <input type="password" name="new_password" placeholder="New password" autocomplete="new-password"
+                 style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+          <input type="password" name="confirm_password" placeholder="Enter new password again" autocomplete="new-password"
+                 style="flex:1;min-width:200px;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:40px;">
+        <button type="submit" style="background:#0f5257;color:#fff;border:none;padding:10px 26px;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;">Save Access Rights</button>
+        <a href="{{ url_for('admin_settings.users') }}" style="color:#6b7280;font-size:13px;text-decoration:none;">Cancel</a>
+      </div>
+    </form>
+  </main>
+  <script>
+    function toggleModule(cb, key) {
+      var grid = document.getElementById('grid_' + key);
+      grid.style.opacity = cb.checked ? '1' : '0.35';
+    }
+    document.querySelectorAll('input[name^="module_"]').forEach(function(cb) {
+      var key = cb.name.replace('module_', '');
+      toggleModule(cb, key);
+    });
+  </script>
+</body>
+</html>
