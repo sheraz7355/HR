@@ -225,6 +225,8 @@ def _migrate_schema(db):
         ("inv_purchase_invoices", "party_account_id", "INTEGER"),
         ("report_settings", "purchase_party_mode", "VARCHAR(10)"),
         ("report_settings", "sales_party_mode", "VARCHAR(10)"),
+        ("report_settings", "purchase_template_text", "TEXT"),
+        ("report_settings", "sales_template_text", "TEXT"),
         ("inv_suppliers", "mobile", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "tax_id", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "payment_terms", "VARCHAR(200) DEFAULT ''"),
@@ -260,6 +262,8 @@ def _migrate_schema(db):
         ("inv_invoice_items", "delivery", "FLOAT DEFAULT 0"),
         ("inv_invoice_items", "installation", "FLOAT DEFAULT 0"),
         ("inv_invoice_items", "comments", "TEXT"),
+        ("report_settings", "purchase_template_id", "INTEGER"),
+        ("report_settings", "sales_template_id", "INTEGER"),
     ]
 
     inspector = inspect(engine)

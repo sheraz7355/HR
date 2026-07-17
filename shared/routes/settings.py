@@ -26,6 +26,7 @@ from shared.models.base import User, UserPermission
 from shared.models.company_settings import (CompanyInfo, AccountingPeriod,
                                             ReportSettings, PL_SECTIONS)
 from shared.models.inventory_settings import InventorySettings
+from shared.models.invoice_template import InvoiceTemplate
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import MODULES, ACTIONS
 
@@ -41,8 +42,9 @@ SECTIONS = [
     ("periods",   "Financial Periods", "&#128197;", lambda u: u.module_access("finance")),
     ("reports",   "Report Structure",  "&#128200;", lambda u: u.module_access("finance")),
     ("inventory", "Inventory",         "&#128230;", lambda u: u.module_access("inventory")),
-    ("purchase",  "Purchase Invoices", "&#128228;", lambda u: u.module_access("invoicing")),
-    ("sales",     "Sales Invoices",    "&#128229;", lambda u: u.module_access("invoicing")),
+    ("purchase",  "Procurement",       "&#128228;", lambda u: u.module_access("invoicing")),
+    ("sales",     "Sales",             "&#128229;", lambda u: u.module_access("invoicing")),
+    ("templates", "Invoice Templates", "&#128196;", lambda u: u.module_access("invoicing")),
     ("rights",    "Rights & Access",   "&#128273;", lambda u: u.is_admin()),
 ]
 _PREDICATE = {key: pred for key, _l, _i, pred in SECTIONS}
@@ -103,6 +105,10 @@ def index():
         ctx["accounts"] = _postable_accounts()
     elif tab in ("purchase", "sales"):
         ctx["report_settings"] = ReportSettings.get()
+        ctx["templates"] = InvoiceTemplate.query.filter_by(type=tab).order_by(InvoiceTemplate.name).all()
+    elif tab == "templates":
+        ctx["sales_templates"] = InvoiceTemplate.query.filter_by(type="sales").order_by(InvoiceTemplate.name).all()
+        ctx["purchase_templates"] = InvoiceTemplate.query.filter_by(type="purchase").order_by(InvoiceTemplate.name).all()
     elif tab == "rights":
         ctx["users"] = User.query.order_by(User.full_name).all()
         ctx["modules"] = MODULES
@@ -323,7 +329,7 @@ def save_inventory():
     return redirect(url_for("settings.index", tab="inventory"))
 
 
-# ── Purchase / sales invoice party mode ─────────────────────────────────────
+# ── Purchase / sales invoice document settings ───────────────────────────────
 
 @settings_bp.route("/documents/<doc>", methods=["POST"])
 @login_required
@@ -341,8 +347,131 @@ def save_document_settings(doc):
     else:
         s.sales_party_mode = mode
     db.session.commit()
-    flash(f"{doc.title()} invoice settings updated.", "success")
+    label = "Procurement" if doc == "purchase" else "Sales"
+    flash(f"{label} settings updated.", "success")
     return redirect(url_for("settings.index", tab=doc))
+
+
+@settings_bp.route("/documents/<doc>/template", methods=["POST"])
+@login_required
+def save_document_template(doc):
+    if doc not in ("purchase", "sales"):
+        abort(404)
+    denied = _require(doc)
+    if denied:
+        return denied
+    s = ReportSettings.get()
+    text = request.form.get("template_text", "")
+    if doc == "purchase":
+        s.purchase_template_text = text
+    else:
+        s.sales_template_text = text
+    db.session.commit()
+    label = "Procurement" if doc == "purchase" else "Sales"
+    flash(f"{label} template saved.", "success")
+    return redirect(url_for("settings.index", tab=doc))
+
+
+@settings_bp.route("/documents/<doc>/select-template", methods=["POST"])
+@login_required
+def select_document_template(doc):
+    if doc not in ("purchase", "sales"):
+        abort(404)
+    denied = _require(doc)
+    if denied:
+        return denied
+    s = ReportSettings.get()
+    template_id = request.form.get("template_id", type=int) or None
+    if template_id:
+        t = InvoiceTemplate.query.get(template_id)
+        if not t or t.type != doc:
+            flash("Invalid template.", "error")
+            return redirect(url_for("settings.index", tab=doc))
+    if doc == "purchase":
+        s.purchase_template_id = template_id
+    else:
+        s.sales_template_id = template_id
+    db.session.commit()
+    label = "Procurement" if doc == "purchase" else "Sales"
+    flash(f"{label} print template updated.", "success")
+    return redirect(url_for("settings.index", tab=doc))
+
+
+# ── Invoice template management ─────────────────────────────────────────────
+
+@settings_bp.route("/templates/create", methods=["GET", "POST"])
+@login_required
+def create_template():
+    denied = _require("templates")
+    if denied:
+        return denied
+    if request.method == "POST":
+        name = request.form["name"].strip()
+        ttype = request.form["type"]
+        body = request.form.get("body_html", "").strip()
+        is_default = request.form.get("is_default") == "on"
+
+        if not name or not body:
+            flash("Name and body are required.", "error")
+            return render_template("settings/template_form.html", template=None,
+                                   default_body=InvoiceTemplate.default_body(ttype))
+
+        if is_default:
+            InvoiceTemplate.query.filter_by(type=ttype, is_default=True).update({"is_default": False})
+
+        t = InvoiceTemplate(name=name, type=ttype, body_html=body, is_default=is_default)
+        db.session.add(t)
+        db.session.commit()
+        flash(f"Template '{name}' created.", "success")
+        return redirect(url_for("settings.index", tab="templates"))
+
+    ttype = request.args.get("type", "purchase")
+    return render_template("settings/template_form.html", template=None,
+                           default_body=InvoiceTemplate.default_body(ttype))
+
+
+@settings_bp.route("/templates/edit/<int:id>", methods=["GET", "POST"])
+@login_required
+def edit_template(id):
+    denied = _require("templates")
+    if denied:
+        return denied
+    t = InvoiceTemplate.query.get_or_404(id)
+    if request.method == "POST":
+        name = request.form["name"].strip()
+        body = request.form.get("body_html", "").strip()
+        is_default = request.form.get("is_default") == "on"
+
+        if not name or not body:
+            flash("Name and body are required.", "error")
+            return render_template("settings/template_form.html", template=t,
+                                   default_body=InvoiceTemplate.default_body(t.type))
+
+        if is_default and not t.is_default:
+            InvoiceTemplate.query.filter_by(type=t.type, is_default=True).update({"is_default": False})
+
+        t.name = name
+        t.body_html = body
+        t.is_default = is_default
+        db.session.commit()
+        flash(f"Template '{name}' updated.", "success")
+        return redirect(url_for("settings.index", tab="templates"))
+
+    return render_template("settings/template_form.html", template=t,
+                           default_body=InvoiceTemplate.default_body(t.type))
+
+
+@settings_bp.route("/templates/delete/<int:id>")
+@login_required
+def delete_template(id):
+    denied = _require("templates")
+    if denied:
+        return denied
+    t = InvoiceTemplate.query.get_or_404(id)
+    db.session.delete(t)
+    db.session.commit()
+    flash(f"Template '{t.name}' deleted.", "success")
+    return redirect(url_for("settings.index", tab="templates"))
 
 
 # ── Rights & access (admin only) ────────────────────────────────────────────

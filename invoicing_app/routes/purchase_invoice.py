@@ -10,6 +10,8 @@ from inventory_app.models.stock_movement import InvStockMovement
 from shared.models.vouchers import ConsumptionItem as ConsItem, ScrapItem, StockAdjustmentItem as AdjItem
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account, party_account
 from shared.models.ledger import ChartOfAccount
+from shared.models.company_settings import CompanyInfo, ReportSettings
+from shared.models.invoice_template import InvoiceTemplate, render_invoice_template
 from shared.permissions import deny_json
 from shared.costing import record_in, reverse_voucher_stock
 
@@ -55,12 +57,88 @@ def invoice_form(id):
                 "total_before_discount": it.total_before_discount,
                 "total_after_discount": it.total_after_discount,
             })
-    from shared.models.company_settings import ReportSettings
+    rs = ReportSettings.get()
+    company = CompanyInfo.get()
+
+    rendered_template = None
+    invoice_template_obj = None
+    if invoice:
+        tid = rs.purchase_template_id
+        if tid:
+            invoice_template_obj = InvoiceTemplate.query.get(tid)
+        if not invoice_template_obj:
+            invoice_template_obj = InvoiceTemplate.get_default("purchase")
+
+    if invoice_template_obj and invoice:
+        items_rows = ""
+        for i, it in enumerate(invoice.items.all(), start=1):
+            items_rows += (
+                f"<tr>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;text-align:center;'>{i}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;'>{it.product.sku if it.product else ''}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;'>{it.description or ''}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;text-align:center;'>{it.quantity}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;text-align:right;'>{it.unit or ''}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;text-align:right;'>{it.unit_price:.2f}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #e2e8f0;text-align:right;'>{it.total_before_discount:.2f}</td>"
+                f"</tr>"
+            )
+        items_table = (
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            '<thead><tr style="background:#1e293b;color:#fff;">'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:center;">#</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:left;">SKU</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:left;">Description</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:center;">Qty</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:center;">Unit</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:right;">Price</th>'
+            '<th style="padding:8px;border:1px solid #1e293b;text-align:right;">Total</th>'
+            '</tr></thead><tbody>' + items_rows + '</tbody></table>'
+        )
+
+        party = invoice.supplier
+        ctx = {
+            "company_logo": f'<img src="{company.logo_url}" style="max-height:60px;" alt="Logo">' if company.logo_url else "",
+            "company_name": company.company_name or "",
+            "company_address": company.address or "",
+            "company_city": company.city or "",
+            "company_phone": company.phone or "",
+            "company_email": company.email or "",
+            "company_tax_id": company.tax_id or "",
+            "invoice_no": invoice.voucher_number or "",
+            "invoice_date": invoice.invoice_date.strftime("%d-%b-%Y") if invoice.invoice_date else "",
+            "due_date": invoice.due_date.strftime("%d-%b-%Y") if invoice.due_date else "",
+            "status": ("Approved" if invoice.approved_at else "Unapproved"),
+            "party_name": party.name if party else "",
+            "party_address": party.address if party and party.address else "",
+            "party_city": party.city if party and party.city else "",
+            "party_phone": party.phone if party and party.phone else "",
+            "party_email": party.email if party and party.email else "",
+            "party_tax_id": party.tax_id if party and party.tax_id else "",
+            "items_table": items_table,
+            "subtotal": f"{invoice.subtotal:.2f}" if invoice.subtotal else "0.00",
+            "discount": f"{invoice.total_discount:.2f}" if invoice.total_discount else "0.00",
+            "tax": f"{invoice.total_tax:.2f}" if invoice.total_tax else "0.00",
+            "commission": f"{invoice.total_commission:.2f}" if invoice.total_commission else "0.00",
+            "freight": f"{invoice.total_freight:.2f}" if invoice.total_freight else "0.00",
+            "loading_unloading": f"{invoice.total_loading_unloading:.2f}" if invoice.total_loading_unloading else "0.00",
+            "withholding_tax": f"{invoice.total_withholding_tax:.2f}" if invoice.total_withholding_tax else "0.00",
+            "grand_total": "0.00",
+            "delivery_charges": "0.00",
+            "installation_charges": "0.00",
+            "notes": invoice.notes or "",
+        }
+        net = (invoice.subtotal or 0) - (invoice.total_discount or 0) + (invoice.total_tax or 0) + (invoice.total_commission or 0) + (invoice.total_freight or 0) + (invoice.total_loading_unloading or 0) - (invoice.total_withholding_tax or 0)
+        ctx["grand_total"] = f"{net:.2f}"
+        rendered_template = render_invoice_template(invoice_template_obj.body_html, ctx)
+
     return render_template("purchase_invoice/form_inv.html",
                            invoice=invoice,
                            invoice_items=invoice_items,
                            suppliers=suppliers,
-                           party_mode=ReportSettings.get().party_mode("purchase"),
+                           party_mode=rs.party_mode("purchase"),
+                           invoice_template_text=rs.template_text("purchase"),
+                           rendered_template=rendered_template,
                            products=products,
                            now=datetime.utcnow())
 

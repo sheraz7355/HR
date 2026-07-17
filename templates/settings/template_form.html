@@ -1,0 +1,57 @@
+{% extends "layouts/app_shell.html" %}
+{% block title %}{{ 'Edit' if template else 'New' }} Invoice Template{% endblock %}
+{% block page_title %}{{ 'Edit' if template else 'New' }} Invoice Template{% endblock %}
+{% block extra_css %}
+<style>
+  .tmpl-wrap{max-width:900px}
+  .tmpl-help{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;font-size:12.5px;margin-bottom:16px;line-height:1.6}
+  .tmpl-help code{background:#eef2ff;color:#4338ca;padding:1px 5px;border-radius:3px;font-size:11px}
+  .tmpl-help b{color:#0f172a}
+</style>
+{% endblock %}
+{% block content %}
+<div class="tmpl-wrap">
+  <div class="card">
+    <form method="POST" class="form">
+      <div class="form-row">
+        <div class="form-group" style="flex:2;">
+          <label>Template Name *</label>
+          <input type="text" name="name" class="form-control focus-ring" required value="{{ template.name if template else '' }}">
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>Type *</label>
+          <select name="type" class="form-control focus-ring" {{ 'disabled' if template else '' }}>
+            <option value="purchase" {% if template and template.type == 'purchase' %}selected{% endif %}>Procurement</option>
+            <option value="sales" {% if template and template.type == 'sales' %}selected{% endif %}>Sales</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="is_default" {% if template and template.is_default %}checked{% endif %}> Set as default</label>
+      </div>
+
+      <div class="tmpl-help">
+        <b>Placeholders</b> — use these in your HTML template. They will be replaced with actual invoice data at print time.<br>
+        <b>Company:</b> <code>&#123;&#123;company_name&#125;&#125;</code> <code>&#123;&#123;company_address&#125;&#125;</code> <code>&#123;&#123;company_city&#125;&#125;</code> <code>&#123;&#123;company_phone&#125;&#125;</code> <code>&#123;&#123;company_email&#125;&#125;</code> <code>&#123;&#123;company_tax_id&#125;&#125;</code> <code>&#123;&#123;company_logo&#125;&#125;</code><br>
+        <b>Invoice:</b> <code>&#123;&#123;invoice_no&#125;&#125;</code> <code>&#123;&#123;invoice_date&#125;&#125;</code> <code>&#123;&#123;due_date&#125;&#125;</code> <code>&#123;&#123;status&#125;&#125;</code><br>
+        <b>Party (Customer/Supplier):</b> <code>&#123;&#123;party_name&#125;&#125;</code> <code>&#123;&#123;party_address&#125;&#125;</code> <code>&#123;&#123;party_city&#125;&#125;</code> <code>&#123;&#123;party_phone&#125;&#125;</code> <code>&#123;&#123;party_email&#125;&#125;</code> <code>&#123;&#123;party_tax_id&#125;&#125;</code><br>
+        <b>Items:</b> <code>&#123;&#123;items_table&#125;&#125;</code> — rendered as an HTML table with all line items<br>
+        <b>Totals:</b> <code>&#123;&#123;subtotal&#125;&#125;</code> <code>&#123;&#123;discount&#125;&#125;</code> <code>&#123;&#123;tax&#125;&#125;</code> <code>&#123;&#123;grand_total&#125;&#125;</code><br>
+        <b>Sales only:</b> <code>&#123;&#123;delivery_charges&#125;&#125;</code> <code>&#123;&#123;installation_charges&#125;&#125;</code><br>
+        <b>Procurement only:</b> <code>&#123;&#123;commission&#125;&#125;</code> <code>&#123;&#123;freight&#125;&#125;</code> <code>&#123;&#123;loading_unloading&#125;&#125;</code> <code>&#123;&#123;withholding_tax&#125;&#125;</code><br>
+        <b>Other:</b> <code>&#123;&#123;notes&#125;&#125;</code>
+      </div>
+
+      <div class="form-group">
+        <label>HTML Template Body</label>
+        <textarea name="body_html" class="form-control focus-ring" rows="20" style="font-family:monospace;font-size:13px;white-space:pre-wrap;" required>{{ template.body_html if template else default_body }}</textarea>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">{{ 'Update' if template else 'Create' }}</button>
+        <a href="{{ url_for('settings.index', tab='templates') }}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

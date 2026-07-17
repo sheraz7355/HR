@@ -1,11 +1,11 @@
-{# Shared by the Purchase Invoices and Sales Invoices tabs — same setting,
+{# Shared by the Procurement and Sales tabs — same setting,
    independent values per document type. #}
 {% set is_purchase = tab == 'purchase' %}
 {% set party = 'supplier' if is_purchase else 'customer' %}
 {% set current = report_settings.party_mode(tab) %}
 
 <div class="set-card">
-  <h3>{{ 'Purchase' if is_purchase else 'Sales' }} Invoices</h3>
+  <h3>{{ 'Procurement' if is_purchase else 'Sales' }}</h3>
   <p class="hint">
     Controls which accounts a {{ 'purchase' if is_purchase else 'sales' }} invoice may post its
     {{ 'payable' if is_purchase else 'receivable' }} to.
@@ -41,7 +41,7 @@
     </div>
 
     <div class="set-actions">
-      <button type="submit" class="btn btn-p">Save {{ 'Purchase' if is_purchase else 'Sales' }} Settings</button>
+      <button type="submit" class="btn btn-p">Save {{ 'Procurement' if is_purchase else 'Sales' }} Settings</button>
     </div>
   </form>
 </div>
@@ -49,8 +49,26 @@
 <div class="set-card" style="margin-top:16px;">
   <h3 style="font-size:15px;">Currently</h3>
   <p class="hint" style="margin-bottom:0;">
-    Purchase invoices: <strong>{{ 'any ledger account' if report_settings.party_mode('purchase') == 'all' else 'suppliers only' }}</strong>
+    Procurement: <strong>{{ 'any ledger account' if report_settings.party_mode('purchase') == 'all' else 'suppliers only' }}</strong>
     &nbsp;·&nbsp;
-    Sales invoices: <strong>{{ 'any ledger account' if report_settings.party_mode('sales') == 'all' else 'customers only' }}</strong>
+    Sales: <strong>{{ 'any ledger account' if report_settings.party_mode('sales') == 'all' else 'customers only' }}</strong>
   </p>
+</div>
+
+<div class="set-card" style="margin-top:16px;">
+  <h3 style="font-size:15px;">{{ 'Procurement' if is_purchase else 'Sales' }} Invoice Template</h3>
+  <p class="hint">Select which print template to use for {{ 'procurement' if is_purchase else 'sales' }} invoices. <a href="{{ url_for('settings.index', tab='templates') }}">Manage templates</a></p>
+  <form method="POST" action="{{ url_for('settings.select_document_template', doc=tab) }}">
+    <div class="fgroup">
+      <select name="template_id" class="sel">
+        <option value="">-- No template (use default layout) --</option>
+        {% for t in templates %}
+        <option value="{{ t.id }}" {% if (report_settings.purchase_template_id if is_purchase else report_settings.sales_template_id) == t.id %}selected{% endif %}>{{ t.name }}{% if t.is_default %} (Default){% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="set-actions">
+      <button type="submit" class="btn btn-p">Save</button>
+    </div>
+  </form>
 </div>

@@ -1,0 +1,55 @@
+<div class="set-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h3 style="margin:0;">Invoice Templates</h3>
+    <a href="{{ url_for('settings.create_template') }}" class="btn btn-primary btn-sm">+ New Template</a>
+  </div>
+  <p class="hint">Create and manage invoice print templates. Each template defines the full layout of how invoice information is displayed when printed.</p>
+
+  {% if purchase_templates or sales_templates %}
+  <div style="margin-top:12px;">
+    <h4 style="font-size:14px;margin:0 0 8px;color:#374151;">Procurement Templates</h4>
+    {% if purchase_templates %}
+    <table class="stbl">
+      <thead><tr><th>Name</th><th>Default</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for t in purchase_templates %}
+        <tr>
+          <td><strong>{{ t.name }}</strong></td>
+          <td>{% if t.is_default %}<span class="pill pill-on">Default</span>{% endif %}</td>
+          <td class="actions">
+            <a href="{{ url_for('settings.edit_template', id=t.id) }}" class="btn btn-sm btn-outline">Edit</a>
+            <a href="{{ url_for('settings.delete_template', id=t.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete template &quot;{{ t.name }}&quot;?')">Delete</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#64748b;font-size:13px;">No procurement templates yet.</p>
+    {% endif %}
+
+    <h4 style="font-size:14px;margin:16px 0 8px;color:#374151;">Sales Templates</h4>
+    {% if sales_templates %}
+    <table class="stbl">
+      <thead><tr><th>Name</th><th>Default</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for t in sales_templates %}
+        <tr>
+          <td><strong>{{ t.name }}</strong></td>
+          <td>{% if t.is_default %}<span class="pill pill-on">Default</span>{% endif %}</td>
+          <td class="actions">
+            <a href="{{ url_for('settings.edit_template', id=t.id) }}" class="btn btn-sm btn-outline">Edit</a>
+            <a href="{{ url_for('settings.delete_template', id=t.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete template &quot;{{ t.name }}&quot;?')">Delete</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:#64748b;font-size:13px;">No sales templates yet.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p style="color:#64748b;font-size:13px;">No templates yet. <a href="{{ url_for('settings.create_template') }}">Create one</a>.</p>
+  {% endif %}
+</div>

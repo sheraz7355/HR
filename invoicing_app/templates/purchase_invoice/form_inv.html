@@ -137,7 +137,12 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
   .tb-w{border-radius:0;border-left:none;border-right:none}
   .modal-b{width:95vw;padding:16px}
 }
+.print-template-text{display:none}
+.rendered-template{display:none}
 @media print{
+.rendered-template{display:block}
+.no-template-print{display:none}
+.rendered-template .print-template-text{display:block;margin-top:12px;padding:10px 12px;border-top:1px solid #cbd5e1;font-size:9.5px;line-height:1.5}
 @page{margin:14mm}
 .sidebar,.topbar,.ab,.ga,.toast-c,.ac-dd,.btn,.ra,.modal-o,.tb-w::after,.vtype-pills,.sli,.pills,.app-flash-wrap{display:none!important}
 .wrap{padding:0;max-width:none}
@@ -163,6 +168,10 @@ body{background:#fff;font-size:10px}
 {% block content %}
 <div class="wrap">
   {% with doc_title = 'Purchase Invoice' %}{% include '_print_header.html' %}{% endwith %}
+  {% if rendered_template %}
+  <div class="rendered-template">{{ rendered_template|safe }}</div>
+  {% endif %}
+  <div class="{% if rendered_template %}no-template-print{% endif %}">
   <div class="toast-c" id="toastContainer"></div>
   <input type="hidden" id="invoiceId" value="{{ invoice.id if invoice else '' }}">
   <input type="hidden" id="invoiceStatus" value="{{ status }}">
@@ -345,6 +354,7 @@ body{background:#fff;font-size:10px}
         </div>
       </div>
     </div>
+  </div>
 
     <!-- ACTION BAR -->
     <div class="ab">

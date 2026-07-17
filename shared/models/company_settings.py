@@ -75,6 +75,10 @@ class ReportSettings(db.Model):
     # counterparty, via a Post To Ledger Account override on the form.
     purchase_party_mode = db.Column(db.String(10), default="relevant")
     sales_party_mode = db.Column(db.String(10), default="relevant")
+    purchase_template_text = db.Column(db.Text)
+    sales_template_text = db.Column(db.Text)
+    purchase_template_id = db.Column(db.Integer, db.ForeignKey("invoice_templates.id"))
+    sales_template_id = db.Column(db.Integer, db.ForeignKey("invoice_templates.id"))
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     @classmethod
@@ -94,6 +98,10 @@ class ReportSettings(db.Model):
         """
         value = self.purchase_party_mode if doc == "purchase" else self.sales_party_mode
         return value or self.invoice_party_mode or "relevant"
+
+    def template_text(self, doc):
+        """Custom invoice body template for "purchase" or "sales" documents."""
+        return self.purchase_template_text if doc == "purchase" else self.sales_template_text
 
     def pl_structure(self):
         if self.pl_structure_json:
