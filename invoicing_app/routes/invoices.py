@@ -11,6 +11,7 @@ from inventory_app.models.sales_order import InvSalesOrder
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import deny_json, deny_page
+from shared.costing import record_out, reverse_voucher_stock
 
 inv_inv_bp = Blueprint("inv_invoices", __name__, url_prefix="/inventory/invoices")
 
@@ -143,6 +144,7 @@ def save_invoice():
 
     db.session.flush()
 
+    total_cogs = Decimal("0")
     InvInvoiceItem.query.filter_by(invoice_id=inv.id).delete()
     for row in data.get("items", []):
         item = InvInvoiceItem(
@@ -166,7 +168,6 @@ def save_invoice():
         if action == "approve" and item.product_id:
             prod = InvProduct.query.get(item.product_id)
             if prod:
-                prod.current_stock -= item.quantity
                 db.session.add(InvStockMovement(
                     product_id=item.product_id, type="sale_out",
                     quantity=item.quantity,
@@ -175,6 +176,14 @@ def save_invoice():
                     notes=f"Approved invoice {inv.invoice_number}",
                     created_by=current_user.id,
                 ))
+                # Costing engine computes true historic COGS (weighted avg /
+                # FIFO across all purchase layers) at issue time.
+                _unit, line_cogs = record_out(
+                    item.product_id, "SI", inv.id, inv.voucher_number,
+                    qty=item.quantity,
+                    notes=f"Sale {inv.invoice_number}",
+                    created_by=current_user.id)
+                total_cogs += line_cogs
 
     if action == "approve":
         ar_acc = posting_account("ar")
@@ -198,13 +207,8 @@ def save_invoice():
                 {"account_id": out_tax_acc.id, "debit": 0, "credit": output_tax,
                  "description": f"Output Tax - {inv.invoice_number}"},
             )
-        total_cogs = Decimal("0")
-        for item in InvInvoiceItem.query.filter_by(invoice_id=inv.id).all():
-            if item.product_id:
-                prod = InvProduct.query.get(item.product_id)
-                if prod and prod.cost_price:
-                    cost = Decimal(str(prod.cost_price)) * Decimal(str(item.quantity))
-                    total_cogs += cost
+        # total_cogs accumulated above from the costing engine (historic cost
+        # of each item at issue time — not the static product cost_price).
         if total_cogs > 0 and cogs_acc and inv_acc:
             lines.append(
                 {"account_id": cogs_acc.id, "debit": float(total_cogs), "credit": 0,
@@ -258,11 +262,9 @@ def unapprove_invoice(id):
         reference_type="sales_invoice", reference_id=inv.id
     ).delete()
 
-    for item in inv.items.all():
-        if item.product_id:
-            prod = InvProduct.query.get(item.product_id)
-            if prod:
-                prod.current_stock += item.quantity
+    # Remove this invoice's issues from the cost history and rebuild each
+    # product's running balances (also re-syncs current_stock).
+    reverse_voucher_stock("SI", inv.id)
 
     db.session.commit()
     return jsonify({"ok": True, "voucher_status": "unapproved",

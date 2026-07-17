@@ -11,12 +11,24 @@
           <textarea name="reason" class="form-control" rows="2" required>{{ voucher.reason if voucher else '' }}</textarea>
         </div>
       </div>
-      <div class="form-group">
-        <label>Status</label>
-        <select name="status" class="form-control">
-          <option value="unapproved" {{ 'selected' if voucher and voucher.status=='unapproved' else '' }}>Unapproved</option>
-          <option value="approved" {{ 'selected' if voucher and voucher.status=='approved' else '' }}>Approved</option>
-        </select>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Charge To Ledger Account</label>
+          <select name="charge_account_id" class="form-control">
+            <option value="">Scrap / Write-off Expense (default)</option>
+            {% for a in accounts %}
+            <option value="{{ a.id }}" {{ 'selected' if voucher and voucher.charge_account_id == a.id else '' }}>{{ a.code }} — {{ a.name }}</option>
+            {% endfor %}
+          </select>
+          <small style="display:block;margin-top:4px;color:#6b7280;">The scrapped value (at automatic historic cost) is charged to this account — e.g. an employee's or insurer's receivable account.</small>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select name="status" class="form-control">
+            <option value="unapproved" {{ 'selected' if voucher and voucher.status=='unapproved' else '' }}>Unapproved</option>
+            <option value="approved" {{ 'selected' if voucher and voucher.status=='approved' else '' }}>Approved</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>

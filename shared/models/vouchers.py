@@ -9,6 +9,9 @@ class ConsumptionVoucher(db.Model):
     date = db.Column(db.DateTime, default=datetime.utcnow)
     department = db.Column(db.String(100))
     reason = db.Column(db.Text)
+    # Ledger account the consumed value is charged (debited) to — any level-4
+    # account: an expense, an employee's account, a project, ...
+    charge_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"))
     status = db.Column(db.String(20), default="unapproved")
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -36,6 +39,9 @@ class ScrapVoucher(db.Model):
     voucher_number = db.Column(db.String(50), unique=True, nullable=False)
     date = db.Column(db.DateTime, default=datetime.utcnow)
     reason = db.Column(db.Text)
+    # Account debited with the scrapped value — scrap loss by default, or a
+    # receivable (employee, insurer) when someone is charged for the loss.
+    charge_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"))
     status = db.Column(db.String(20), default="unapproved")
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))

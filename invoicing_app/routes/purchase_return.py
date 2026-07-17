@@ -11,6 +11,7 @@ from inventory_app.models.stock_movement import InvStockMovement
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import deny_json
+from shared.costing import record_out, reverse_voucher_stock
 
 inv_preturn_bp = Blueprint("inv_purchase_return", __name__,
                            url_prefix="/inventory/purchase-return")
@@ -231,7 +232,6 @@ def save_return():
         if action == "approve" and item.product_id:
             prod = InvProduct.query.get(item.product_id)
             if prod:
-                prod.current_stock -= qty
                 db.session.add(InvStockMovement(
                     product_id=item.product_id,
                     type="purchase_return_out",
@@ -241,6 +241,14 @@ def save_return():
                     notes=f"Approved return {ret.return_number}",
                     created_by=current_user.id,
                 ))
+                # Returned goods leave stock at the ORIGINAL invoice cost
+                # basis (net return value per unit), not the current average
+                # — the payable reversal must match what was booked in.
+                basis = (float(item.net_return_value or 0) / qty) if qty else 0
+                record_out(item.product_id, "PRV", ret.id, ret.return_number,
+                           qty=qty, unit_cost=basis or None,
+                           notes=f"Purchase return {ret.return_number}",
+                           created_by=current_user.id)
 
     if action == "approve":
         ap_acc = posting_account("ap")
@@ -292,11 +300,8 @@ def unapprove_return(id):
         reference_type="purchase_return", reference_id=ret.id
     ).delete()
 
-    for item in ret.items.all():
-        if item.product_id and item.current_return_qty:
-            prod = InvProduct.query.get(item.product_id)
-            if prod:
-                prod.current_stock += item.current_return_qty
+    # Remove the return's stock rows and rebuild running balances.
+    reverse_voucher_stock("PRV", ret.id)
 
     db.session.commit()
     return jsonify({"ok": True, "status": "unapproved",

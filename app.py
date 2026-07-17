@@ -159,6 +159,8 @@ def _migrate_schema(db):
         ("users", "has_finance_access", bool_false),
         ("users", "has_accounting_access", bool_false),
         ("users", "login_id", "VARCHAR(120)"),
+        ("consumption_vouchers", "charge_account_id", "INTEGER"),
+        ("scrap_vouchers", "charge_account_id", "INTEGER"),
         ("inv_suppliers", "mobile", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "tax_id", "VARCHAR(200) DEFAULT ''"),
         ("inv_suppliers", "payment_terms", "VARCHAR(200) DEFAULT ''"),
@@ -464,6 +466,11 @@ def _seed_all_data(app):
                 LoanAdvanceRequest.status.in_(["pending", "approved"])).all():
             create_entity_account("loan", ln.id,
                                   f"{ln.request_type.title()} #{ln.id} - {ln.user.full_name if ln.user else ''}")
+
+        # Costing engine: products holding stock from before the engine get an
+        # opening cost layer so every future issue has a historic cost basis.
+        from shared.costing import ensure_opening_balances
+        ensure_opening_balances(created_by=1)
 
         db.session.commit()
         print("Seed data OK")

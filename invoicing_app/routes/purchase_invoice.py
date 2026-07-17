@@ -11,6 +11,7 @@ from shared.models.vouchers import ConsumptionItem as ConsItem, ScrapItem, Stock
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import deny_json
+from shared.costing import record_in, reverse_voucher_stock
 
 inv_pinv_bp = Blueprint("inv_purchase_invoice", __name__,
                          url_prefix="/inventory/purchase-invoice")
@@ -165,13 +166,6 @@ def save_invoice():
         if action == "approve" and item.product_id:
             prod = InvProduct.query.get(item.product_id)
             if prod:
-                old_stock = prod.current_stock or 0
-                old_cost = prod.cost_price or 0
-                new_qty = item.quantity
-                new_cost = item.unit_price or 0
-                if old_stock + new_qty > 0:
-                    prod.cost_price = round(((old_stock * old_cost) + (new_qty * new_cost)) / (old_stock + new_qty), 4)
-                prod.current_stock = old_stock + new_qty
                 db.session.add(InvStockMovement(
                     product_id=item.product_id, type="purchase_in",
                     quantity=item.quantity,
@@ -180,6 +174,19 @@ def save_invoice():
                     notes=f"Approved invoice {inv.invoice_number}",
                     created_by=current_user.id,
                 ))
+                # Costing engine: receive stock at LANDED cost (goods value
+                # after discount plus per-item expenses). This purchase layer
+                # is what future issues (sales, scrap, consumption) draw on.
+                landed_total = (float(item.total_after_discount or 0)
+                                + float(item.commission or 0)
+                                + float(item.freight or 0)
+                                + float(item.loading_unloading or 0))
+                qty_f = float(item.quantity or 0)
+                if qty_f > 0:
+                    record_in(item.product_id, "PI", inv.id, inv.voucher_number,
+                              qty=qty_f, unit_cost=landed_total / qty_f,
+                              notes=f"Purchase {inv.invoice_number}",
+                              created_by=current_user.id)
 
     if action == "approve":
         inv_acc = posting_account("inventory")
@@ -276,11 +283,9 @@ def unapprove_invoice(id):
         reference_type="purchase_invoice", reference_id=inv.id
     ).delete()
 
-    for item in inv.items.all():
-        if item.product_id:
-            prod = InvProduct.query.get(item.product_id)
-            if prod:
-                prod.current_stock -= item.quantity
+    # Remove this invoice's purchase layers from the cost history and rebuild
+    # each product's running balances (also re-syncs current_stock).
+    reverse_voucher_stock("PI", inv.id)
 
     db.session.commit()
     return jsonify({"ok": True, "status": "unapproved",

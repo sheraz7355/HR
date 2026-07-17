@@ -4,8 +4,11 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.models.stock_ledger import StockLedger, VoucherNumber
-from shared.stock_utils import record_stock_movement, reverse_stock_movements, dependency_check, validate_no_dependents
+from shared.stock_utils import dependency_check, validate_no_dependents
 from shared.ledger_utils import post_journal_entry, get_or_create_account
+from shared.costing import (cost_of_issue, current_unit_cost, on_hand,
+                            record_in, record_out, reverse_voucher_stock)
+from shared.models.ledger import ChartOfAccount
 from shared.models.vouchers import (
     ConsumptionVoucher, ConsumptionItem,
     ScrapVoucher, ScrapItem,
@@ -22,9 +25,15 @@ def _resolve_product(pid):
 
 
 def _cost_from_ledger(pid):
-    last = StockLedger.query.filter_by(product_id=pid, transaction_type="IN"
-                                       ).order_by(StockLedger.id.desc()).first()
-    return last.unit_cost if last else Decimal("0.0000")
+    # Valuation-method cost (weighted average / FIFO) from the costing engine.
+    return current_unit_cost(pid)
+
+
+def _charge_accounts():
+    """Level-4 accounts a voucher's value can be charged to (expenses,
+    employee accounts, receivables, projects...)."""
+    return ChartOfAccount.query.filter_by(level=4, is_active=True).order_by(
+        ChartOfAccount.code).all()
 
 
 def _post_voucher_journal(vtype, v, lines):
@@ -64,6 +73,7 @@ def consumption_form(id=None):
         voucher.date = datetime.utcnow()
         voucher.department = request.form.get("department", "")
         voucher.reason = request.form.get("reason", "")
+        voucher.charge_account_id = request.form.get("charge_account_id", type=int)
         status = request.form.get("status", "unapproved")
 
         db.session.flush()
@@ -77,8 +87,7 @@ def consumption_form(id=None):
             qty = Decimal(str(float(qtys[i]) if i < len(qtys) else 0))
             if qty <= 0:
                 continue
-            cost = _cost_from_ledger(int(pid))
-            line_total = qty * cost
+            cost, line_total = cost_of_issue(int(pid), qty)
             item = ConsumptionItem(
                 voucher_id=voucher.id, product_id=int(pid),
                 product_name=(_resolve_product(int(pid)).name if _resolve_product(int(pid))
@@ -90,28 +99,34 @@ def consumption_form(id=None):
 
         if not new_items:
             flash("Add at least one item with quantity > 0.", "error")
-            return render_template("vouchers/consumption_form.html", voucher=voucher)
+            return render_template("vouchers/consumption_form.html", voucher=voucher,
+                                   accounts=_charge_accounts())
 
         if status == "approved":
             db.session.flush()
+            # Issue stock through the costing engine — it computes the true
+            # historic cost (weighted avg / FIFO) at this moment, which is
+            # exactly what gets charged to the target ledger account.
             for item in new_items:
-                record_stock_movement(
+                unit, total = record_out(
                     product_id=item.product_id,
-                    voucher_type="CONS", voucher_id=v.id,
+                    voucher_type="CONS", voucher_id=voucher.id,
                     voucher_number=voucher.voucher_number,
-                    transaction_type="OUT",
-                    quantity=float(item.quantity),
-                    unit_cost=float(item.unit_cost),
+                    qty=float(item.quantity),
                     notes=f"Consumption: {voucher.reason}",
-                    created_by=current_user.id
+                    created_by=current_user.id,
                 )
+                item.unit_cost, item.total_cost = unit, total
+            total_value = sum(float(i.total_cost) for i in new_items)
+            charge_acct_id = (voucher.charge_account_id or
+                              get_or_create_account("5700", "Consumption Expense", "expense").id)
             _post_voucher_journal("CONS", voucher, [
-                {"account_id": get_or_create_account("5700","Consumption Expense","expense").id,
-                 "debit": sum(float(i.total_cost) for i in new_items), "credit": 0,
+                {"account_id": charge_acct_id,
+                 "debit": total_value, "credit": 0,
                  "description": f"Consumption: {voucher.reason}"},
                 {"account_id": get_or_create_account("1200","Inventory","asset").id,
-                 "debit": 0, "credit": sum(float(i.total_cost) for i in new_items),
-                 "description": "Stock reduction"},
+                 "debit": 0, "credit": total_value,
+                 "description": "Stock reduction at historic cost"},
             ])
             voucher.approved_by = current_user.id
             voucher.approved_at = datetime.utcnow()
@@ -121,7 +136,8 @@ def consumption_form(id=None):
         flash(f"Consumption voucher {voucher.voucher_number} saved.", "success")
         return redirect(url_for("inv_vouchers.consumption_list"))
 
-    return render_template("vouchers/consumption_form.html", voucher=voucher)
+    return render_template("vouchers/consumption_form.html", voucher=voucher,
+                           accounts=_charge_accounts())
 
 
 @inv_vouchers_bp.route("/consumption/list")
@@ -151,7 +167,7 @@ def consumption_unapprove(id):
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.consumption_list"))
-    reverse_stock_movements("CONS", v.id)
+    reverse_voucher_stock("CONS", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("CONS", v.id, created_by=current_user.id)
     v.status = "unapproved"
@@ -185,6 +201,7 @@ def scrap_form(id=None):
 
         voucher.date = datetime.utcnow()
         voucher.reason = request.form.get("reason", "")
+        voucher.charge_account_id = request.form.get("charge_account_id", type=int)
         status = request.form.get("status", "unapproved")
 
         db.session.flush()
@@ -198,8 +215,7 @@ def scrap_form(id=None):
             qty = Decimal(str(float(qtys[i]) if i < len(qtys) else 0))
             if qty <= 0:
                 continue
-            cost = _cost_from_ledger(int(pid))
-            line_total = qty * cost
+            cost, line_total = cost_of_issue(int(pid), qty)
             item = ScrapItem(
                 voucher_id=voucher.id, product_id=int(pid),
                 product_name=(_resolve_product(int(pid)).name if _resolve_product(int(pid))
@@ -211,28 +227,33 @@ def scrap_form(id=None):
 
         if not new_items:
             flash("Add at least one item with quantity > 0.", "error")
-            return render_template("vouchers/scrap_form.html", voucher=voucher)
+            return render_template("vouchers/scrap_form.html", voucher=voucher,
+                                   accounts=_charge_accounts())
 
         if status == "approved":
             db.session.flush()
+            # Cost computed from the product's purchase history at this
+            # moment — the receivable/loss is booked at true historic cost.
             for item in new_items:
-                record_stock_movement(
+                unit, total = record_out(
                     product_id=item.product_id,
-                    voucher_type="SCRAP", voucher_id=v.id,
+                    voucher_type="SCRAP", voucher_id=voucher.id,
                     voucher_number=voucher.voucher_number,
-                    transaction_type="OUT",
-                    quantity=float(item.quantity),
-                    unit_cost=float(item.unit_cost),
+                    qty=float(item.quantity),
                     notes=f"Scrap: {voucher.reason}",
-                    created_by=current_user.id
+                    created_by=current_user.id,
                 )
+                item.unit_cost, item.total_cost = unit, total
+            total_value = sum(float(i.total_cost) for i in new_items)
+            charge_acct_id = (voucher.charge_account_id or
+                              get_or_create_account("5800", "Scrap/Write-off", "expense").id)
             _post_voucher_journal("SCRAP", voucher, [
-                {"account_id": get_or_create_account("5800","Scrap/Write-off","expense").id,
-                 "debit": sum(float(i.total_cost) for i in new_items), "credit": 0,
+                {"account_id": charge_acct_id,
+                 "debit": total_value, "credit": 0,
                  "description": f"Scrap: {voucher.reason}"},
                 {"account_id": get_or_create_account("1200","Inventory","asset").id,
-                 "debit": 0, "credit": sum(float(i.total_cost) for i in new_items),
-                 "description": "Stock scrapped"},
+                 "debit": 0, "credit": total_value,
+                 "description": "Stock scrapped at historic cost"},
             ])
             voucher.approved_by = current_user.id
             voucher.approved_at = datetime.utcnow()
@@ -242,7 +263,8 @@ def scrap_form(id=None):
         flash(f"Scrap voucher {voucher.voucher_number} saved.", "success")
         return redirect(url_for("inv_vouchers.scrap_list"))
 
-    return render_template("vouchers/scrap_form.html", voucher=voucher)
+    return render_template("vouchers/scrap_form.html", voucher=voucher,
+                           accounts=_charge_accounts())
 
 
 @inv_vouchers_bp.route("/scrap/list")
@@ -272,7 +294,7 @@ def scrap_unapprove(id):
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.scrap_list"))
-    reverse_stock_movements("SCRAP", v.id)
+    reverse_voucher_stock("SCRAP", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("SCRAP", v.id, created_by=current_user.id)
     v.status = "unapproved"
@@ -322,8 +344,7 @@ def adjustment_form(id=None):
             diff = pq - sq
             if diff == 0:
                 continue
-            cost = _cost_from_ledger(int(pid))
-            line_total = abs(diff) * cost
+            cost, line_total = cost_of_issue(int(pid), abs(diff))
             item = StockAdjustmentItem(
                 voucher_id=voucher.id, product_id=int(pid),
                 product_name=(_resolve_product(int(pid)).name if _resolve_product(int(pid))
@@ -346,17 +367,24 @@ def adjustment_form(id=None):
             adj_acct = get_or_create_account("5900", "Inventory Adjustment", "expense").id
             jlines = []
             for item in new_items:
-                ttype = "IN" if item.difference > 0 else "OUT"
-                record_stock_movement(
-                    product_id=item.product_id,
-                    voucher_type="ADJ", voucher_id=v.id,
-                    voucher_number=voucher.voucher_number,
-                    transaction_type=ttype,
-                    quantity=float(abs(item.difference)),
-                    unit_cost=float(item.unit_cost),
-                    notes=f"Adjustment: {voucher.reason}",
-                    created_by=current_user.id
-                )
+                if item.difference > 0:
+                    # Excess found — book it in at the current valuation cost.
+                    unit = current_unit_cost(item.product_id)
+                    record_in(item.product_id, "ADJ", voucher.id,
+                              voucher.voucher_number,
+                              qty=float(item.difference), unit_cost=unit,
+                              notes=f"Adjustment: {voucher.reason}",
+                              created_by=current_user.id)
+                    item.unit_cost = unit
+                    item.total_cost = Decimal(str(item.difference)) * unit
+                else:
+                    unit, total = record_out(
+                        item.product_id, "ADJ", voucher.id,
+                        voucher.voucher_number,
+                        qty=float(abs(item.difference)),
+                        notes=f"Adjustment: {voucher.reason}",
+                        created_by=current_user.id)
+                    item.unit_cost, item.total_cost = unit, total
                 val = float(item.total_cost)
                 if item.difference > 0:
                     jlines.append({"account_id": inv_acct, "debit": val, "credit": 0})
@@ -405,7 +433,7 @@ def adjustment_unapprove(id):
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.adjustment_list"))
-    reverse_stock_movements("ADJ", v.id)
+    reverse_voucher_stock("ADJ", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("ADJ", v.id, created_by=current_user.id)
     v.status = "unapproved"
@@ -504,16 +532,24 @@ def stock_take_form(id=None):
                 )
                 db.session.add(adj_item)
 
-                record_stock_movement(
-                    product_id=item.product_id,
-                    voucher_type="ADJ", voucher_id=adj.id,
-                    voucher_number=adj.voucher_number,
-                    transaction_type=ttype,
-                    quantity=float(abs(diff)),
-                    unit_cost=float(item.unit_cost),
-                    notes=f"Stock Take {st.reference} adjustment ({st.location})",
-                    created_by=current_user.id
-                )
+                if diff > 0:
+                    unit = current_unit_cost(item.product_id)
+                    record_in(item.product_id, "ADJ", adj.id,
+                              adj.voucher_number,
+                              qty=float(diff), unit_cost=unit,
+                              notes=f"Stock Take {st.reference} adjustment ({st.location})",
+                              created_by=current_user.id)
+                    val = float(Decimal(str(diff)) * unit)
+                    adj_item.unit_cost, adj_item.total_cost = unit, Decimal(str(val))
+                else:
+                    unit, total = record_out(
+                        item.product_id, "ADJ", adj.id,
+                        adj.voucher_number,
+                        qty=float(abs(diff)),
+                        notes=f"Stock Take {st.reference} adjustment ({st.location})",
+                        created_by=current_user.id)
+                    val = float(total)
+                    adj_item.unit_cost, adj_item.total_cost = unit, total
                 if diff > 0:
                     jlines.append({"account_id": inv_acct, "debit": val, "credit": 0})
                     jlines.append({"account_id": adj_acct, "debit": 0, "credit": val})
@@ -694,9 +730,8 @@ def api_products():
 @inv_vouchers_bp.route("/api/product-stock/<int:pid>")
 @login_required
 def api_product_stock(pid):
-    bal = StockLedger.get_running_balance(pid)
     return jsonify({
         "product_id": pid,
-        "qty": float(bal[0]),
-        "cost": float(bal[2])
+        "qty": float(on_hand(pid)),
+        "cost": float(current_unit_cost(pid)),
     })
