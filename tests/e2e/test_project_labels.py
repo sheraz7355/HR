@@ -190,7 +190,7 @@ def default_label(client, company_ctx):
         if d is None:
             d = ProjectLabel(name="Default Proj")
             db.session.add(d)
-            db.session.flush()
+            db.session.commit()
         did = d.id
     client.post("/settings/labels/defaults",
                 data={"default_voucher_label_id": str(did),
