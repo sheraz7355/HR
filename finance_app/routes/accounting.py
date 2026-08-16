@@ -147,7 +147,7 @@ def voucher_form(id=None):
         # without an explicit pick. The header label (cash/bank vouchers post
         # it as "label_id"; a JV sends no such field) tags the bank/cash line
         # itself, and item lines inherit it unless an explicit pick overrides.
-        default_label = ProjectLabel.default()
+        default_label = InventorySettings.get().default_voucher_label()
         default_lid = default_label.id if default_label else None
 
         header_raw = request.form.get("label_id")
@@ -324,8 +324,8 @@ def voucher_form(id=None):
         edit_mode=edit_mode,
         project_labels=ProjectLabel.query.order_by(ProjectLabel.name).all(),
         active_labels=ProjectLabel.query.filter_by(is_active=True).order_by(ProjectLabel.name).all(),
-        default_label=ProjectLabel.default(),
-        per_line_labeling=InventorySettings.get().per_line_labeling,
+        default_label=InventorySettings.get().default_voucher_label(),
+        per_line_labeling=InventorySettings.get().per_line_labeling_voucher,
     )
 
 

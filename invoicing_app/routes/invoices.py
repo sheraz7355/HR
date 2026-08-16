@@ -365,7 +365,7 @@ def invoice_form(id):
     return render_template("invoices/form_inv.html",
                            invoice=invoice, invoice_items=invoice_items,
                            invoice_charges=invoice_charges,
-                           per_line_labeling=InventorySettings.get().per_line_labeling,
+                           per_line_labeling=InventorySettings.get().per_line_labeling_invoice,
                            order_sourced=order_sourced,
                            customers=customers,
                            party_mode=rs.party_mode("sales"),
@@ -375,7 +375,7 @@ def invoice_form(id):
                            products=products, now=datetime.utcnow(),
                            project_labels=ProjectLabel.query.filter_by(is_active=True)
                            .order_by(ProjectLabel.name).all(),
-                           default_label=ProjectLabel.default(),
+                           default_label=InventorySettings.get().default_invoice_label(),
                            show_source_gate=show_source_gate)
 
 
@@ -453,7 +453,7 @@ def save_invoice():
     
         inv.customer_id = data.get("customer_id")
         inv.party_account_id = data.get("party_account_id") or None
-        _default_label = ProjectLabel.default()
+        _default_label = InventorySettings.get().default_invoice_label()
         _default_lid = _default_label.id if _default_label else None
         inv.label_id = data.get("label_id") or _default_lid
         inv.sales_order_id = data.get("sales_order_id") or None

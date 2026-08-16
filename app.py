@@ -408,7 +408,6 @@ def _migrate_schema(db):
 
     # (table, column, column_type_ddl)
     migrations = [
-        ("project_labels", "is_default", bool_false),
         ("chart_of_accounts", "level", "INTEGER DEFAULT 4"),
         ("chart_of_accounts", "is_fixed", bool_false),
         ("accounting_periods", "is_active", bool_true),
@@ -579,20 +578,21 @@ def _migrate_schema(db):
         # TWCF (13-week cash flow): minimum cash the company wants to keep;
         # the report shows a headroom line when set.
         ("report_settings", "twcf_cash_floor", "NUMERIC(16,4)"),
-        # Project labels (the label dimension on journal/voucher/invoice lines).
         ("journal_lines", "label_id", "INTEGER"),
         ("accounting_voucher_lines", "label_id", "INTEGER"),
         ("inv_invoices", "label_id", "INTEGER"),
         ("inv_purchase_invoices", "label_id", "INTEGER"),
-        # Document-kind labels: "voucher" tags cash/bank vouchers (header +
-        # per-line picks), "invoice" tags sales/purchase invoices (party +
-        # per-item picks). Per-line labeling in Settings turns the per-row
-        # label column on; item rows carry their own label_id.
-        ("project_labels", "kind", "VARCHAR(10) NOT NULL DEFAULT 'voucher'"),
+        # Project labels: one shared pool tags journal/voucher/invoice lines.
+        # Per-line labeling in Settings turns the per-row label column on for
+        # vouchers and invoices independently; the defaults are the labels
+        # auto-assigned to each document class saved without a pick.
         ("accounting_vouchers", "label_id", "INTEGER"),
         ("inv_invoice_items", "label_id", "INTEGER"),
         ("inv_purchase_invoice_items", "label_id", "INTEGER"),
-        ("inventory_settings", "per_line_labeling", "BOOLEAN DEFAULT 0"),
+        ("inventory_settings", "per_line_labeling_voucher", "BOOLEAN DEFAULT 0"),
+        ("inventory_settings", "per_line_labeling_invoice", "BOOLEAN DEFAULT 0"),
+        ("inventory_settings", "default_voucher_label_id", "INTEGER"),
+        ("inventory_settings", "default_invoice_label_id", "INTEGER"),
     ]
 
     inspector = inspect(engine)
@@ -609,23 +609,6 @@ def _migrate_schema(db):
         except Exception as e:
             print(f"MIGRATION SKIP {table}.{col}: {e}")
 
-    # Labels referenced by an invoice's party slot were created before the
-    # invoice/voucher split: re-classify them as invoice labels, then sweep
-    # whatever is left (old "header"/"line" values) to the voucher kind.
-    # Idempotent: every row is (re)assigned the same value on every boot.
-    if "project_labels" in existing_tables and "inv_invoices" in existing_tables:
-        try:
-            with engine.begin() as conn:
-                conn.execute(db.text(
-                    "UPDATE project_labels SET kind='invoice' WHERE id IN ("
-                    "SELECT label_id FROM inv_invoices WHERE label_id IS NOT NULL"
-                    " UNION SELECT label_id FROM inv_purchase_invoices"
-                    " WHERE label_id IS NOT NULL)"))
-                conn.execute(db.text(
-                    "UPDATE project_labels SET kind='voucher' "
-                    "WHERE kind NOT IN ('voucher','invoice')"))
-        except Exception as e:
-            print(f"MIGRATION SKIP project_labels.kind backfill: {e}")
 
     # Columns added by an EARLIER version of the list above, with the wrong
     # type. The add loop skips any column that already exists, so a column that

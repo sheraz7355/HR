@@ -1,126 +1,123 @@
 <style>
-  .pill-dflt { background: #fef3c7; color: #92400e; }
+  .pill-vd { background: #e0f2fe; color: #075985; }
+  .pill-id { background: #f3e8ff; color: #6b21a8; }
   .lbl-acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .lbl-rename { display: inline-flex; gap: 6px; }
   .lbl-rename .inp { width: 170px; padding: 5px 8px; font-size: 12px; }
   .stbl td { vertical-align: middle; }
   .lbl-use { font-size: 11.5px; color: var(--muted); }
   .set-note b { font-weight: 700; }
+  /* Toggle switch — a simple on/off control that saves itself on change. */
+  .sw { position: relative; display: inline-block; width: 42px; height: 24px;
+        flex: none; vertical-align: middle; }
+  .sw input { position: absolute; opacity: 0; width: 100%; height: 100%;
+              margin: 0; cursor: pointer; z-index: 2; }
+  .sw-k { position: absolute; inset: 0; background: #cbd5e1; border-radius: 999px;
+          transition: background .18s ease; pointer-events: none; }
+  .sw-k::before { content: ""; position: absolute; width: 18px; height: 18px;
+                  left: 3px; top: 3px; background: #fff; border-radius: 50%;
+                  box-shadow: 0 1px 2px rgba(15, 23, 42, .25);
+                  transition: transform .18s ease; }
+  .sw input:checked + .sw-k { background: #1d4ed8; }
+  .sw input:checked + .sw-k::before { transform: translateX(18px); }
+  .sw input:focus-visible + .sw-k { outline: 2px solid #1d4ed8;
+                                    outline-offset: 2px; }
+  .sw-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sw-row + .sw-row { margin-top: 12px; }
+  .sw-lbl { font-weight: 600; font-size: 13.5px; color: #1e293b; }
+  .sw-sub { font-size: 12px; color: var(--muted); }
   @media (max-width: 500px) {
     .lbl-rename .inp { width: 110px; }
     .lbl-use { display: none; }
   }
 </style>
 
-{% macro label_table(rows) %}
-<div class="tbl-scroll">
-  <table class="stbl">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Default</th>
-        <th>Status</th>
-        <th>Used by</th>
-        <th style="text-align:right">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for l in rows %}
-      <tr>
-        <td style="font-weight:600;color:#1e293b">{{ l.name }}</td>
-        <td>
-          {% if l.id == default_label_id %}
-          <span class="pill pill-dflt">Default</span>
-          {% elif l.is_active %}
-          <form method="POST" action="{{ url_for('settings.label_set_default', id=l.id) }}" style="margin:0">
-            <button type="submit" class="btn btn-sm btn-outline" title="Auto-assign this label to lines or documents saved without one">Set default</button>
-          </form>
-          {% endif %}
-        </td>
-        <td><span class="pill {{ 'pill-on' if l.is_active else 'pill-off' }}">{{ 'Active' if l.is_active else 'Inactive' }}</span></td>
-        <td class="lbl-use">{{ 'Referenced by postings — kept for history' if l.id in in_use_ids else 'Not used yet' }}</td>
-        <td>
-          <div class="lbl-acts" style="justify-content:flex-end">
-            <form method="POST" action="{{ url_for('settings.label_rename', id=l.id) }}" class="lbl-rename">
-              <input type="text" name="name" class="inp" value="{{ l.name }}" aria-label="Rename label to">
-              <button type="submit" class="btn btn-sm btn-outline">Rename</button>
-            </form>
-            <form method="POST" action="{{ url_for('settings.label_toggle', id=l.id) }}" style="margin:0">
-              <button type="submit" class="btn btn-sm {{ 'btn-danger' if l.is_active else 'btn-primary' }}">
-                {{ 'Deactivate' if l.is_active else 'Activate' }}
-              </button>
-            </form>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endmacro %}
-
 <div class="set-card set-boxed" style="margin-bottom:16px">
   <div class="set-card-hd">Per-line labeling
-    <span class="sub">one label pick per line item</span>
+    <span class="sub">a label pick on every row, independently per document type</span>
   </div>
   <div class="set-card-bd">
-    <p class="help" style="margin:0 0 14px">When on, voucher entry rows and invoice item rows show their own label
-      column — each line prefilled with the header/party label (or the default), editable per line. When off, the
-      column is hidden and lines take the header/party label, then the default, when saved without a pick.</p>
-    <form method="POST" action="{{ url_for('settings.labels_per_line') }}"
-          id="perLineForm" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" name="per_line_labeling" value="on" {{ 'checked' if per_line_labeling }}>
-        <span>Label each line item</span>
+    <form method="POST" action="{{ url_for('settings.labels_per_line') }}" id="perLineFormV">
+      <input type="hidden" name="scope" value="voucher">
+      <div class="sw-row">
+        <label class="sw">
+          <input type="checkbox" name="enabled" value="on"
+                 {{ 'checked' if per_line_labeling_voucher }}
+                 onchange="this.form.requestSubmit()"
+                 aria-label="Per-line labels on vouchers">
+          <span class="sw-k"></span>
+        </label>
+        <div>
+          <div class="sw-lbl">Vouchers</div>
+          <div class="sw-sub">cash/bank voucher rows show their own label column</div>
+        </div>
+      </div>
+    </form>
+    <form method="POST" action="{{ url_for('settings.labels_per_line') }}" id="perLineFormI">
+      <input type="hidden" name="scope" value="invoice">
+      <div class="sw-row">
+        <label class="sw">
+          <input type="checkbox" name="enabled" value="on"
+                 {{ 'checked' if per_line_labeling_invoice }}
+                 onchange="this.form.requestSubmit()"
+                 aria-label="Per-line labels on invoices">
+          <span class="sw-k"></span>
+        </label>
+        <div>
+          <div class="sw-lbl">Invoices</div>
+          <div class="sw-sub">sales/purchase invoice item rows show their own label column</div>
+        </div>
+      </div>
+    </form>
+    <p class="help" style="margin:12px 0 0">When a toggle is on, the form shows one label pick per row —
+      prefilled with the header/party label (or the class default), editable per line. When off, the
+      column is hidden and lines take the header/party label, then the class default, when saved
+      without a pick.</p>
+  </div>
+</div>
+
+<div class="set-card set-boxed" style="margin-bottom:16px">
+  <div class="set-card-hd">Default labels
+    <span class="sub">auto-assigned to documents saved without a label</span>
+  </div>
+  <div class="set-card-bd">
+    <form method="POST" action="{{ url_for('settings.labels_defaults') }}"
+          style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <label style="font-size:12.5px;font-weight:600;color:#1e293b;display:flex;flex-direction:column;gap:4px">
+        Voucher default
+        <select name="default_voucher_label_id" class="inp">
+          <option value="">— none —</option>
+          {% for l in labels if l.is_active %}
+          <option value="{{ l.id }}" {{ 'selected' if l.id == default_voucher_label_id }}>{{ l.name }}</option>
+          {% endfor %}
+        </select>
       </label>
-      <button type="submit" class="btn btn-sm btn-primary">Save labeling preference</button>
+      <label style="font-size:12.5px;font-weight:600;color:#1e293b;display:flex;flex-direction:column;gap:4px">
+        Invoice default
+        <select name="default_invoice_label_id" class="inp">
+          <option value="">— none —</option>
+          {% for l in labels if l.is_active %}
+          <option value="{{ l.id }}" {{ 'selected' if l.id == default_invoice_label_id }}>{{ l.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="btn btn-sm btn-primary">Save defaults</button>
     </form>
+    <p class="help" style="margin:12px 0 0">A voucher or invoice saved without an explicit pick gets its
+      class default. Deactivating a default label clears it here.</p>
   </div>
 </div>
 
 <div class="set-card set-boxed" style="margin-bottom:16px">
-  <div class="set-card-hd">Create a voucher label
-    <span class="sub">tags cash/bank voucher lines</span>
+  <div class="set-card-hd">Create a label
+    <span class="sub">one pool shared by vouchers and invoices</span>
   </div>
   <div class="set-card-bd">
-    <p class="help" style="margin:0 0 14px">Voucher labels tag the lines of a cash or bank voucher: the header pick
-      lands on the bank/cash settlement line, per-line picks on the economic lines. Lines inherit the header label
-      by default unless changed per line.</p>
+    <p class="help" style="margin:0 0 14px">Labels tag the lines of any document: the header/party pick
+      lands on the bank/cash or AR/AP line, per-line picks on the economic or item lines. Lines inherit
+      the header/party label unless changed per line.</p>
     <form method="POST" action="{{ url_for('settings.labels') }}"
           style="display:flex;gap:8px;flex-wrap:wrap">
-      <input type="hidden" name="kind" value="voucher">
-      <input type="text" name="name" class="inp" style="flex:1;min-width:220px"
-             placeholder="e.g. Highway Project - North" required>
-      <button type="submit" class="btn btn-p">+ Create Label</button>
-    </form>
-  </div>
-</div>
-
-<div class="set-card set-boxed" style="margin-bottom:16px">
-  <div class="set-card-hd">Voucher Labels ({{ voucher_labels|length }})
-    <span class="sub">cash/bank voucher lines</span>
-  </div>
-  <div class="set-card-bd" style="padding:0">
-    {% if not voucher_labels %}
-    <p class="help" style="padding:14px 18px;margin:0">No voucher labels yet. Create one above, then pick it as the
-      voucher header label or in the entry rows.</p>
-    {% else %}
-    {{ label_table(voucher_labels) }}
-    {% endif %}
-  </div>
-</div>
-
-<div class="set-card set-boxed" style="margin-bottom:16px">
-  <div class="set-card-hd">Create an invoice label
-    <span class="sub">tags sales/purchase invoice lines</span>
-  </div>
-  <div class="set-card-bd">
-    <p class="help" style="margin:0 0 14px">Invoice labels tag the lines of a sales or purchase invoice: the party
-      pick lands on the customer/supplier (AR/AP) line, per-item picks on the item lines. Item lines inherit the
-      party label unless changed per line.</p>
-    <form method="POST" action="{{ url_for('settings.labels') }}"
-          style="display:flex;gap:8px;flex-wrap:wrap">
-      <input type="hidden" name="kind" value="invoice">
       <input type="text" name="name" class="inp" style="flex:1;min-width:220px"
              placeholder="e.g. Highway Project - North" required>
       <button type="submit" class="btn btn-p">+ Create Label</button>
@@ -129,21 +126,60 @@
 </div>
 
 <div class="set-card set-boxed">
-  <div class="set-card-hd">Invoice Labels ({{ invoice_labels|length }})
-    <span class="sub">sales/purchase invoice lines</span>
-  </div>
+  <div class="set-card-hd">Labels ({{ labels|length }})</div>
   <div class="set-card-bd" style="padding:0">
-    {% if not invoice_labels %}
-    <p class="help" style="padding:14px 18px;margin:0">No invoice labels yet. Create one above, then pick it as the
-      invoice party label or in the item rows.</p>
+    {% if not labels %}
+    <p class="help" style="padding:14px 18px;margin:0">No labels yet. Create one above, then pick it as
+      the voucher or invoice default, or tag rows while entering documents.</p>
     {% else %}
-    {{ label_table(invoice_labels) }}
+    <div class="tbl-scroll">
+      <table class="stbl">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Default for</th>
+            <th>Status</th>
+            <th>Used by</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in labels %}
+          <tr>
+            <td style="font-weight:600;color:#1e293b">{{ l.name }}</td>
+            <td>
+              <span style="display:flex;gap:5px;flex-wrap:wrap">
+                {% if l.id == default_voucher_label_id %}<span class="pill pill-vd">Vouchers</span>{% endif %}
+                {% if l.id == default_invoice_label_id %}<span class="pill pill-id">Invoices</span>{% endif %}
+                {% if l.id != default_voucher_label_id and l.id != default_invoice_label_id %}<span class="muted" style="font-size:12px">—</span>{% endif %}
+              </span>
+            </td>
+            <td><span class="pill {{ 'pill-on' if l.is_active else 'pill-off' }}">{{ 'Active' if l.is_active else 'Inactive' }}</span></td>
+            <td class="lbl-use">{{ 'Referenced by postings — kept for history' if l.id in in_use_ids else 'Not used yet' }}</td>
+            <td>
+              <div class="lbl-acts" style="justify-content:flex-end">
+                <form method="POST" action="{{ url_for('settings.label_rename', id=l.id) }}" class="lbl-rename">
+                  <input type="text" name="name" class="inp" value="{{ l.name }}" aria-label="Rename label to">
+                  <button type="submit" class="btn btn-sm btn-outline">Rename</button>
+                </form>
+                <form method="POST" action="{{ url_for('settings.label_toggle', id=l.id) }}" style="margin:0">
+                  <button type="submit" class="btn btn-sm {{ 'btn-danger' if l.is_active else 'btn-primary' }}">
+                    {{ 'Deactivate' if l.is_active else 'Activate' }}
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
     {% endif %}
   </div>
 </div>
 
-<div class="set-note"><b>Default label.</b> One label is marked <b>Default</b> and fills every slot: a voucher
-  header, voucher line, invoice party or invoice item saved without a pick gets the default. Item lines inherit
-  the header/party label unless changed manually; changing a header afterwards only follows through to lines still
-  on the old value. Deactivating the default label unmarks it, so an archived label can never keep
-  auto-assigning.</div>
+<div class="set-note"><b>Defaults.</b> Each document class keeps its own default: a voucher header, voucher
+  line, invoice party or invoice item saved without a pick falls back to the class default. Item lines
+  inherit the header/party label unless changed manually; changing a header afterwards only follows
+  through to lines still on the old value. Deactivating a default label clears it, so an archived label
+  can never keep auto-assigning.</div>

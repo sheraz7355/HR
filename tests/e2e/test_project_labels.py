@@ -1,11 +1,11 @@
 """Project labels: the label dimension on vouchers, invoices and reports.
 
-Labels are the project dimension in two kinds: VOUCHER labels tag
-cash/bank vouchers (the header pick lands on the bank/cash settlement line,
-per-line picks on the economic lines), INVOICE labels tag sales/purchase
-invoices (the party pick lands on the AR/AP line, per-item picks on the item
-lines). Item lines inherit the header/party label by default unless a
-per-line pick overrides it, and the single Settings default fills every
+Labels are the project dimension in ONE shared pool used by vouchers and
+invoices alike: the header pick lands on the bank/cash settlement line,
+per-line picks on the economic lines, the party pick lands on the AR/AP line,
+per-item picks on the item lines. Item lines inherit the header/party label
+by default unless a per-line pick overrides it; each document class keeps its
+own Settings default (voucher default / invoice default) that fills every
 untouched slot. These tests pin the posting rules and the report filters end
 to end.
 """
@@ -156,65 +156,72 @@ def test_labels_crud(client, company_ctx):
     assert b"Beta 3" in resp.data
 
 
-# ── two kinds: voucher labels vs invoice labels ─────────────────────────────
+# ── one shared pool: no voucher/invoice split ──────────────────────────────
 
-def test_settings_creates_both_kinds(client, company_ctx):
+def test_settings_creates_one_shared_pool(client, company_ctx):
     from shared.models.project_label import ProjectLabel
 
     assert client.post("/settings/labels",
-                       data={"name": "Voucher One", "kind": "voucher"}).status_code == 302
+                       data={"name": "Shared One"}).status_code == 302
+    # A stale "kind" field is ignored: one pool serves both document classes.
     assert client.post("/settings/labels",
-                       data={"name": "Invoice One", "kind": "invoice"}).status_code == 302
-    # No kind sent = the existing behavior, classified as a voucher label.
-    assert client.post("/settings/labels",
-                       data={"name": "Kindless"}).status_code == 302
+                       data={"name": "Shared Two", "kind": "invoice"}).status_code == 302
 
     with company_ctx():
-        assert ProjectLabel.query.filter_by(name="Voucher One").first().kind == "voucher"
-        assert ProjectLabel.query.filter_by(name="Invoice One").first().kind == "invoice"
-        assert ProjectLabel.query.filter_by(name="Kindless").first().kind == "voucher"
+        assert ProjectLabel.query.filter_by(name="Shared One").first() is not None
+        assert ProjectLabel.query.filter_by(name="Shared Two").first() is not None
 
     resp = client.get("/settings/?tab=labels")
-    assert b"Voucher Labels" in resp.data
-    assert b"Invoice Labels" in resp.data
-    assert b"Voucher One" in resp.data
-    assert b"Invoice One" in resp.data
+    assert b"Shared One" in resp.data
+    assert b"Shared Two" in resp.data
+    assert b"Voucher Labels" not in resp.data
+    assert b"Invoice Labels" not in resp.data
 
 
 # ── default label: set in Settings, auto-assigned on save ────────────────────
 
 @pytest.fixture(scope="module")
 def default_label(client, company_ctx):
-    """A label flagged as the company default; restored afterwards."""
+    """A label set as both the voucher and invoice default; restored."""
+    from shared.models.inventory_settings import InventorySettings
     from shared.models.project_label import ProjectLabel
     with company_ctx():
-        ProjectLabel.query.update({"is_default": False}, synchronize_session=False)
-        db.session.commit()
-        d = ProjectLabel(name="Default Proj", is_default=True)
-        db.session.add(d)
-        db.session.commit()
+        d = ProjectLabel.query.filter_by(name="Default Proj").first()
+        if d is None:
+            d = ProjectLabel(name="Default Proj")
+            db.session.add(d)
+            db.session.flush()
         did = d.id
+    client.post("/settings/labels/defaults",
+                data={"default_voucher_label_id": str(did),
+                      "default_invoice_label_id": str(did)})
     yield did
     with company_ctx():
         d = db.session.get(ProjectLabel, did)
         if d:
-            d.is_default = False
             d.is_active = True
             db.session.commit()
+        s = InventorySettings.get()
+        s.default_voucher_label_id = None
+        s.default_invoice_label_id = None
+        db.session.commit()
 
 
 def test_settings_labels_tab_renders(client, default_label):
     resp = client.get("/settings/?tab=labels")
     assert resp.status_code == 200
     assert b"Default Proj" in resp.data
-    assert b"Set default" in resp.data or b"Default" in resp.data
+    assert b"Save defaults" in resp.data
+    assert b"Vouchers" in resp.data
+    assert b"Invoices" in resp.data
     # The deep-link route renders the same tab without a redirect hop.
     resp = client.get("/settings/labels")
     assert resp.status_code == 200
     assert b"Default Proj" in resp.data
 
 
-def test_default_moves_between_labels(client, company_ctx, default_label):
+def test_defaults_are_separate_per_class(client, company_ctx, default_label):
+    from shared.models.inventory_settings import InventorySettings
     from shared.models.project_label import ProjectLabel
     with company_ctx():
         other = (ProjectLabel.query
@@ -222,28 +229,50 @@ def test_default_moves_between_labels(client, company_ctx, default_label):
                  .order_by(ProjectLabel.id).first())
         assert other is not None
         other_id = other.id
-    client.post(f"/settings/labels/{other_id}/default")
+    # The two class defaults move independently: swapping the voucher default
+    # leaves the invoice default alone.
+    client.post("/settings/labels/defaults",
+                data={"default_voucher_label_id": str(other_id),
+                      "default_invoice_label_id": str(default_label)})
     with company_ctx():
-        assert ProjectLabel.default().id == other_id
-        assert db.session.get(ProjectLabel, default_label).is_default is False
-    # Only one label can be the default: setting it back clears the other.
-    client.post(f"/settings/labels/{default_label}/default")
+        s = InventorySettings.get()
+        assert s.default_voucher_label_id == other_id
+        assert s.default_invoice_label_id == default_label
+        assert s.default_voucher_label().id == other_id
+        assert s.default_invoice_label().id == default_label
+    # Clearing one default leaves the other untouched.
+    client.post("/settings/labels/defaults",
+                data={"default_voucher_label_id": "",
+                      "default_invoice_label_id": str(default_label)})
     with company_ctx():
-        assert ProjectLabel.default().id == default_label
-        assert db.session.get(ProjectLabel, other_id).is_default is False
+        s = InventorySettings.get()
+        assert s.default_voucher_label_id is None
+        assert s.default_voucher_label() is None
+        assert s.default_invoice_label_id == default_label
+    # Restore the voucher default for the save tests below.
+    client.post("/settings/labels/defaults",
+                data={"default_voucher_label_id": str(default_label),
+                      "default_invoice_label_id": str(default_label)})
 
 
-def test_deactivating_default_unmarks_it(client, company_ctx, default_label):
-    from shared.models.project_label import ProjectLabel
+def test_deactivating_default_clears_it(client, company_ctx, default_label):
+    from shared.models.inventory_settings import InventorySettings
     client.post(f"/settings/labels/{default_label}/toggle")
     with company_ctx():
-        assert ProjectLabel.default() is None
-        assert db.session.get(ProjectLabel, default_label).is_default is False
-    # Activate again and restore it as the default for the save tests below.
+        s = InventorySettings.get()
+        assert s.default_voucher_label() is None
+        assert s.default_invoice_label() is None
+        assert s.default_voucher_label_id is None
+        assert s.default_invoice_label_id is None
+    # Activate again and restore the defaults for the save tests below.
     client.post(f"/settings/labels/{default_label}/toggle")
-    client.post(f"/settings/labels/{default_label}/default")
+    client.post("/settings/labels/defaults",
+                data={"default_voucher_label_id": str(default_label),
+                      "default_invoice_label_id": str(default_label)})
     with company_ctx():
-        assert ProjectLabel.default().id == default_label
+        s = InventorySettings.get()
+        assert s.default_voucher_label().id == default_label
+        assert s.default_invoice_label().id == default_label
 
 
 def test_voucher_saves_default_label_when_none_picked(client, company_ctx,
@@ -796,19 +825,17 @@ def _super_admin_page(page, flask_server):
 
 
 def _ensure_label(page, name, make_default=False):
-    """Create a label through the Settings UI (idempotent); optionally mark
-    it the company default — the state the voucher/invoice pickers prefill."""
+    """Create a label through the Settings UI (idempotent); optionally make
+    it the voucher default — the state the voucher pickers prefill."""
     page.goto(f"{BASE_URL}/settings/?tab=labels")
     if page.locator(".stbl tbody").get_by_text(name, exact=True).count() == 0:
         page.locator("input[placeholder='e.g. Highway Project - North']").first.fill(name)
         page.get_by_role("button", name="+ Create Label").first.click()
         page.wait_for_load_state("networkidle")
     if make_default:
-        row = page.locator(".stbl tbody tr", has_text=name)
-        set_btn = row.get_by_role("button", name="Set default")
-        if set_btn.count():
-            set_btn.click()
-            page.wait_for_load_state("networkidle")
+        page.select_option("select[name='default_voucher_label_id']", label=name)
+        page.get_by_role("button", name="Save defaults").click()
+        page.wait_for_load_state("networkidle")
 
 
 def test_settings_labels_tab_fits_mobile(page, flask_server):
@@ -840,14 +867,15 @@ def test_profit_loss_filter_fits_mobile(page, flask_server):
     assert box["x"] + box["width"] <= 320 + 0.5
 
 
-def _enable_per_line(page):
-    """Turn on the per-line label column — the voucher rows' label picker
-    lives in that column, hidden unless per-line labeling is enabled."""
+def _enable_per_line(page, scope="voucher"):
+    """Flip a per-line labeling toggle switch in Settings (auto-submits on
+    change) for the given document class — the row label column is hidden
+    unless its own toggle is on."""
     page.goto(f"{BASE_URL}/settings/?tab=labels")
-    cb = page.locator("input[name='per_line_labeling']")
-    if not cb.is_checked():
-        cb.check()
-        page.locator("#perLineForm button[type='submit']").click()
+    fid = "perLineFormV" if scope == "voucher" else "perLineFormI"
+    sw = page.locator(f"#{fid} input[type='checkbox']")
+    if not sw.is_checked():
+        sw.check()
         page.wait_for_load_state("networkidle")
 
 

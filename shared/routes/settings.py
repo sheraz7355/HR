@@ -130,14 +130,12 @@ def index():
                                                   InvInvoiceItem)
         from inventory_app.models.purchase_invoice import (
             InvPurchaseInvoice, InvPurchaseInvoiceItem)
+        s = InventorySettings.get()
         ctx["labels"] = ProjectLabel.query.order_by(ProjectLabel.name).all()
-        dl = ProjectLabel.default()
-        ctx["default_label_id"] = dl.id if dl else None
-        ctx["voucher_labels"] = ProjectLabel.query.filter_by(kind="voucher") \
-            .order_by(ProjectLabel.name).all()
-        ctx["invoice_labels"] = ProjectLabel.query.filter_by(kind="invoice") \
-            .order_by(ProjectLabel.name).all()
-        ctx["per_line_labeling"] = InventorySettings.get().per_line_labeling
+        ctx["per_line_labeling_voucher"] = s.per_line_labeling_voucher
+        ctx["per_line_labeling_invoice"] = s.per_line_labeling_invoice
+        ctx["default_voucher_label_id"] = s.default_voucher_label_id
+        ctx["default_invoice_label_id"] = s.default_invoice_label_id
         ctx["in_use_ids"] = _label_in_use_ids(
             (JournalLine, ("label_id",)),
             (AccountingVoucherLine, ("label_id",)),
@@ -1201,9 +1199,10 @@ def decline_invitation(invitation_id):
 
 # ── Project Labels (the company-wide project dimension) ──────────────────────
 # Lives in Settings rather than Accounting because vouchers, invoices and every
-# finance report share the label dimension. Two kinds exist: header labels
-# (party / bank-cash lines) and line labels (the economic lines). The single
-# default label is auto-assigned to every slot saved without an explicit pick.
+# finance report share the label dimension. One shared pool serves both
+# document classes, with independent per-line toggles and per-class defaults
+# (voucher default / invoice default) auto-assigned to slots saved without an
+# explicit pick.
 
 def _label_in_use_ids(*models):
     """Label ids referenced by any posting surface, as a set."""
@@ -1229,12 +1228,9 @@ def labels():
                 db.func.lower(ProjectLabel.name) == name.lower()).first():
             flash(f"A label named \"{name}\" already exists.", "error")
         else:
-            kind = request.form.get("kind", "voucher")
-            kind = kind if kind in ("invoice", "voucher") else "voucher"
-            db.session.add(ProjectLabel(name=name, kind=kind))
+            db.session.add(ProjectLabel(name=name))
             db.session.commit()
-            flash(f"{'Invoice' if kind == 'invoice' else 'Voucher'} label "
-                  f"\"{name}\" created.", "success")
+            flash(f"Label \"{name}\" created.", "success")
         return redirect(url_for("settings.index", tab="labels"))
     sections = visible_sections(current_user)
     from shared.models.ledger import JournalLine
@@ -1249,11 +1245,10 @@ def labels():
         "sections": sections,
         "module_key": "settings",
         "labels": ProjectLabel.query.order_by(ProjectLabel.name).all(),
-        "voucher_labels": ProjectLabel.query.filter_by(kind="voucher") \
-            .order_by(ProjectLabel.name).all(),
-        "invoice_labels": ProjectLabel.query.filter_by(kind="invoice") \
-            .order_by(ProjectLabel.name).all(),
-        "per_line_labeling": InventorySettings.get().per_line_labeling,
+        "per_line_labeling_voucher": InventorySettings.get().per_line_labeling_voucher,
+        "per_line_labeling_invoice": InventorySettings.get().per_line_labeling_invoice,
+        "default_voucher_label_id": InventorySettings.get().default_voucher_label_id,
+        "default_invoice_label_id": InventorySettings.get().default_invoice_label_id,
         "in_use_ids": _label_in_use_ids(
             (JournalLine, ("label_id",)),
             (AccountingVoucherLine, ("label_id",)),
@@ -1264,8 +1259,6 @@ def labels():
             (InvPurchaseInvoiceItem, ("label_id",)),
         ),
     }
-    dl = ProjectLabel.default()
-    ctx["default_label_id"] = dl.id if dl else None
     return render_template("settings/index.html", **ctx)
 
 
@@ -1276,10 +1269,17 @@ def labels_per_line():
     if resp:
         return resp
     s = InventorySettings.get()
-    s.per_line_labeling = request.form.get("per_line_labeling") == "on"
+    if request.form.get("scope") == "invoice":
+        s.per_line_labeling_invoice = request.form.get("enabled") == "on"
+        scope_label = "invoice"
+        on = s.per_line_labeling_invoice
+    else:
+        s.per_line_labeling_voucher = request.form.get("enabled") == "on"
+        scope_label = "voucher"
+        on = s.per_line_labeling_voucher
     db.session.commit()
-    flash("Per-line labeling " + ("enabled" if s.per_line_labeling
-                                  else "disabled") + ".", "success")
+    flash(f"Per-line labeling for {scope_label}s "
+          + ("enabled" if on else "disabled") + ".", "success")
     return redirect(url_for("settings.index", tab="labels"))
 
 
@@ -1311,30 +1311,31 @@ def label_toggle(id):
         return resp
     label = scoped_get_404(ProjectLabel, id)
     label.is_active = not label.is_active
-    # An archived label must never stay the default: default() only reads
-    # active labels, but clear the flag too so the UI can't show both.
-    if not label.is_active and label.is_default:
-        label.is_default = False
+    # An archived label must never stay the default: the resolution skips
+    # inactive labels, but clear the id too so the UI can't show it selected.
+    if not label.is_active:
+        s = InventorySettings.get()
+        if s.default_voucher_label_id == label.id:
+            s.default_voucher_label_id = None
+        if s.default_invoice_label_id == label.id:
+            s.default_invoice_label_id = None
     db.session.commit()
     flash(f"Label \"{label.name}\" {'deactivated' if not label.is_active else 'activated'}.",
           "success")
     return redirect(url_for("settings.index", tab="labels"))
 
 
-@settings_bp.route("/labels/<int:id>/default", methods=["POST"])
+@settings_bp.route("/labels/defaults", methods=["POST"])
 @login_required
-def label_set_default(id):
+def labels_defaults():
     resp = _require("labels")
     if resp:
         return resp
-    label = scoped_get_404(ProjectLabel, id)
-    if not label.is_active:
-        flash("Activate the label before making it the default.", "error")
-    else:
-        for l in ProjectLabel.query.all():
-            l.is_default = (l.id == label.id)
-        db.session.commit()
-        flash(f"\"{label.name}\" is now the default label — it is assigned "
-              "automatically to lines or documents saved without a label.",
-              "success")
+    s = InventorySettings.get()
+    dv = request.form.get("default_voucher_label_id", "").strip()
+    di = request.form.get("default_invoice_label_id", "").strip()
+    s.default_voucher_label_id = int(dv) if dv.isdigit() else None
+    s.default_invoice_label_id = int(di) if di.isdigit() else None
+    db.session.commit()
+    flash("Default labels saved.", "success")
     return redirect(url_for("settings.index", tab="labels"))

@@ -14,11 +14,23 @@ class InventorySettings(db.Model):
     default_cogs_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
     default_inventory_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
     default_return_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
-    # Per-line project-label column on voucher rows and invoice item rows.
-    # Off (default): lines take the header/party label server-side and the
-    # column is hidden. On: the form shows one label pick per row, prefilled
-    # with the header label or the company default, editable per line.
-    per_line_labeling = db.Column(db.Boolean, default=False)
+    # Per-line project-label column on voucher rows and invoice item rows,
+    # turned on independently per document class. Off (default): lines take
+    # the header/party label server-side and the column is hidden. On: the
+    # form shows one label pick per row, prefilled with the header/party
+    # label or the class default, editable per line.
+    per_line_labeling_voucher = db.Column(db.Boolean, default=False)
+    per_line_labeling_invoice = db.Column(db.Boolean, default=False)
+    # Default project labels per document class: a voucher / invoice saved
+    # without an explicit pick gets its class default. Deactivated labels no
+    # longer resolve (default_*_label() returns None), so an archived default
+    # can never keep auto-assigning.
+    default_voucher_label_id = db.Column(db.Integer,
+                                         db.ForeignKey("project_labels.id"),
+                                         nullable=True)
+    default_invoice_label_id = db.Column(db.Integer,
+                                         db.ForeignKey("project_labels.id"),
+                                         nullable=True)
 
     @classmethod
     def get(cls):
@@ -36,6 +48,19 @@ class InventorySettings(db.Model):
             # object (a half-built invoice) is pending in the session.
             db.session.flush(objects=[s])
         return s
+
+    def _default_label(self, col):
+        if getattr(self, col) is None:
+            return None
+        from shared.models.project_label import ProjectLabel
+        return ProjectLabel.query.filter_by(
+            id=getattr(self, col), is_active=True).first()
+
+    def default_voucher_label(self):
+        return self._default_label("default_voucher_label_id")
+
+    def default_invoice_label(self):
+        return self._default_label("default_invoice_label_id")
 
     def is_fifo(self):
         return self.valuation_method == "fifo"
