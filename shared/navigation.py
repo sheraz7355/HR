@@ -14,6 +14,11 @@ An item is a dict:
                 {"exact": [...]} | {"prefix": "x."} | {"prefix": ..., "exclude": [...]}
               defaults to exact match on ``endpoint``
     gate      optional callable(user, ctx) -> bool; item hidden when False
+    tab       optional URL query key for sections that share one route:
+              the settings module renders every section at settings.index,
+              so its items carry tab="<key>"; the shell links
+              url_for(endpoint, tab=tab) and the item is active only while
+              the request's tab matches
 
 A group is (name, icon, [items]) and renders as a collapsible section.
 A bare item (not in a group) renders flat above the groups.
@@ -85,6 +90,18 @@ def _admin(user, ctx):
 
 def _admin_or_manager(user, ctx):
     return user.is_admin() or user.is_manager()
+
+
+def _finance(user, ctx):
+    return user.module_access("finance")
+
+
+def _inventory(user, ctx):
+    return user.module_access("inventory")
+
+
+def _invoicing(user, ctx):
+    return user.module_access("invoicing")
 
 
 def _with_po(user, ctx):
@@ -279,7 +296,52 @@ NAV = {
              "active": {"prefix": "coa."}},
         ],
     },
-    "settings": {"flat": [], "groups": []},
+    # Settings is one route with many sections; the section list used to be a
+    # rail on the page itself. It now lives here so every module (including
+    # settings) gets its navigation from the same place. Item "tab" maps to the
+    # ?tab= query the index route keys on; gates mirror settings.py SECTIONS.
+    "settings": {
+        "flat": [
+            {"endpoint": "settings.index", "tab": "account", "icon": "&#128100;",
+             "label": "My Account"},
+            {"endpoint": "settings.index", "tab": "invites", "icon": "&#9993;",
+             "label": "Invitations"},
+        ],
+        "groups": [
+            ("Company & Finance", "&#127970;", [
+                {"endpoint": "settings.index", "tab": "company", "icon": "&#127970;",
+                 "label": "Company Profile", "gate": _finance},
+                {"endpoint": "settings.index", "tab": "periods", "icon": "&#128197;",
+                 "label": "Financial Periods", "gate": _finance},
+                {"endpoint": "settings.index", "tab": "reports", "icon": "&#128200;",
+                 "label": "Report Structure", "gate": _finance},
+                {"endpoint": "settings.index", "tab": "cash_flow", "icon": "&#128181;",
+                 "label": "Cash Flow Method", "gate": _finance},
+                {"endpoint": "settings.index", "tab": "labels", "icon": "&#127991;",
+                 "label": "Project Labels", "gate": _finance},
+            ]),
+            ("Inventory", "&#128230;", [
+                {"endpoint": "settings.index", "tab": "inventory", "icon": "&#128230;",
+                 "label": "Inventory", "gate": _inventory},
+            ]),
+            ("Invoicing", "&#128207;", [
+                {"endpoint": "settings.index", "tab": "purchase", "icon": "&#128228;",
+                 "label": "Procurement", "gate": _invoicing},
+                {"endpoint": "settings.index", "tab": "sales", "icon": "&#128229;",
+                 "label": "Sales", "gate": _invoicing},
+                {"endpoint": "settings.index", "tab": "invoicing", "icon": "&#128207;",
+                 "label": "Invoice Defaults", "gate": _invoicing},
+                {"endpoint": "settings.index", "tab": "templates", "icon": "&#128196;",
+                 "label": "Invoice Templates", "gate": _invoicing},
+            ]),
+            ("Administration", "&#128295;", [
+                {"endpoint": "settings.index", "tab": "rights", "icon": "&#128273;",
+                 "label": "Rights & Access", "gate": _admin},
+                {"endpoint": "settings.index", "tab": "members", "icon": "&#128101;",
+                 "label": "Members & Roles", "gate": _admin},
+            ]),
+        ],
+    },
     "fixed_assets": {
         "flat": [
             {"endpoint": "fa_auth.dashboard", "icon": "&#9679;", "label": "Dashboard"},
@@ -304,19 +366,24 @@ NAV = {
 }
 
 
-def _is_active(item, endpoint):
+def _is_active(item, endpoint, ctx):
     spec = item.get("active")
     if not endpoint:
         return False
     if not spec:
-        return endpoint == item["endpoint"]
-    if endpoint in spec.get("exclude", []):
-        return False
-    if "exact" in spec:
-        return endpoint in spec["exact"]
-    if "prefix" in spec:
-        return endpoint.startswith(spec["prefix"])
-    return endpoint == item["endpoint"]
+        matched = endpoint == item["endpoint"]
+    elif endpoint in spec.get("exclude", []):
+        matched = False
+    elif "exact" in spec:
+        matched = endpoint in spec["exact"]
+    elif "prefix" in spec:
+        matched = endpoint.startswith(spec["prefix"])
+    else:
+        matched = endpoint == item["endpoint"]
+    # Tab-scoped items (settings sections) are active only on their tab.
+    if matched and item.get("tab"):
+        matched = ctx.get("tab") == item["tab"]
+    return matched
 
 
 def _resolve(items, user, ctx, endpoint):
@@ -330,7 +397,8 @@ def _resolve(items, user, ctx, endpoint):
             "endpoint": item["endpoint"],
             "icon": item.get("icon", "&#9632;"),
             "label": label(ctx) if callable(label) else label,
-            "active": _is_active(item, endpoint),
+            "active": _is_active(item, endpoint, ctx),
+            "tab": item.get("tab"),
         })
     return out
 

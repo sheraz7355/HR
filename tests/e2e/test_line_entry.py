@@ -59,6 +59,7 @@ def _open(page, url):
     gate = page.locator("#gateBlank")
     if gate.count():
         gate.click()
+        page.locator("#gateContinue").click()
         page.wait_for_timeout(150)
     return page
 

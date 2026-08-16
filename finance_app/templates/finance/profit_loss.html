@@ -2,8 +2,8 @@
 {% block title %}Profit & Loss{% endblock %}
 {% block heading %}Profit & Loss Statement{% endblock %}
 {% block actions %}
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}

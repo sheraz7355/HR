@@ -7,6 +7,16 @@ import os
 BASE_URL = "http://localhost:" + os.environ.get("E2E_PORT", "5050")
 
 
+def _dismiss_gate(page):
+    """A new purchase invoice opens on the source gate; tests that go straight
+    to the form take the blank path first (select blank, then Continue)."""
+    gate = page.locator("#gateBlank")
+    if gate.count():
+        gate.click()
+        page.locator("#gateContinue").click()
+        page.wait_for_timeout(150)
+
+
 class TestInvLogin:
     def test_login_page_loads(self, login_page):
         assert login_page.locator("#login").is_visible()
@@ -48,6 +58,7 @@ class TestInvPurchaseInvoice:
     def test_new_purchase_invoice_form_loads(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         admin_page.locator("#itemsBody tr").wait_for(state="attached", timeout=5000)
         assert admin_page.locator("#supplierSearch").is_visible()
         assert admin_page.locator("#itemsBody").is_visible()
@@ -58,6 +69,7 @@ class TestInvPurchaseInvoice:
     def test_purchase_invoice_add_line(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         init_rows = admin_page.locator("#itemsBody tr").count()
         admin_page.locator("#addLineBtn").click()
         admin_page.wait_for_timeout(200)
@@ -67,6 +79,7 @@ class TestInvPurchaseInvoice:
     def test_purchase_invoice_clear_lines(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         admin_page.locator("#itemsBody tr").wait_for(state="attached", timeout=5000)
         admin_page.locator("#clearAllBtn").click()
         admin_page.locator("#confirmOkBtn").wait_for(state="visible", timeout=3000)
@@ -78,6 +91,7 @@ class TestInvPurchaseInvoice:
     def test_purchase_invoice_pill_toggles(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         # The scope pills now live in the Additional Settings slide-over, which
         # starts closed. A hidden pill still reports is_enabled(), so the guard
         # below would pass and the click would then time out on visibility.
@@ -92,6 +106,7 @@ class TestInvPurchaseInvoice:
     def test_purchase_invoice_summary_calculates(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         qty = admin_page.locator("#itemsBody [data-col='quantity']").first
         if qty.is_visible():
             qty.fill("10")
@@ -105,6 +120,7 @@ class TestInvPurchaseInvoice:
     def test_purchase_invoice_global_inputs(self, admin_page):
         admin_page.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_page.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_page)
         disc = admin_page.locator("#globalDiscPct")
         if disc.is_visible():
             disc.fill("5")
@@ -126,6 +142,7 @@ class TestInvResponsive:
     def test_pi_form_mobile(self, admin_mobile):
         admin_mobile.goto(f"{BASE_URL}/inventory/purchase-invoice/")
         admin_mobile.wait_for_load_state("networkidle")
+        _dismiss_gate(admin_mobile)
         assert admin_mobile.locator("#supplierSearch").is_visible()
         assert admin_mobile.locator(".tb-w").is_visible()
         assert admin_mobile.viewport_size["width"] == 375

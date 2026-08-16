@@ -1,5 +1,8 @@
 # Development Policies
 
+## 0. Edit Fallback
+If the edit tool fails or reports an error on a change (root cause on this machine: the folder was renamed from `Open Code\HR` to `accountix_erp` but opencode's sqlite state still held the old path, so permission/form endpoints 500'd on realPath ENOENT and every edit that needed a permission ask died instantly; fixed by repointing `project`/`project_directory`/`worktree`/`session` rows to the new path — keep that consistent if renaming again), retry the change with python tools/apply_edit.py <file> --old <exact text> --new <replacement> (add --replace-all only when every occurrence must change; use --old-file/--new-file for long blocks). It verifies uniqueness before writing and exits non-zero with a message on failure. Never silently skip a change; verify the file on disk afterwards.
+
 ## 1. Change Impact Assessment
 When any new update is made, ensure all other actions/features connected to it are updated accordingly. Check for side effects before closing a change.
 

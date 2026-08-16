@@ -45,7 +45,8 @@ class CompanyInfo(db.Model):
         if not c:
             c = cls(company_id=cid, company_name="SolarKon Energy Solutions")
             db.session.add(c)
-            db.session.commit()
+            # Flush only this row: never commit another caller's pending work.
+            db.session.flush(objects=[c])
         return c
 
 
@@ -111,7 +112,8 @@ class ReportSettings(db.Model):
         if not s:
             s = cls(company_id=cid)
             db.session.add(s)
-            db.session.commit()
+            # Flush only this row: never commit another caller's pending work.
+            db.session.flush(objects=[s])
         return s
 
     def party_mode(self, doc):
@@ -162,7 +164,8 @@ class FiscalYearRule(db.Model):
         if not r:
             r = cls(company_id=cid, start_month=1, start_day=1)
             db.session.add(r)
-            db.session.commit()
+            # Flush only this row: never commit another caller's pending work.
+            db.session.flush(objects=[r])
         return r
 
     def generate_periods(self, from_year=None, to_year=None):

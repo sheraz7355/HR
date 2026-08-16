@@ -19,6 +19,10 @@ class InvPurchaseInvoice(db.Model):
     # Set when settings allow picking an arbitrary ledger account as the
     # counterparty; the AP posting then credits this instead of the supplier.
     party_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"))
+    # The PARTY label tags the AP line at posting (the supplier's ledger
+    # line). Item labels live per line on InvPurchaseInvoiceItem and fall
+    # back to the party label, then the company default, when left unpicked.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
     driver_name = db.Column(db.String(100))
     driver_contact = db.Column(db.String(50))
     vehicle_number = db.Column(db.String(50))
@@ -82,6 +86,11 @@ class InvPurchaseInvoiceItem(db.Model):
     quantity = db.Column(db.Float, default=1)
     unit = db.Column(db.String(20), default="pcs")
     unit_price = db.Column(db.Float, default=0)
+
+    # Per-line project label. Falls back to the party label, then the company
+    # default, when saved without a pick. The first item's label governs the
+    # pooled economic lines (inventory/charges) at posting.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
 
     # Per-line source purchase order (§4.3) — see the sales-side note.
     source_order_id = db.Column(db.Integer, db.ForeignKey("inv_purchase_orders.id"))

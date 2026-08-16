@@ -19,6 +19,10 @@ class InvInvoice(db.Model):
     # Set when settings allow picking an arbitrary ledger account as the
     # counterparty; the AR posting then debits this instead of the customer.
     party_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"))
+    # The PARTY label tags the AR line at posting (the customer's ledger
+    # line). Item labels live per line on InvInvoiceItem and fall back to the
+    # party label, then the company default, when left unpicked.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
     invoice_date = db.Column(db.DateTime, default=datetime.utcnow)
     due_date = db.Column(db.DateTime)
     voucher_status = db.Column(db.String(20), default="unapproved")
@@ -73,6 +77,11 @@ class InvInvoiceItem(db.Model):
     quantity = db.Column(db.Float, default=1)
     unit = db.Column(db.String(20), default="pcs")
     unit_price = db.Column(db.Float, default=0)
+
+    # Per-line project label. Falls back to the party label, then the company
+    # default, when saved without a pick. The first item's label governs the
+    # pooled economic lines (revenue/COGS/charges) at posting.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
 
     # Per-line source order (§4.3). One invoice can draw on several orders, so
     # the link belongs on the line, not the header — this is what the Order ref

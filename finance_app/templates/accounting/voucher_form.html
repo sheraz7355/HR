@@ -52,6 +52,11 @@
 .vtb .ri:focus{border-color:#1d4ed8;box-shadow:0 0 0 2px rgba(29,78,216,.1);background:#fff}
 .vtb .ri:disabled{background:transparent;color:#64748b}
 .vtb .ri.num{text-align:right;font-variant-numeric:tabular-nums}
+.vtb .ri.ld-inp{min-width:150px;background:#fff;cursor:pointer;color:#1e293b;border:1px solid transparent}
+.vtb .ri.ld-inp:focus{border-color:#1d4ed8}
+.vtb .ri.ld-inp:disabled{background:transparent;color:#64748b}
+.ld-it[data-sel="1"]{background:#eff6ff}
+.ac-dd-empty{padding:8px 12px;font-size:12px;color:#94a3b8}
 .vtb .rn{width:30px;text-align:center;color:#64748b;font-size:11px;font-weight:600}
 .vtb .code-cell{width:78px}
 .vtb .code-cell .ri{font-family:ui-monospace,monospace;font-size:12px;color:#64748b}
@@ -201,6 +206,19 @@
             <div class="ac-dd" id="cbDropdown"></div>
           </div>
         </div>
+        {% if is_cb %}
+        <div id="headLabelWrap">
+          <label class="vlbl" for="headLabelSearch">Header Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(bank/cash line)</span></label>
+          <div class="ac-wrap">
+            <input type="hidden" name="label_id" id="headLabelId"
+                   value="{{ v.label_id if v and v.label_id is not none else '' }}">
+            <input type="text" class="vinp" id="headLabelSearch" placeholder="Search project label..."
+                   value="{{ v.label.name if v and v.label else '' }}" autocomplete="off"
+                   {{ 'disabled' if not form_active else '' }}>
+            <div class="ac-dd" id="headLabelDropdown"></div>
+          </div>
+        </div>
+        {% endif %}
         <div>
           <label class="vlbl">Voucher #</label>
           <input type="text" class="vinp" readonly value="{{ v.voucher_number if v else '(auto)' }}">
@@ -226,6 +244,7 @@
             <th style="width:78px">Code</th>
             <th style="min-width:130px">Account</th>
             <th style="min-width:280px">Description</th>
+            {% if per_line_labeling %}<th style="min-width:150px">Label</th>{% endif %}
             {% if is_cb %}
             <th class="num amt-col">Amount <span class="side-tag {{ 'side-cr' if is_receipt else 'side-dr' }}" style="font-size:9px;">{{ 'CR' if is_receipt else 'DR' }}</span></th>
             {% else %}
@@ -315,11 +334,25 @@ var EXISTING = [
 {% if v %}{% for line in v.lines if line.line_no > 0 %}
   {id: {{ line.account_id }}, code: {{ line.account.code|tojson }}, name: {{ line.account.name|tojson }},
    desc: {{ (line.description or '')|tojson }},
+   label: {{ line.label_id if line.label_id is not none else 'null' }},
    debit: {{ line.debit or 0 }}, credit: {{ line.credit or 0 }}},
 {% endfor %}{% endif %}
 ];
 
+var LABELS = [
+{% for l in project_labels %}
+  {id: {{ l.id }}, name: {{ l.name|tojson }}},
+{% endfor %}
+];
+var LABEL_HELP = {{ 'true' if active_labels else 'false' }};
+var DEFAULT_LABEL_ID = {{ default_label.id if default_label else 'null' }};
+
 function qs(s,c){return (c||document).querySelector(s)}
+// Header label state: the value of the hidden header field, which new rows
+// and the change-sync use. JV forms render no header field, so it is NULL.
+var PER_LINE = {{ 'true' if per_line_labeling else 'false' }};
+var HEAD_INP = qs('#headLabelSearch'), HEAD_HID = qs('#headLabelId');
+var HDR_LABEL = HEAD_HID ? HEAD_HID.value : '';
 function qsa(s,c){return Array.prototype.slice.call((c||document).querySelectorAll(s))}
 function fmt(n){return window.formatAmount(n,2)}
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
@@ -366,10 +399,90 @@ function makeAuto(inp, fetchUrl, onPick){
   window.addEventListener('resize',function(){if(dd.classList.contains('show'))pos()},{passive:true});
 }
 
+// ================= label picker (static, same UX as the account box) ========
+function LABEL_NAME(id){
+  if(id===null||id===undefined||id==='')return '';
+  for(var i=0;i<LABELS.length;i++){if(String(LABELS[i].id)===String(id))return LABELS[i].name}
+  return '';
+}
+function makeLabelDD(inp,hidden,onChange){
+  var dd=document.createElement('div');dd.className='ac-dd ld-dd';
+  document.body.appendChild(dd);
+  var hl=-1;
+  function listEls(){return qsa('.ld-it',dd)}
+  function pos(){
+    var r=inp.getBoundingClientRect();
+    dd.style.left=r.left+'px';dd.style.top=(r.bottom+2)+'px';dd.style.minWidth=Math.max(r.width,220)+'px';
+  }
+  function paint(){listEls().forEach(function(e,i){e.classList.toggle('hl',i===hl)})}
+  function render(q){
+    var ql=(q||'').trim().toLowerCase();var html='';var shown=0;
+    if(!hidden.value && !DEFAULT_LABEL_ID)html+='<div class="ac-it ld-it" data-v="" data-empty="1" data-sel="1"><span class="ac-n">&mdash; None &mdash;</span></div>';
+    LABELS.forEach(function(l){
+      if(ql&&l.name.toLowerCase().indexOf(ql)===-1)return;
+      shown++;
+      html+='<div class="ac-it ld-it" data-v="'+l.id+'"'+((!ql&&String(hidden.value)===String(l.id))?' data-sel="1"':'')+'><span class="ac-n">'+esc(l.name)+'</span></div>';
+    });
+    if(!shown)html='<div class="ac-dd-empty">No label matches</div>';
+    dd.innerHTML=html;pos();dd.classList.add('show');hl=-1;paint();
+  }
+  function pick(el){
+    hidden.value=el.dataset.v||'';
+    inp.value=el.dataset.v?LABEL_NAME(el.dataset.v):'';
+    dd.classList.remove('show');
+    if(onChange)onChange(hidden.value);
+  }
+  // Space (or a click) always opens the FULL list; typing filters it.
+  inp.addEventListener('focus',function(){if(LABELS.length)render('')});
+  inp.addEventListener('click',function(){if(!dd.classList.contains('show')&&LABELS.length)render('')});
+  inp.addEventListener('keydown',function(e){
+    if(e.key===' '){e.preventDefault();render('');return}
+    if(!dd.classList.contains('show'))return;
+    var els=listEls();
+    if(!els.length)return;
+    if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(hl+1,els.length-1);paint();}
+    else if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(hl-1,0);paint();}
+    else if(e.key==='Enter'){e.preventDefault();pick(els[hl>=0?hl:0]);}
+    else if(e.key==='Escape'){e.preventDefault();dd.classList.remove('show');}
+  });
+  inp.addEventListener('input',function(){render(inp.value)});
+  inp.addEventListener('blur',function(){setTimeout(function(){dd.classList.remove('show')},200)});
+  dd.addEventListener('mousedown',function(e){
+    var t=e.target.closest('.ld-it');if(!t)return;
+    pick(t);e.preventDefault();
+  });
+  window.addEventListener('scroll',function(){if(dd.classList.contains('show'))pos()},{passive:true});
+  window.addEventListener('resize',function(){if(dd.classList.contains('show'))pos()},{passive:true});
+}
+
+// ================= header label: the bank/cash line carries it, and every
+// item line inherits it while still on the old value (manual picks survive).
+function syncRowsFromHeader(oldId,newId){
+  qsa('#entriesBody tr').forEach(function(tr){
+    var h=qs('[name="label_id[]"]',tr); if(!h)return;
+    if(!h.value||String(h.value)===String(oldId)){
+      h.value=newId||'';
+      var i=qs('.ld-inp',tr); if(i)i.value=LABEL_NAME(h.value);
+    }
+  });
+}
+if(HEAD_INP&&HEAD_HID){
+  if(EDITABLE){
+    makeLabelDD(HEAD_INP,HEAD_HID,function(newId){
+      var oldId=HDR_LABEL;
+      HDR_LABEL=newId||'';
+      syncRowsFromHeader(oldId,HDR_LABEL);
+    });
+  }else{
+    HEAD_INP.value=LABEL_NAME(HEAD_HID.value)||HEAD_INP.value;
+  }
+}
+
 // ================= rows =================
 function rowHtml(d){
   d=d||{};
   var dis=EDITABLE?'':'disabled';
+  var lbl=d.label?d.label:(HDR_LABEL||DEFAULT_LABEL_ID||'');
   var amtCells;
   if(IS_CB){
     var amt=(d.debit||0)+(d.credit||0);
@@ -394,7 +507,9 @@ function rowHtml(d){
     +'<input type="text" class="ri acct-input" placeholder="Type or press Space to search..." autocomplete="off" aria-label="Account search" value="'+(d.name||'').replace(/"/g,'&quot;')+'" '+dis+'>'
     +'</div></td>'
     +'<td data-label="Description"><textarea name="description[]" class="ri desc-input" rows="1" style="resize:none;overflow:hidden" aria-label="Description" '+dis+'>'+esc(d.desc||'')+'</textarea></td>'
-    +amtCells
+    +(PER_LINE ? '<td data-label="Label"><div class="ld-wrap"><input type="hidden" name="label_id[]" value="'+lbl+'">'
+    +'<input type="text" class="ri ld-inp" placeholder="Label..." autocomplete="off" aria-label="Project label" value="'+esc(LABEL_NAME(lbl))+'" '+dis+'>'
+    +'</div></td>' : '')    +amtCells
     +'<td><div class="row-acts">'+(EDITABLE?'<button type="button" class="add-after" title="Insert line">+</button><button type="button" class="del" title="Remove line">&minus;</button>':'')+'</div></td>';
 }
 
@@ -409,6 +524,8 @@ function wireRow(tr){
       var nxt=qs('.desc-input',tr); if(nxt)nxt.focus();
     });
   }
+  var ldn=qs('.ld-inp',tr), ldh=qs('[name="label_id[]"]',tr);
+  if(ldn && ldh && EDITABLE && PER_LINE){ makeLabelDD(ldn, ldh); }
   qsa('input,textarea',tr).forEach(function(inp){
     inp.addEventListener('input',recalc);
     inp.addEventListener('keydown',function(e){
@@ -419,6 +536,7 @@ function wireRow(tr){
         e.preventDefault(); // stop Enter from inserting newline
       }
       var dd=tr.querySelector('.ac-dd.show'); if(dd)return;
+      if(document.querySelector('.ld-dd.show'))return;
       e.preventDefault();
       var cells=qsa('.ri:not([readonly]):not(:disabled)',tr);
       var i=cells.indexOf(e.target);
@@ -524,6 +642,13 @@ qs('#voucherForm').addEventListener('submit',function(e){
 
 // ================= init =================
 (function(){
+  // Fresh cash/bank voucher: the header picker opens on the company default,
+  // so lines created after it inherit the same label from the very first row.
+  if(HEAD_INP&&HEAD_HID&&EDITABLE&&!HDR_LABEL&&DEFAULT_LABEL_ID){
+    HDR_LABEL=DEFAULT_LABEL_ID;
+    HEAD_HID.value=DEFAULT_LABEL_ID;
+    HEAD_INP.value=LABEL_NAME(DEFAULT_LABEL_ID);
+  }
   if(EXISTING.length){EXISTING.forEach(function(d){addRow(d)})}
   else{addRow({});}
   var d=qs('#voucherDate');

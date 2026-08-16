@@ -101,7 +101,8 @@ def post_journal_entry(voucher_type, voucher_id, voucher_number, description,
             account_id=line["account_id"],
             debit=Decimal(str(line.get("debit", 0))),
             credit=Decimal(str(line.get("credit", 0))),
-            description=line.get("description", "")
+            description=line.get("description", ""),
+            label_id=line.get("label_id"),
         )
         db.session.add(jl)
     db.session.flush()

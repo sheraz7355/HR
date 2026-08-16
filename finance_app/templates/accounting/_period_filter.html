@@ -6,6 +6,11 @@
 .period-toggle label:not(:last-child){border-right:none}
 .period-toggle label.active{background:#eff6ff;border-color:#1d4ed8;color:#1d4ed8;z-index:1}
 .period-toggle input[type=radio]{display:none}
+@media (max-width: 500px){
+  /* The segmented row no longer fits at 320px: wrap it into pills. */
+  .period-toggle{flex-wrap:wrap;gap:6px}
+  .period-toggle label{border-radius:6px !important;border:1px solid #cbd5e1 !important}
+}
 .period-fields{display:none}
 .period-fields.active{display:block}
 .period-fields select,.period-fields input{padding:7px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:5px;font-family:inherit}
@@ -20,6 +25,8 @@
 .comp-dd-trigger.open .arrow{transform:rotate(180deg)}
 .comp-dd-panel{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;border:1px solid #cbd5e1;border-radius:5px;margin-top:2px;max-height:220px;overflow-y:auto;background:#fff}
 .comp-dd-panel.open{display:block}
+.comp-dd-src{display:block;width:calc(100% - 24px);margin:8px 12px 4px;padding:6px 9px;font-size:12.5px;font-family:inherit;border:1px solid #cbd5e1;border-radius:5px;outline:none}
+.comp-dd-src:focus{border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
 .comp-dd-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9}
 .comp-dd-opt:hover{border-color:#1d4ed8}
 .comp-dd-opt:last-child{border-bottom:none}
@@ -71,6 +78,38 @@
       </div>
     </div>
   </div>
+
+<!-- PROJECT LABELS: multi-select filter, optional on every report. The
+     option class is label-dd-opt (NOT comp-dd-opt) so the comparative
+     dropdown's JS never touches these checkboxes. -->
+{% if show_labels|default(true) %}
+<div class="period-fields" style="display:block;margin-top:10px;border-top:1px solid #e2e8f0;padding-top:10px;">
+  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Project Labels</label>
+  <input type="hidden" name="label_ids" id="labelIdsInput" value="{{ label_ids_str|default('') }}">
+  <div class="comp-dd-wrap" style="max-width:360px;">
+    <div class="comp-dd-trigger" id="labelDDTrigger" role="button" tabindex="0" aria-expanded="false">
+      <span class="label" id="labelDDLabel">All reports (company-wide)</span>
+      <span class="arrow"></span>
+    </div>
+    <div class="comp-dd-panel" id="labelDDPanel">
+      <input type="text" id="labelSearch" class="comp-dd-src" autocomplete="off" placeholder="Type to filter labels...">
+      {% for l in labels|default([]) %}
+      <label class="comp-dd-opt label-dd-opt">
+        <input type="checkbox" value="{{ l.id }}"
+               {% for lid in label_ids|default([]) %}{% if l.id == lid|int %}checked{% endif %}{% endfor %}>
+        <span class="name">{{ l.name }}{% if not l.is_active %} <span style="color:#94a3b8">(inactive)</span>{% endif %}</span>
+      </label>
+      {% else %}
+      <p style="padding:10px 12px;margin:0;font-size:12px;color:#94a3b8">No labels yet — create them under <a href="{{ url_for('settings.index', tab='labels') }}">Settings &rsaquo; Project Labels</a>.</p>
+      {% endfor %}
+      <div style="padding:6px 8px;border-top:1px solid #e2e8f0">
+        <button type="button" id="labelDdOkBtn" style="padding:4px 14px;font-size:12px;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:#1d4ed8;color:#fff;width:100%">OK</button>
+      </div>
+    </div>
+  </div>
+  <p style="margin:6px 0 0;font-size:11px;color:#94a3b8">Reports show only postings tagged with a selected label; bank/cash, AR/AP and tax lines are never tagged, so they drop out of a label-filtered report.</p>
+</div>
+{% endif %}
 
   <div class="period-fields {{ 'active' if filter_mode|default('period') == 'comparative' else '' }}" id="comparativeFields">
     <div style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:10px;">
@@ -286,4 +325,123 @@
     updateHiddenInput();
   }
 })();
+</script>
+
+<script>
+{% if show_labels|default(true) %}
+(function() {
+  var container = document.currentScript ? document.currentScript.parentElement : null;
+  if (!container) container = document.querySelector('.period-filter-component:last-child');
+  if (!container) return;
+  var trigger = container.querySelector('#labelDDTrigger');
+  var panel = container.querySelector('#labelDDPanel');
+  var okBtn = container.querySelector('#labelDdOkBtn');
+  var input = container.querySelector('#labelIdsInput');
+  var label = container.querySelector('#labelDDLabel');
+  var search = container.querySelector('#labelSearch');
+  var opts = panel.querySelectorAll('.label-dd-opt');
+  if (!trigger || !panel || !okBtn || !input) return;
+
+  function updateLabel() {
+    var checked = panel.querySelectorAll('.label-dd-opt input[type=checkbox]:checked');
+    if (checked.length === 0) {
+      label.textContent = 'All reports (company-wide)';
+    } else if (checked.length === 1) {
+      label.textContent = 'Label: ' + checked[0].closest('label').querySelector('.name').textContent.trim();
+    } else {
+      label.textContent = checked.length + ' labels selected';
+    }
+  }
+
+  function setOpen(open) {
+    panel.classList.toggle('open', open);
+    trigger.classList.toggle('open', open);
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && search) {
+      search.value = '';
+      opts.forEach(function(o) { o.style.display = ''; });
+      search.focus();
+    }
+  }
+
+  // Type-to-filter: hide options whose name does not match the search box.
+  if (search) {
+    search.addEventListener('input', function() {
+      var q = search.value.trim().toLowerCase();
+      opts.forEach(function(o) {
+        var name = (o.querySelector('.name').textContent || '').toLowerCase();
+        o.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+      });
+    });
+    search.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); }
+      else if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+    });
+  }
+
+  trigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    setOpen(!panel.classList.contains('open'));
+  });
+
+  // Space opens the panel (same muscle memory as the account picker: press
+  // Space, type to filter, Enter applies the selection).
+  trigger.addEventListener('keydown', function(e) {
+    if (panel.classList.contains('open')) {
+      if (e.key === 'Escape') { e.preventDefault(); setOpen(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); }
+      else if (search && e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+        search.value += e.key;
+        search.dispatchEvent(new Event('input'));
+        search.focus();
+      }
+      return;
+    }
+    if (e.key === ' ' || e.key === 'Enter' ||
+        e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      setOpen(true);
+    }
+  });
+
+  okBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    var ids = [];
+    panel.querySelectorAll('.label-dd-opt input[type=checkbox]:checked').forEach(function(cb) {
+      ids.push(cb.value);
+    });
+    input.value = ids.join(',');
+    setOpen(false);
+    updateLabel();
+  });
+
+  // Click a row toggles its checkbox; the checkbox change keeps the hidden
+  // input and the trigger label in step.
+  opts.forEach(function(opt) {
+    var cb = opt.querySelector('input[type=checkbox]');
+    cb.addEventListener('change', function() {
+      var ids = [];
+      panel.querySelectorAll('.label-dd-opt input[type=checkbox]:checked').forEach(function(c) {
+        ids.push(c.value);
+      });
+      input.value = ids.join(',');
+      updateLabel();
+    });
+    opt.addEventListener('click', function(e) {
+      if (e.target.tagName !== 'INPUT') {
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event('change'));
+      }
+    });
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!trigger.contains(e.target) && !panel.contains(e.target)) {
+      setOpen(false);
+    }
+  });
+
+  updateLabel();
+})();
+{% endif %}
 </script>

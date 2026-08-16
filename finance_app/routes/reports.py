@@ -17,7 +17,8 @@ from shared.formatting import (MONEY_FMT_WESTERN, excel_money_format,
                                format_amount)
 from shared.models.ledger import ChartOfAccount, JournalEntry, JournalLine
 from shared.models.base import User
-from shared.models.company_settings import AccountingPeriod, ReportSettings
+from shared.models.company_settings import AccountingPeriod, FiscalYearRule, ReportSettings
+from shared.models.project_label import ProjectLabel
 # Imported at module scope so the table registers before the lazy
 # db.create_all() on the first request.
 from shared.models.twcf import (TwcfLine, TWCF_IN, TWCF_OUT,  # noqa: F401
@@ -149,7 +150,7 @@ def _eod(d):
     return datetime.combine(d, datetime.max.time())
 
 
-def _get_account_balance(account_id, as_of=None):
+def _get_account_balance(account_id, as_of=None, label_ids=None):
     q = db.session.query(
         db.func.coalesce(db.func.sum(JournalLine.debit), 0).label("dr"),
         db.func.coalesce(db.func.sum(JournalLine.credit), 0).label("cr"),
@@ -158,11 +159,13 @@ def _get_account_balance(account_id, as_of=None):
                     JournalEntry.is_posted == True)
     if as_of:
         q = q.filter(JournalEntry.entry_date <= _eod(as_of))
+    if label_ids:
+        q = q.filter(JournalLine.label_id.in_(label_ids))
     row = q.first()
     return Decimal(str(row.dr)), Decimal(str(row.cr))
 
 
-def _all_account_balances(as_of=None, account_types=None):
+def _all_account_balances(as_of=None, account_types=None, label_ids=None):
     q = db.session.query(
         JournalLine.account_id,
         ChartOfAccount.code,
@@ -177,21 +180,37 @@ def _all_account_balances(as_of=None, account_types=None):
         q = q.filter(JournalEntry.entry_date <= _eod(as_of))
     if account_types:
         q = q.filter(ChartOfAccount.type.in_(account_types))
+    if label_ids:
+        q = q.filter(JournalLine.label_id.in_(label_ids))
     q = q.group_by(JournalLine.account_id, ChartOfAccount.code,
                    ChartOfAccount.name, ChartOfAccount.type
                    ).order_by(ChartOfAccount.code)
     return q.all()
 
 
-def _net_income(as_of=None):
-    rev = _all_account_balances(as_of, ["revenue"])
-    exp = _all_account_balances(as_of, ["expense"])
+def _net_income(as_of=None, label_ids=None):
+    rev = _all_account_balances(as_of, ["revenue"], label_ids=label_ids)
+    exp = _all_account_balances(as_of, ["expense"], label_ids=label_ids)
     total_rev = sum((r.cr - r.dr) for r in rev) if rev else Decimal("0")
     total_exp = sum((e.dr - e.cr) for e in exp) if exp else Decimal("0")
     return total_rev - total_exp
 
 
-def _period_movements(from_date=None, to_date=None, types=None):
+def _resolve_labels():
+    """Labels for the report label filter.
+
+    Returns (labels, label_ids_str, label_ids). Every label is offered —
+    active and archived — because a deactivated label still owns historical
+    postings and must stay filterable.
+    """
+    labels = ProjectLabel.query.order_by(ProjectLabel.name).all()
+    label_ids_str = request.args.get("label_ids", "")
+    label_ids = [int(x) for x in label_ids_str.split(",")
+                 if x.strip().isdigit()]
+    return labels, label_ids_str, label_ids
+
+
+def _period_movements(from_date=None, to_date=None, types=None, label_ids=None):
     """Per-account (dr, cr) sums of posted lines within the period.
     Returns {account_id: (Decimal dr, Decimal cr)}."""
     q = db.session.query(
@@ -207,18 +226,22 @@ def _period_movements(from_date=None, to_date=None, types=None):
     if types:
         q = q.join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id
                    ).filter(ChartOfAccount.type.in_(types))
+    if label_ids:
+        q = q.filter(JournalLine.label_id.in_(label_ids))
     return {r.account_id: (Decimal(str(r.dr)), Decimal(str(r.cr)))
             for r in q.group_by(JournalLine.account_id).all()}
 
 
-def _pl_by_section(from_date, to_date):
+def _pl_by_section(from_date, to_date, label_ids=None):
     """Group one period's P&L accounts by structure section.
 
     Every P&L account's contribution to profit is (credit - debit); revenue
     is naturally positive, expenses negative, and contra accounts (sales
     returns, purchase discounts) self-correct without special cases.
     """
-    movements = _period_movements(from_date, to_date, ["revenue", "expense", "contra-expense"])
+    movements = _period_movements(from_date, to_date,
+                                  ["revenue", "expense", "contra-expense"],
+                                  label_ids=label_ids)
     accounts = {a.id: a for a in ChartOfAccount.query.filter(
         ChartOfAccount.type.in_(["revenue", "expense", "contra-expense"])).all()}
 
@@ -239,7 +262,7 @@ def _pl_by_section(from_date, to_date):
     return by_section
 
 
-def _pl_rows(from_date, to_date):
+def _pl_rows(from_date, to_date, label_ids=None):
     """Sectioned P&L per ReportSettings.pl_structure.
 
     Each structure entry's ``negate`` flag only flips the DISPLAY sign so
@@ -252,7 +275,7 @@ def _pl_rows(from_date, to_date):
     """
     settings = ReportSettings.get()
     detail = settings.pl_detail_rows or 10
-    by_section = _pl_by_section(from_date, to_date)
+    by_section = _pl_by_section(from_date, to_date, label_ids=label_ids)
 
     rows, running = [], Decimal("0")
     for entry in settings.pl_structure():
@@ -288,7 +311,7 @@ def _pl_rows(from_date, to_date):
     return rows, float(running)
 
 
-def _pl_period_lookup(from_date, to_date):
+def _pl_period_lookup(from_date, to_date, label_ids=None):
     """Display-signed P&L figures for one period, keyed for comparative lookup.
 
     Returns (accounts, totals, subtotals): {code: amount}, {section_key:
@@ -298,7 +321,7 @@ def _pl_period_lookup(from_date, to_date):
     comparative column showed the period's net profit.
     """
     settings = ReportSettings.get()
-    by_section = _pl_by_section(from_date, to_date)
+    by_section = _pl_by_section(from_date, to_date, label_ids=label_ids)
 
     accounts, totals, subtotals = {}, {}, {}
     running = Decimal("0")
@@ -813,7 +836,7 @@ def _get_leaf_descendant_ids(account_id):
     return list(set(leaf_ids))
 
 
-def _get_ledger_sections(account_ids, from_date, to_date):
+def _get_ledger_sections(account_ids, from_date, to_date, label_ids=None):
     """Per-account ledger: opening balance (all posted activity before the
     period), movements during the period with a running balance, and a
     closing balance labelled Dr/Cr."""
@@ -824,12 +847,15 @@ def _get_ledger_sections(account_ids, from_date, to_date):
             continue
         opening = Decimal("0")
         if from_date:
-            odr, ocr = _get_account_balance(aid, from_date - timedelta(days=1))
+            odr, ocr = _get_account_balance(aid, from_date - timedelta(days=1),
+                                            label_ids=label_ids)
             opening = odr - ocr
         q = JournalLine.query.join(JournalEntry).filter(
             JournalLine.account_id == aid,
             JournalEntry.is_posted == True,
         )
+        if label_ids:
+            q = q.filter(JournalLine.label_id.in_(label_ids))
         if from_date:
             q = q.filter(JournalEntry.entry_date >= from_date)
         if to_date:
@@ -887,6 +913,7 @@ def ledger():
     leaf_accounts = [a for a in all_accounts if a.id not in child_ids]
 
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     # Don't auto-calculate on first page load
     if from_date is None:
@@ -898,6 +925,7 @@ def ledger():
                                periods=periods, selected_period_id=selected_period_id,
                                filter_mode="", from_str="", to_str="",
                                comp_mode="", comp_periods=[], comp_period_ids_str="",
+                               labels=labels, label_ids_str=label_ids_str,
                                now=datetime.utcnow())
 
     mode = request.args.get("mode", "all")
@@ -917,7 +945,8 @@ def ledger():
                 resolved_ids.extend(_get_leaf_descendant_ids(hid))
             resolved_ids = list(set(resolved_ids))
 
-    account_sections = _get_ledger_sections(resolved_ids, from_date, to_date) if resolved_ids else []
+    account_sections = _get_ledger_sections(resolved_ids, from_date, to_date,
+                                            label_ids=label_ids) if resolved_ids else []
     account_sections = [s for s in account_sections if not s.get("empty")]
 
     fmt = request.args.get("format")
@@ -1009,6 +1038,7 @@ def ledger():
                            periods=periods, selected_period_id=selected_period_id,
                            filter_mode=filter_mode, from_str=from_str, to_str=to_str,
                            comp_mode=comp_mode, comp_periods=comp_periods, comp_period_ids_str=comp_period_ids_str,
+                           labels=labels, label_ids_str=label_ids_str,
                            now=datetime.utcnow())
 
 
@@ -1020,6 +1050,7 @@ def ledger():
 @login_required
 def trial_balance():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     if from_date is None:
         return render_template("finance/trial_balance.html", rows=[],
@@ -1030,6 +1061,7 @@ def trial_balance():
                                periods=periods, selected_period_id=selected_period_id,
                                filter_mode="", from_str="", to_str="",
                                comp_mode="", comp_periods=[], comp_period_ids_str="",
+                               labels=labels, label_ids_str=label_ids_str,
                                now=datetime.utcnow())
 
     as_of = to_date or date.today()
@@ -1038,8 +1070,8 @@ def trial_balance():
     if from_date:
         opening_as_of = from_date - timedelta(days=1)
 
-    opening_balances = _all_account_balances(opening_as_of) if opening_as_of else []
-    closing_balances = _all_account_balances(as_of)
+    opening_balances = _all_account_balances(opening_as_of, label_ids=label_ids) if opening_as_of else []
+    closing_balances = _all_account_balances(as_of, label_ids=label_ids)
 
     # Index closing by account code
     closing_map = {}
@@ -1127,7 +1159,7 @@ def trial_balance():
     comp_class_totals = []
     if comp_mode and comp_periods:
         for cp in comp_periods:
-            cp_balances = _all_account_balances(cp.end_date)
+            cp_balances = _all_account_balances(cp.end_date, label_ids=label_ids)
             cp_map = {b.code: b for b in cp_balances}
             comp_closing_data.append(cp_map)
             cp_totals = {"dr": Decimal("0"), "cr": Decimal("0")}
@@ -1232,6 +1264,7 @@ def trial_balance():
                            periods=periods, selected_period_id=selected_period_id,
                            filter_mode=filter_mode, from_str=from_str, to_str=to_str,
                            comp_mode=comp_mode, comp_periods=comp_periods, comp_period_ids_str=comp_period_ids_str,
+                           labels=labels, label_ids_str=label_ids_str,
                            now=datetime.utcnow())
 
 
@@ -1243,6 +1276,7 @@ def trial_balance():
 @login_required
 def profit_loss():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     if from_date is None:
         return render_template("finance/profit_loss.html", pl_rows=[], net_profit=0,
@@ -1250,14 +1284,16 @@ def profit_loss():
                                periods=periods, selected_period_id=selected_period_id,
                                filter_mode="", from_str="", to_str="",
                                comp_mode="", comp_periods=[], comp_period_ids_str="",
+                               labels=labels, label_ids_str=label_ids_str,
                                now=datetime.utcnow())
 
-    pl_rows, net_profit = _pl_rows(from_date, to_date)
+    pl_rows, net_profit = _pl_rows(from_date, to_date, label_ids=label_ids)
 
     # Comparative data: each period re-run through the same P&L structure, so
     # a section total compares against that section and not the whole period.
     if comp_mode and comp_periods:
-        comp_lookups = [_pl_period_lookup(cp.start_date, cp.end_date)
+        comp_lookups = [_pl_period_lookup(cp.start_date, cp.end_date,
+                                          label_ids=label_ids)
                         for cp in comp_periods]
         for row in pl_rows:
             if row["kind"] not in ("account", "total", "subtotal"):
@@ -1358,6 +1394,7 @@ def profit_loss():
                            periods=periods, selected_period_id=selected_period_id,
                            filter_mode=filter_mode, from_str=from_str, to_str=to_str,
                            comp_mode=comp_mode, comp_periods=comp_periods, comp_period_ids_str=comp_period_ids_str,
+                           labels=labels, label_ids_str=label_ids_str,
                            now=datetime.utcnow())
 
 
@@ -1365,11 +1402,11 @@ def profit_loss():
 # 5. BALANCE SHEET
 # ═══════════════════════════════════════════════
 
-def _bs_data(as_of_date, include_ni=True):
+def _bs_data(as_of_date, include_ni=True, label_ids=None):
     """Compute balance sheet data for a given date. Returns (assets, liabilities, equity,
     total_assets, total_liabilities, total_equity, net_income)."""
-    balances = _all_account_balances(as_of_date)
-    ni = _net_income(as_of_date) if include_ni else Decimal("0")
+    balances = _all_account_balances(as_of_date, label_ids=label_ids)
+    ni = _net_income(as_of_date, label_ids=label_ids) if include_ni else Decimal("0")
     assets, liabilities, equity = [], [], []
     total_assets = total_liabilities = total_equity = Decimal("0")
     for b in balances:
@@ -1414,6 +1451,7 @@ def _merge_multi_period(base_items, comp_items_list, code_key="code", amount_key
 @login_required
 def balance_sheet():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     if from_date is None:
         return render_template("finance/balance_sheet.html", assets=[], liabilities=[], equity=[],
@@ -1423,10 +1461,11 @@ def balance_sheet():
                                filter_mode="", from_str="", to_str="", comp_mode="",
                                comp_periods=[], comp_period_ids_str="", all_periods=[],
                                merged_assets=[], merged_liabilities=[], merged_equity=[],
+                               labels=labels, label_ids_str=label_ids_str,
                                now=datetime.utcnow())
 
     as_of = to_date or date.today()
-    assets, liabilities, equity, total_assets, total_liabilities, total_equity, ni = _bs_data(as_of)
+    assets, liabilities, equity, total_assets, total_liabilities, total_equity, ni = _bs_data(as_of, label_ids=label_ids)
 
     # Comparative data
     comp_items_list = []
@@ -1436,7 +1475,7 @@ def balance_sheet():
         base_period = scoped_get(AccountingPeriod, selected_period_id) if selected_period_id else None
         all_periods = ([base_period] if base_period else []) + list(comp_periods)
         for cp in comp_periods:
-            ca, cl, ce, cta, ctl, cte, cni = _bs_data(cp.end_date)
+            ca, cl, ce, cta, ctl, cte, cni = _bs_data(cp.end_date, label_ids=label_ids)
             comp_items_list.append({"assets": ca, "liabilities": cl, "equity": ce})
             comp_totals.append({"total_assets": float(cta), "total_liabilities": float(ctl), "total_equity": float(cte)})
     else:
@@ -1573,6 +1612,7 @@ def balance_sheet():
                            merged_equity=merged_equity,
                            periods=periods, selected_period_id=selected_period_id,
                            filter_mode=filter_mode, from_str=from_str, to_str=to_str,
+                           labels=labels, label_ids_str=label_ids_str,
                            now=datetime.utcnow())
 
 
@@ -1595,7 +1635,7 @@ def _socie_paren(v):
     return format_amount(v)
 
 
-def _socie_matrix(period_specs):
+def _socie_matrix(period_specs, label_ids=None):
     """Build an IFRS-style roll-forward Statement of Changes in Equity.
 
     ``period_specs`` is a chronological list of ``(start, end)`` tuples. The
@@ -1642,8 +1682,9 @@ def _socie_matrix(period_specs):
         """(equity balances by account id, cumulative net income) as of d."""
         if d not in _cache:
             _cache[d] = ({b.account_id: b.cr - b.dr
-                          for b in _all_account_balances(d, ["equity"])},
-                         _net_income(d))
+                          for b in _all_account_balances(d, ["equity"],
+                                                          label_ids=label_ids)},
+                         _net_income(d, label_ids=label_ids))
         return _cache[d]
 
     # Dates the statement measures: every period boundary.
@@ -1812,10 +1853,12 @@ def _socie_period_specs(from_date, to_date, comp_periods):
 @login_required
 def socie():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     base = dict(periods=periods, selected_period_id=selected_period_id,
                 comp_mode=comp_mode, comp_periods=comp_periods,
-                comp_period_ids_str=comp_period_ids_str, now=datetime.utcnow())
+                comp_period_ids_str=comp_period_ids_str, now=datetime.utcnow(),
+                labels=labels, label_ids_str=label_ids_str)
 
     if from_date is None:
         return render_template("finance/socie.html", socie_columns=[], socie_rows=[],
@@ -1824,7 +1867,7 @@ def socie():
 
     specs = _socie_period_specs(from_date, to_date,
                                 comp_periods if comp_mode else [])
-    columns, rows = _socie_matrix(specs)
+    columns, rows = _socie_matrix(specs, label_ids=label_ids)
 
     fmt = request.args.get("format")
     # No resolvable period means no columns, and the span line below indexes
@@ -1871,10 +1914,14 @@ def socie():
 # ═══════════════════════════════════════════════
 
 
-def _cash_flow_direct(from_date, to_date):
+def _cash_flow_direct(from_date, to_date, label_ids=None):
     """Direct-method cash flow: aggregate cash receipts & payments from journals
     involving cash accounts; counterparty accounts determine the activity.
-    Returns (op_items, inv_items, fin_items, opening_cash, closing_cash)."""
+    Returns (op_items, inv_items, fin_items, opening_cash, closing_cash).
+
+    With a label filter only the project's lines drive the attribution (the
+    cash leg itself belongs to no label, so project-scoped cash flows run
+    from and to zero — the books say the project never touched cash)."""
     opening_cutoff = from_date - timedelta(days=1)
     all_accts = {a.id: a for a in ChartOfAccount.query.all()}
     cash_ids = [a.id for a in all_accts.values()
@@ -1884,7 +1931,10 @@ def _cash_flow_direct(from_date, to_date):
         JournalEntry.is_posted == True,
         JournalEntry.entry_date >= from_date,
         JournalEntry.entry_date <= _eod(to_date),
-    ).all()
+    )
+    if label_ids:
+        lines = lines.filter(JournalLine.label_id.in_(label_ids))
+    lines = lines.all()
     by_entry = defaultdict(list)
     for ln in lines:
         by_entry[ln.journal_entry_id].append(ln)
@@ -1929,7 +1979,7 @@ def _cash_flow_direct(from_date, to_date):
     def cash_balance(as_of):
         total = Decimal("0")
         for cid in cash_ids:
-            dr, cr = _get_account_balance(cid, as_of)
+            dr, cr = _get_account_balance(cid, as_of, label_ids=label_ids)
             total += dr - cr
         return float(total)
     opening_cash = cash_balance(opening_cutoff)
@@ -1942,6 +1992,7 @@ def _cash_flow_direct(from_date, to_date):
 def cash_flow():
     """Cash flow statement — indirect or direct method per ReportSettings."""
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
+    labels, label_ids_str, label_ids = _resolve_labels()
 
     if from_date is None:
         return render_template("finance/cash_flow.html", op_items=[], inv_items=[], fin_items=[],
@@ -1953,6 +2004,7 @@ def cash_flow():
                                filter_mode="", from_str="", to_str="",
                                comp_mode="", comp_periods=[], comp_period_ids_str="",
                                comp_item_maps=[],
+                               labels=labels, label_ids_str=label_ids_str,
                                now=datetime.utcnow())
 
     settings = ReportSettings.get()
@@ -1963,7 +2015,7 @@ def cash_flow():
 
     if method == "direct":
         op_items, inv_items, fin_items, opening_cash, closing_cash = \
-            _cash_flow_direct(from_date, to_date)
+            _cash_flow_direct(from_date, to_date, label_ids=label_ids)
         net_operating = sum(v for _, v in op_items)
         net_investing = sum(v for _, v in inv_items)
         net_financing = sum(v for _, v in fin_items)
@@ -1971,7 +2023,9 @@ def cash_flow():
         cash_movement = net_change
     else:
         # ── Indirect method ────────────────────────────────────────────────
-        pl_moves = _period_movements(from_date, to_date, ["revenue", "expense", "contra-expense"])
+        pl_moves = _period_movements(from_date, to_date,
+                                      ["revenue", "expense", "contra-expense"],
+                                      label_ids=label_ids)
         net_profit = 0.0
         for aid, (dr, cr) in pl_moves.items():
             a = all_accts.get(aid)
@@ -1987,7 +2041,9 @@ def cash_flow():
             # equalling closing cash.
             net_profit += float(cr - dr)
 
-        bs_moves = _period_movements(from_date, to_date, ["asset", "liability", "equity"])
+        bs_moves = _period_movements(from_date, to_date,
+                                      ["asset", "liability", "equity"],
+                                      label_ids=label_ids)
 
         def l3_head(acct):
             a = acct
@@ -2028,7 +2084,7 @@ def cash_flow():
         def cash_balance(as_of):
             total = Decimal("0")
             for cid in cash_ids:
-                dr, cr = _get_account_balance(cid, as_of)
+                dr, cr = _get_account_balance(cid, as_of, label_ids=label_ids)
                 total += dr - cr
             return float(total)
         opening_cash = cash_balance(opening_cutoff)
@@ -2044,7 +2100,8 @@ def cash_flow():
             cp_to = cp.end_date
             cmp_map = {}
             if method == "direct":
-                cp_op, cp_inv, cp_fin, cp_oc, cp_cc = _cash_flow_direct(cp_from, cp_to)
+                cp_op, cp_inv, cp_fin, cp_oc, cp_cc = _cash_flow_direct(
+                    cp_from, cp_to, label_ids=label_ids)
                 for item_list in [cp_op, cp_inv, cp_fin]:
                     for name, val in item_list:
                         cmp_map[name] = val
@@ -2056,7 +2113,9 @@ def cash_flow():
                 cmp_map["__close__"] = cp_cc
             else:
                 cp_os = cp_from - timedelta(days=1)
-                cp_pl = _period_movements(cp_from, cp_to, ["revenue", "expense", "contra-expense"])
+                cp_pl = _period_movements(cp_from, cp_to,
+                                          ["revenue", "expense", "contra-expense"],
+                                          label_ids=label_ids)
                 cp_np = 0.0
                 for aid, (dr, cr) in cp_pl.items():
                     a = all_accts.get(aid)
@@ -2065,7 +2124,9 @@ def cash_flow():
                         cp_np += float(dr - cr if cr > dr else cr - dr)
                     else:
                         cp_np += float(cr - dr)
-                cp_bs = _period_movements(cp_from, cp_to, ["asset", "liability", "equity"])
+                cp_bs = _period_movements(cp_from, cp_to,
+                                          ["asset", "liability", "equity"],
+                                          label_ids=label_ids)
                 cp_groups = {"operating": {}, "investing": {}, "financing": {}}
                 for aid, (dr, cr) in cp_bs.items():
                     acct = all_accts.get(aid)

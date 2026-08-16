@@ -19,7 +19,7 @@ import re
 from datetime import date, datetime
 
 from flask import (Blueprint, render_template, request, redirect, url_for,
-                   flash, abort, session)
+                   flash, abort, session, g)
 from flask_login import login_required, current_user
 
 from shared.extensions import db
@@ -31,6 +31,7 @@ from shared.models.company_settings import (CompanyInfo, AccountingPeriod,
                                             PL_SECTIONS)
 from shared.models.inventory_settings import InventorySettings
 from shared.models.invoice_settings import InvoiceSettings
+from shared.models.project_label import ProjectLabel
 from shared.models.invoice_template import (
     InvoiceTemplate, DESIGNS, DESIGN_KEYS, ACCENT_PRESETS, PLACEHOLDER_HELP,
     option_groups, default_options, build_body, render_invoice_template,
@@ -51,6 +52,7 @@ SECTIONS = [
     ("periods",   "Financial Periods", "&#128197;", lambda u: u.module_access("finance")),
     ("reports",   "Report Structure",  "&#128200;", lambda u: u.module_access("finance")),
     ("cash_flow", "Cash Flow Method",  "&#128181;", lambda u: u.module_access("finance")),
+    ("labels",    "Project Labels",      "&#127991;", lambda u: u.module_access("finance")),
     ("inventory", "Inventory",         "&#128230;", lambda u: u.module_access("inventory")),
     ("purchase",  "Procurement",       "&#128228;", lambda u: u.module_access("invoicing")),
     ("sales",     "Sales",             "&#128229;", lambda u: u.module_access("invoicing")),
@@ -97,6 +99,10 @@ def index():
     if not _allowed(tab):
         # Deep link to a section this user can't see: fall back rather than 403.
         tab = sections[0]["key"] if sections else "account"
+    # The sidebar's settings nav is tab-scoped (one route, many sections): the
+    # shell needs the *resolved* tab — including the fallback above — or no
+    # item highlights when the URL omits or misuses the param.
+    g.settings_tab = tab
 
     ctx = {
         "tab": tab,
@@ -116,6 +122,31 @@ def index():
         ctx["pl_sections"] = PL_SECTIONS
     elif tab == "cash_flow":
         ctx["report_settings"] = ReportSettings.get()
+    elif tab == "labels":
+        from shared.models.ledger import JournalLine
+        from shared.models.accounting_voucher import (AccountingVoucher,
+                                                      AccountingVoucherLine)
+        from inventory_app.models.invoice import (InvInvoice,
+                                                  InvInvoiceItem)
+        from inventory_app.models.purchase_invoice import (
+            InvPurchaseInvoice, InvPurchaseInvoiceItem)
+        ctx["labels"] = ProjectLabel.query.order_by(ProjectLabel.name).all()
+        dl = ProjectLabel.default()
+        ctx["default_label_id"] = dl.id if dl else None
+        ctx["voucher_labels"] = ProjectLabel.query.filter_by(kind="voucher") \
+            .order_by(ProjectLabel.name).all()
+        ctx["invoice_labels"] = ProjectLabel.query.filter_by(kind="invoice") \
+            .order_by(ProjectLabel.name).all()
+        ctx["per_line_labeling"] = InventorySettings.get().per_line_labeling
+        ctx["in_use_ids"] = _label_in_use_ids(
+            (JournalLine, ("label_id",)),
+            (AccountingVoucherLine, ("label_id",)),
+            (AccountingVoucher, ("label_id",)),
+            (InvInvoice, ("label_id",)),
+            (InvPurchaseInvoice, ("label_id",)),
+            (InvInvoiceItem, ("label_id",)),
+            (InvPurchaseInvoiceItem, ("label_id",)),
+        )
     elif tab == "inventory":
         ctx["inv"] = InventorySettings.get()
         ctx["accounts"] = _postable_accounts()
@@ -1166,3 +1197,144 @@ def decline_invitation(invitation_id):
     db.session.commit()
     flash("Invitation declined.", "success")
     return back
+
+
+# ── Project Labels (the company-wide project dimension) ──────────────────────
+# Lives in Settings rather than Accounting because vouchers, invoices and every
+# finance report share the label dimension. Two kinds exist: header labels
+# (party / bank-cash lines) and line labels (the economic lines). The single
+# default label is auto-assigned to every slot saved without an explicit pick.
+
+def _label_in_use_ids(*models):
+    """Label ids referenced by any posting surface, as a set."""
+    ids = set()
+    for model, cols in models:
+        for col in cols:
+            ids |= {r[0] for r in db.session.query(getattr(model, col))
+                    .filter(getattr(model, col).isnot(None)).distinct().all()}
+    return ids
+
+
+@settings_bp.route("/labels", methods=["GET", "POST"])
+@login_required
+def labels():
+    resp = _require("labels")
+    if resp:
+        return resp
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Label name is required.", "error")
+        elif ProjectLabel.query.filter(
+                db.func.lower(ProjectLabel.name) == name.lower()).first():
+            flash(f"A label named \"{name}\" already exists.", "error")
+        else:
+            kind = request.form.get("kind", "voucher")
+            kind = kind if kind in ("invoice", "voucher") else "voucher"
+            db.session.add(ProjectLabel(name=name, kind=kind))
+            db.session.commit()
+            flash(f"{'Invoice' if kind == 'invoice' else 'Voucher'} label "
+                  f"\"{name}\" created.", "success")
+        return redirect(url_for("settings.index", tab="labels"))
+    sections = visible_sections(current_user)
+    from shared.models.ledger import JournalLine
+    from shared.models.accounting_voucher import (AccountingVoucher,
+                                                  AccountingVoucherLine)
+    from inventory_app.models.invoice import (InvInvoice,
+                                                  InvInvoiceItem)
+    from inventory_app.models.purchase_invoice import (
+        InvPurchaseInvoice, InvPurchaseInvoiceItem)
+    ctx = {
+        "tab": "labels",
+        "sections": sections,
+        "module_key": "settings",
+        "labels": ProjectLabel.query.order_by(ProjectLabel.name).all(),
+        "voucher_labels": ProjectLabel.query.filter_by(kind="voucher") \
+            .order_by(ProjectLabel.name).all(),
+        "invoice_labels": ProjectLabel.query.filter_by(kind="invoice") \
+            .order_by(ProjectLabel.name).all(),
+        "per_line_labeling": InventorySettings.get().per_line_labeling,
+        "in_use_ids": _label_in_use_ids(
+            (JournalLine, ("label_id",)),
+            (AccountingVoucherLine, ("label_id",)),
+            (AccountingVoucher, ("label_id",)),
+            (InvInvoice, ("label_id",)),
+            (InvPurchaseInvoice, ("label_id",)),
+            (InvInvoiceItem, ("label_id",)),
+            (InvPurchaseInvoiceItem, ("label_id",)),
+        ),
+    }
+    dl = ProjectLabel.default()
+    ctx["default_label_id"] = dl.id if dl else None
+    return render_template("settings/index.html", **ctx)
+
+
+@settings_bp.route("/labels/per-line", methods=["POST"])
+@login_required
+def labels_per_line():
+    resp = _require("labels")
+    if resp:
+        return resp
+    s = InventorySettings.get()
+    s.per_line_labeling = request.form.get("per_line_labeling") == "on"
+    db.session.commit()
+    flash("Per-line labeling " + ("enabled" if s.per_line_labeling
+                                  else "disabled") + ".", "success")
+    return redirect(url_for("settings.index", tab="labels"))
+
+
+@settings_bp.route("/labels/<int:id>/rename", methods=["POST"])
+@login_required
+def label_rename(id):
+    resp = _require("labels")
+    if resp:
+        return resp
+    label = scoped_get_404(ProjectLabel, id)
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Label name is required.", "error")
+    elif ProjectLabel.query.filter(ProjectLabel.id != id,
+                                   db.func.lower(ProjectLabel.name) == name.lower()).first():
+        flash(f"A label named \"{name}\" already exists.", "error")
+    else:
+        label.name = name
+        db.session.commit()
+        flash("Label renamed.", "success")
+    return redirect(url_for("settings.index", tab="labels"))
+
+
+@settings_bp.route("/labels/<int:id>/toggle", methods=["POST"])
+@login_required
+def label_toggle(id):
+    resp = _require("labels")
+    if resp:
+        return resp
+    label = scoped_get_404(ProjectLabel, id)
+    label.is_active = not label.is_active
+    # An archived label must never stay the default: default() only reads
+    # active labels, but clear the flag too so the UI can't show both.
+    if not label.is_active and label.is_default:
+        label.is_default = False
+    db.session.commit()
+    flash(f"Label \"{label.name}\" {'deactivated' if not label.is_active else 'activated'}.",
+          "success")
+    return redirect(url_for("settings.index", tab="labels"))
+
+
+@settings_bp.route("/labels/<int:id>/default", methods=["POST"])
+@login_required
+def label_set_default(id):
+    resp = _require("labels")
+    if resp:
+        return resp
+    label = scoped_get_404(ProjectLabel, id)
+    if not label.is_active:
+        flash("Activate the label before making it the default.", "error")
+    else:
+        for l in ProjectLabel.query.all():
+            l.is_default = (l.id == label.id)
+        db.session.commit()
+        flash(f"\"{label.name}\" is now the default label — it is assigned "
+              "automatically to lines or documents saved without a label.",
+              "success")
+    return redirect(url_for("settings.index", tab="labels"))

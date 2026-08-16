@@ -53,6 +53,7 @@ def _pass_gate(page):
     gate = page.locator("#gateBlank")
     if gate.count():
         gate.click()
+        page.locator("#gateContinue").click()
         page.wait_for_timeout(150)
 
 

@@ -4,15 +4,9 @@
 {% block page_title %}Settings{% endblock %}
 {% block extra_css %}
 <style>
-  .set-wrap { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
-  .set-rail { background: #fff; border: 1px solid var(--line); border-radius: 10px;
-              overflow: hidden; position: sticky; top: 16px; }
-  .set-rail a { display: flex; align-items: center; gap: 10px; padding: 11px 14px;
-                font-size: 13px; color: var(--ink); text-decoration: none;
-                border-left: 3px solid transparent; }
-  .set-rail a:hover { background: #f8fafc; }
-  .set-rail a.active { background: #f0fdfa; border-left-color: var(--ledger);
-                       color: var(--ledger); font-weight: 600; }
+  /* Wider tables (labels, rights) scroll inside their cards instead of
+     forcing the section column — and the whole page — past the viewport. */
+  .set-main { min-width: 0; }
   .set-card { background: #fff; border: 1px solid var(--line); border-radius: 10px;
               padding: 20px 22px; }
   .set-card h3 { margin: 0 0 4px; font-size: 17px; }
@@ -81,42 +75,19 @@
   .pill { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
   .pill-on { background: #dcfce7; color: #166534; }
   .pill-off { background: #f1f5f9; color: #64748b; }
-  /* The rail becomes a horizontal strip on small screens instead of a
-     220px column that would squeeze the forms off-screen. */
   @media (max-width: 900px) {
-    .set-wrap { grid-template-columns: 1fr; }
-    .set-rail { position: static; display: flex; flex-wrap: wrap; gap: 4px;
-                padding: 8px; background: #fff; border: 1px solid var(--line);
-                border-radius: 10px; }
-    .set-rail a { border-left: none; border: 1px solid #e5e7eb; border-radius: 8px;
-                  white-space: nowrap; padding: 8px 12px; font-size: 12px; flex: 0 0 auto; }
-    .set-rail a:hover { background: #f8fafc; }
-    .set-rail a.active { border-left: none; border-color: var(--ledger);
-                         background: #f0fdfa; border-bottom-color: var(--ledger); }
     .fgrid { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 500px) {
-    .set-rail { gap: 3px; padding: 6px; }
-    .set-rail a { padding: 6px 10px; font-size: 11px; }
   }
 </style>
 {% endblock %}
 {% block content %}
-<div class="set-wrap">
-  <nav class="set-rail">
-    {% for s in sections %}
-    <a href="{{ url_for('settings.index', tab=s.key) }}" class="{{ 'active' if tab == s.key }}">
-      <span>{{ s.icon|safe }}</span><span>{{ s.label }}</span>
-    </a>
-    {% endfor %}
-  </nav>
-
-  <div>
+<div class="set-main">
     {% if tab == 'account' %}{% include "settings/_account.html" %}
     {% elif tab == 'company' %}{% include "settings/_company.html" %}
     {% elif tab == 'periods' %}{% include "settings/_periods.html" %}
     {% elif tab == 'reports' %}{% include "settings/_reports.html" %}
     {% elif tab == 'cash_flow' %}{% include "settings/_cash_flow.html" %}
+    {% elif tab == 'labels' %}{% include "settings/_labels.html" %}
     {% elif tab == 'inventory' %}{% include "settings/_inventory.html" %}
     {% elif tab in ('purchase', 'sales') %}{% include "settings/_documents.html" %}
     {% elif tab == 'invoicing' %}{% include "settings/_invoice.html" %}
@@ -125,7 +96,6 @@
     {% elif tab == 'members' %}{% include "settings/_members.html" %}
     {% elif tab == 'invites' %}{% include "settings/_invitations.html" %}
     {% endif %}
-  </div>
 </div>
 <script>
   // Reflect the checked radio on its card wrapper.

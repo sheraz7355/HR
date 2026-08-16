@@ -15,6 +15,10 @@ class AccountingVoucher(db.Model):
     voucher_number = db.Column(db.String(50), nullable=False)
     voucher_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     cash_bank_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
+    # Header label: the project of the money channel. On cash/bank vouchers it
+    # tags the bank/cash line itself; item lines inherit it unless they are
+    # changed manually. Journal vouchers have no header, so it stays NULL.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
     notes = db.Column(db.Text)
     status = db.Column(db.String(20), default="unapproved")
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
@@ -23,6 +27,7 @@ class AccountingVoucher(db.Model):
     approved_at = db.Column(db.DateTime, nullable=True)
 
     cash_bank_account = db.relationship("ChartOfAccount", foreign_keys=[cash_bank_account_id])
+    label = db.relationship("ProjectLabel", foreign_keys=[label_id])
     creator = db.relationship("User", foreign_keys=[created_by])
     approver = db.relationship("User", foreign_keys=[approved_by])
     lines = db.relationship("AccountingVoucherLine", backref="voucher",
@@ -40,5 +45,9 @@ class AccountingVoucherLine(db.Model):
     description = db.Column(db.String(300), default="")
     debit = db.Column(db.Numeric(16, 4), default=Decimal("0.0000"))
     credit = db.Column(db.Numeric(16, 4), default=Decimal("0.0000"))
+    # Project label per line; the auto-generated cash/bank line never carries
+    # one, so money movement stays out of the project's books.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
 
     account = db.relationship("ChartOfAccount")
+    label = db.relationship("ProjectLabel")

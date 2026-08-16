@@ -29,7 +29,8 @@ class FBRConfig(db.Model):
         if not c:
             c = cls()
             db.session.add(c)
-            db.session.commit()
+            # Flush only this row: never commit another caller's pending work.
+            db.session.flush(objects=[c])
         return c
 
     def is_sandbox(self):

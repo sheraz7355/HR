@@ -14,6 +14,11 @@ class InventorySettings(db.Model):
     default_cogs_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
     default_inventory_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
     default_return_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
+    # Per-line project-label column on voucher rows and invoice item rows.
+    # Off (default): lines take the header/party label server-side and the
+    # column is hidden. On: the form shows one label pick per row, prefilled
+    # with the header label or the company default, editable per line.
+    per_line_labeling = db.Column(db.Boolean, default=False)
 
     @classmethod
     def get(cls):
@@ -27,7 +32,9 @@ class InventorySettings(db.Model):
         if not s:
             s = cls(company_id=cid)
             db.session.add(s)
-            db.session.commit()
+            # Flush only this row: the getter may run mid-save while another
+            # object (a half-built invoice) is pending in the session.
+            db.session.flush(objects=[s])
         return s
 
     def is_fifo(self):

@@ -4,8 +4,10 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.models.stock_ledger import VoucherNumber
-from shared.models.ledger import ChartOfAccount
+from shared.models.ledger import ChartOfAccount, JournalLine
 from shared.models.accounting_voucher import AccountingVoucher, AccountingVoucherLine
+from shared.models.inventory_settings import InventorySettings
+from shared.models.project_label import ProjectLabel
 from shared.models.company_settings import AccountingPeriod
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry
 from shared.permissions import VOUCHER_SECTION, deny_page
@@ -81,8 +83,6 @@ def dashboard():
                            stats={"total": total, "unapproved": unapproved,
                                   "approved": approved, "by_type": by_type},
                            recent=recent)
-
-
 @acct_bp.route("/vouchers", methods=["GET", "POST"])
 @acct_bp.route("/vouchers/<int:id>", methods=["GET", "POST"])
 @login_required
@@ -141,6 +141,36 @@ def voucher_form(id=None):
         descs = request.form.getlist("description[]")
         debits = request.form.getlist("debit[]")
         credits = request.form.getlist("credit[]")
+        label_ids = request.form.getlist("label_id[]")
+
+        # The company default is assigned automatically to any line saved
+        # without an explicit pick. The header label (cash/bank vouchers post
+        # it as "label_id"; a JV sends no such field) tags the bank/cash line
+        # itself, and item lines inherit it unless an explicit pick overrides.
+        default_label = ProjectLabel.default()
+        default_lid = default_label.id if default_label else None
+
+        header_raw = request.form.get("label_id")
+        if header_raw and header_raw.strip():
+            try:
+                _h = scoped_get(ProjectLabel, int(header_raw))
+                header_lid = _h.id if _h is not None else default_lid
+            except (TypeError, ValueError):
+                header_lid = default_lid
+        elif header_raw is not None:
+            header_lid = default_lid
+        else:
+            header_lid = None
+        voucher.label_id = header_lid
+
+        def _valid_label(lid):
+            if lid and str(lid).strip():
+                try:
+                    label = scoped_get(ProjectLabel, int(lid))
+                except (TypeError, ValueError):
+                    label = None
+                return label.id if label is not None else (header_lid or default_lid)
+            return header_lid or default_lid
 
         has_lines = False
         for i in range(len(accounts)):
@@ -179,6 +209,7 @@ def voucher_form(id=None):
                 description=descs[i] if i < len(descs) else "",
                 debit=d,
                 credit=c,
+                label_id=_valid_label(label_ids[i]) if i < len(label_ids) else None,
             )
             db.session.add(line)
             has_lines = True
@@ -186,7 +217,8 @@ def voucher_form(id=None):
         _err_ctx = {"accounts": ChartOfAccount.query.filter_by(is_active=True)
                      .order_by(ChartOfAccount.code).all(),
                      "labels": VOUCHER_LABELS, "initial_type": "",
-                     "edit_mode": edit_mode}
+                     "edit_mode": edit_mode,
+                     "project_labels": ProjectLabel.query.order_by(ProjectLabel.name).all()}
 
         if not has_lines:
             flash("Add at least one line with amount.", "error")
@@ -225,6 +257,9 @@ def voucher_form(id=None):
                 description=f"{VOUCHER_LABELS[voucher.voucher_type]} - {'Payment' if voucher.voucher_type in ('CPV','BPV') else 'Receipt'}",
                 debit=cb_debit,
                 credit=cb_credit,
+                # The header label is the project of the money channel: the
+                # bank/cash line carries it, item lines inherit it.
+                label_id=voucher.label_id,
             )
             db.session.add(cb_line)
 
@@ -287,6 +322,10 @@ def voucher_form(id=None):
         labels=VOUCHER_LABELS,
         initial_type=initial_type,
         edit_mode=edit_mode,
+        project_labels=ProjectLabel.query.order_by(ProjectLabel.name).all(),
+        active_labels=ProjectLabel.query.filter_by(is_active=True).order_by(ProjectLabel.name).all(),
+        default_label=ProjectLabel.default(),
+        per_line_labeling=InventorySettings.get().per_line_labeling,
     )
 
 
@@ -298,6 +337,7 @@ def _approve_voucher(v):
             "debit": float(line.debit),
             "credit": float(line.credit),
             "description": line.description,
+            "label_id": line.label_id,
         })
     if not lines:
         return "No lines to post."
@@ -384,6 +424,7 @@ def voucher_list():
         from_str=from_str,
         to_str=to_str,
         filters={"vtype": vtype, "status": status},
+        show_labels=False,
     )
 
 

@@ -100,5 +100,10 @@ class JournalLine(db.Model):
     debit = db.Column(db.Numeric(16, 4), default=Decimal("0.0000"))
     credit = db.Column(db.Numeric(16, 4), default=Decimal("0.0000"))
     description = db.Column(db.Text)
+    # Project label (the project dimension). Settlement lines — bank/cash,
+    # AR/AP, tax — normally carry no label so a project report shows
+    # consumption without funding noise.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
 
     account = db.relationship("ChartOfAccount")
+    label = db.relationship("ProjectLabel")

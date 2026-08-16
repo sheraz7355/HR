@@ -44,7 +44,10 @@ class InvoiceSettings(db.Model):
         if not s:
             s = cls(company_id=cid)
             db.session.add(s)
-            db.session.commit()
+            # Flush only this row: the getter may run mid-save while another
+            # object (a half-built invoice) is pending — a commit here would
+            # flush and persist that work too early.
+            db.session.flush(objects=[s])
         return s
 
 

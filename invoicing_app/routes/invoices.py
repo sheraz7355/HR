@@ -15,6 +15,8 @@ from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posti
 from shared.models.ledger import ChartOfAccount
 from shared.models.company_settings import CompanyInfo, ReportSettings
 from shared.models.invoice_settings import InvoiceSettings
+from shared.models.inventory_settings import InventorySettings
+from shared.models.project_label import ProjectLabel
 from shared.models.invoice_template import (
     InvoiceTemplate, render_invoice_template, build_totals_table,
     items_table_metrics)
@@ -100,6 +102,7 @@ def invoice_form(id):
                 "quantity": it.quantity,
                 "unit": it.unit,
                 "unit_price": it.unit_price,
+                "label_id": it.label_id,
                 "discount_pct": it.discount_pct,
                 "discount_amount": it.discount_amount,
                 "delivery": it.delivery,
@@ -356,16 +359,24 @@ def invoice_form(id):
 
     # §5.1: the Order ref column exists only on an order-sourced invoice.
     order_sourced = any(i.get("source_order_id") for i in invoice_items)
+    # The order-sourcing gate belongs to the INDIRECT flow: with "Direct
+    # Invoice" selected under Sales in Settings, the form opens straight.
+    show_source_gate = InventorySettings.get().sales_flow == "with_so"
     return render_template("invoices/form_inv.html",
                            invoice=invoice, invoice_items=invoice_items,
                            invoice_charges=invoice_charges,
+                           per_line_labeling=InventorySettings.get().per_line_labeling,
                            order_sourced=order_sourced,
                            customers=customers,
                            party_mode=rs.party_mode("sales"),
                            invoice_settings=InvoiceSettings.get(),
                            invoice_template_text=rs.template_text("sales"),
                            rendered_template=rendered_template,
-                           products=products, now=datetime.utcnow())
+                           products=products, now=datetime.utcnow(),
+                           project_labels=ProjectLabel.query.filter_by(is_active=True)
+                           .order_by(ProjectLabel.name).all(),
+                           default_label=ProjectLabel.default(),
+                           show_source_gate=show_source_gate)
 
 
 @inv_inv_bp.route("/list")
@@ -442,6 +453,9 @@ def save_invoice():
     
         inv.customer_id = data.get("customer_id")
         inv.party_account_id = data.get("party_account_id") or None
+        _default_label = ProjectLabel.default()
+        _default_lid = _default_label.id if _default_label else None
+        inv.label_id = data.get("label_id") or _default_lid
         inv.sales_order_id = data.get("sales_order_id") or None
         inv.due_date = datetime.strptime(data.get("due_date"), "%Y-%m-%d") if data.get("due_date") else None
         inv.discount_mode = data.get("discount_mode", "general")
@@ -485,6 +499,7 @@ def save_invoice():
                 quantity=float(row.get("quantity", 1)),
                 unit=row.get("unit", "pcs"),
                 unit_price=float(row.get("unit_price", 0)),
+                label_id=row.get("label_id") or inv.label_id or _default_lid,
                 source_order_id=row.get("source_order_id") or None,
                 source_order_item_id=row.get("source_order_item_id") or None,
                 source_order_number=row.get("source_order_number", "") or "",
@@ -562,13 +577,22 @@ def save_invoice():
             inv_acc = posting_account("inventory")
             out_tax_acc = posting_account("sales_tax_payable")
             t = totals
+            plid = inv.label_id          # party label → the AR line
+            # Pooled economic lines take the FIRST item's label — items
+            # already fell back to "party label, else default" on save, so a
+            # single-label invoice posts 1:1 to that project.
+            _first_item = InvInvoiceItem.query.filter_by(
+                invoice_id=inv.id).order_by(InvInvoiceItem.id).first()
+            llid = _first_item.label_id if _first_item else plid
             lines = [
                 {"account_id": ar_acc.id, "debit": t["net_receivable"], "credit": 0,
+                 "label_id": plid,
                  "description": f"AR - {inv.invoice_number}"},
             ]
             for account_id, amount in _revenue_splits(inv, t["effective_subtotal"]):
                 lines.append(
                     {"account_id": account_id or rev_acc.id, "debit": 0, "credit": amount,
+                     "label_id": llid,
                      "description": f"Revenue - {inv.invoice_number}"},
                 )
             if t["discount"] > 0:
@@ -576,12 +600,14 @@ def save_invoice():
                     or posting_account("sales_returns")
                 lines.append(
                     {"account_id": disc_acc.id, "debit": t["discount"], "credit": 0,
+                     "label_id": llid,
                      "description": f"Discount allowed - {inv.invoice_number}"},
                 )
             for row in t["pools"]["billed_rows"]:
                 lines.append(
                     {"account_id": row.charge_account_id, "debit": 0,
                      "credit": round(float(row.amount), 2),
+                     "label_id": llid,
                      "description": f"{row.description or 'Charge'} - {inv.invoice_number}"},
                 )
             if t["sales_tax"] > 0 and out_tax_acc:
@@ -612,6 +638,7 @@ def save_invoice():
                 accrued_acc = posting_account("accrued")
                 lines.append(
                     {"account_id": row.charge_account_id, "debit": amt, "credit": 0,
+                     "label_id": llid,
                      "description": f"{row.description or 'Charge'} (absorbed cost) - {inv.invoice_number}"},
                 )
                 lines.append(
@@ -621,10 +648,12 @@ def save_invoice():
             if total_cogs > 0 and cogs_acc and inv_acc:
                 lines.append(
                     {"account_id": cogs_acc.id, "debit": float(total_cogs), "credit": 0,
+                     "label_id": llid,
                      "description": f"COGS - {inv.invoice_number}"},
                 )
                 lines.append(
                     {"account_id": inv_acc.id, "debit": 0, "credit": float(total_cogs),
+                     "label_id": llid,
                      "description": f"Inventory - {inv.invoice_number}"},
                 )
             post_journal_entry(

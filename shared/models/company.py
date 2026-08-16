@@ -180,7 +180,8 @@ class GlobalLimits(db.Model):
         if not r:
             r = cls()
             db.session.add(r)
-            db.session.commit()
+            # Flush only this row: never commit another caller's pending work.
+            db.session.flush(objects=[r])
         return r
 
     def member_limit_for(self, company):

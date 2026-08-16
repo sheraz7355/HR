@@ -109,7 +109,7 @@
         {% for block in nav_blocks %}
           {% if block.kind == 'flat' %}
             {% for item in block['items'] %}
-            <a href="{{ url_for(item.endpoint) }}" class="nav-item {{ 'active' if item.active }}">
+            <a href="{{ url_for(item.endpoint) if not item.tab else url_for(item.endpoint, tab=item.tab) }}" class="nav-item {{ 'active' if item.active }}">
               <span class="nav-icon">{{ item.icon|safe }}</span><span>{{ item.label }}</span>
             </a>
             {% endfor %}
@@ -121,7 +121,7 @@
             </div>
             <div class="nav-group-items">
               {% for item in block['items'] %}
-              <a href="{{ url_for(item.endpoint) }}" class="nav-item {{ 'active' if item.active }}">
+              <a href="{{ url_for(item.endpoint) if not item.tab else url_for(item.endpoint, tab=item.tab) }}" class="nav-item {{ 'active' if item.active }}">
                 <span class="nav-icon">{{ item.icon|safe }}</span><span>{{ item.label }}</span>
               </a>
               {% endfor %}

@@ -4,7 +4,7 @@ import traceback as _tb
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from flask import Flask, redirect, render_template, url_for, request
+from flask import Flask, redirect, render_template, url_for, request, g
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
 
@@ -14,6 +14,7 @@ def _create_app():
     from shared.extensions import db, login_manager
     from shared.models.base import User, Role, Permission, load_user
     import shared.models.company  # noqa: F401  (tenancy tables: register before create_all)
+    import shared.models.project_label  # noqa: F401  (project labels: register before create_all)
 
     app = Flask(
         __name__,
@@ -128,11 +129,13 @@ def _create_app():
         def nav_for(module_key):
             if not current_user.is_authenticated:
                 return []
-            ctx = {}
+            _tab = getattr(g, "settings_tab", None) or request.args.get("tab")
+            ctx = {"tab": _tab}
             try:
                 from shared.models.inventory_settings import InventorySettings
                 s = InventorySettings.get()
-                ctx = {"purchase_flow": s.purchase_flow, "sales_flow": s.sales_flow}
+                ctx.update(purchase_flow=s.purchase_flow,
+                           sales_flow=s.sales_flow)
             except Exception:
                 pass
             return build_nav(module_key, current_user, request.endpoint, ctx)
@@ -405,6 +408,7 @@ def _migrate_schema(db):
 
     # (table, column, column_type_ddl)
     migrations = [
+        ("project_labels", "is_default", bool_false),
         ("chart_of_accounts", "level", "INTEGER DEFAULT 4"),
         ("chart_of_accounts", "is_fixed", bool_false),
         ("accounting_periods", "is_active", bool_true),
@@ -575,6 +579,20 @@ def _migrate_schema(db):
         # TWCF (13-week cash flow): minimum cash the company wants to keep;
         # the report shows a headroom line when set.
         ("report_settings", "twcf_cash_floor", "NUMERIC(16,4)"),
+        # Project labels (the label dimension on journal/voucher/invoice lines).
+        ("journal_lines", "label_id", "INTEGER"),
+        ("accounting_voucher_lines", "label_id", "INTEGER"),
+        ("inv_invoices", "label_id", "INTEGER"),
+        ("inv_purchase_invoices", "label_id", "INTEGER"),
+        # Document-kind labels: "voucher" tags cash/bank vouchers (header +
+        # per-line picks), "invoice" tags sales/purchase invoices (party +
+        # per-item picks). Per-line labeling in Settings turns the per-row
+        # label column on; item rows carry their own label_id.
+        ("project_labels", "kind", "VARCHAR(10) NOT NULL DEFAULT 'voucher'"),
+        ("accounting_vouchers", "label_id", "INTEGER"),
+        ("inv_invoice_items", "label_id", "INTEGER"),
+        ("inv_purchase_invoice_items", "label_id", "INTEGER"),
+        ("inventory_settings", "per_line_labeling", "BOOLEAN DEFAULT 0"),
     ]
 
     inspector = inspect(engine)
@@ -590,6 +608,24 @@ def _migrate_schema(db):
                 conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
         except Exception as e:
             print(f"MIGRATION SKIP {table}.{col}: {e}")
+
+    # Labels referenced by an invoice's party slot were created before the
+    # invoice/voucher split: re-classify them as invoice labels, then sweep
+    # whatever is left (old "header"/"line" values) to the voucher kind.
+    # Idempotent: every row is (re)assigned the same value on every boot.
+    if "project_labels" in existing_tables and "inv_invoices" in existing_tables:
+        try:
+            with engine.begin() as conn:
+                conn.execute(db.text(
+                    "UPDATE project_labels SET kind='invoice' WHERE id IN ("
+                    "SELECT label_id FROM inv_invoices WHERE label_id IS NOT NULL"
+                    " UNION SELECT label_id FROM inv_purchase_invoices"
+                    " WHERE label_id IS NOT NULL)"))
+                conn.execute(db.text(
+                    "UPDATE project_labels SET kind='voucher' "
+                    "WHERE kind NOT IN ('voucher','invoice')"))
+        except Exception as e:
+            print(f"MIGRATION SKIP project_labels.kind backfill: {e}")
 
     # Columns added by an EARLIER version of the list above, with the wrong
     # type. The add loop skips any column that already exists, so a column that

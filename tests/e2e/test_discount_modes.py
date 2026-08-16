@@ -62,6 +62,7 @@ def _prepare(page, scope, method, url=SALES_INVOICE):
     gate = page.locator("#gateBlank")
     if gate.count():
         gate.click()
+        page.locator("#gateContinue").click()
         page.wait_for_timeout(150)
     page.evaluate(SETUP, [scope, method])
     return page

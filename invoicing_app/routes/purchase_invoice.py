@@ -15,6 +15,8 @@ from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posti
 from shared.models.ledger import ChartOfAccount
 from shared.models.company_settings import CompanyInfo, ReportSettings
 from shared.models.invoice_settings import InvoiceSettings
+from shared.models.inventory_settings import InventorySettings
+from shared.models.project_label import ProjectLabel
 from shared.models.invoice_template import (
     InvoiceTemplate, render_invoice_template, build_totals_table,
     items_table_metrics)
@@ -125,6 +127,7 @@ def invoice_form(id):
                 "quantity": it.quantity,
                 "unit": it.unit,
                 "unit_price": it.unit_price,
+                "label_id": it.label_id,
                 "discount_pct": it.discount_pct,
                 "discount_amount": it.discount_amount,
                 "commission": it.commission,
@@ -373,17 +376,25 @@ def invoice_form(id):
         ctx["grand_total"] = _m(net)
         rendered_template = render_invoice_template(invoice_template_obj.body_html, ctx)
 
+    # The order-sourcing gate belongs to the INDIRECT flow: with "Direct
+    # Invoice" selected under Purchasing in Settings, the form opens straight.
+    show_source_gate = InventorySettings.get().purchase_flow == "with_po"
     return render_template("purchase_invoice/form_inv.html",
                            invoice=invoice,
                            invoice_items=invoice_items,
                            invoice_charges=invoice_charges,
+                           per_line_labeling=InventorySettings.get().per_line_labeling,
                            suppliers=suppliers,
                            party_mode=rs.party_mode("purchase"),
                            invoice_settings=InvoiceSettings.get(),
                            invoice_template_text=rs.template_text("purchase"),
                            rendered_template=rendered_template,
+                           project_labels=ProjectLabel.query.filter_by(is_active=True)
+                           .order_by(ProjectLabel.name).all(),
+                           default_label=ProjectLabel.default(),
                            products=products,
-                           now=datetime.utcnow())
+                           now=datetime.utcnow(),
+                           show_source_gate=show_source_gate)
 
 
 def validate_approve(data):
@@ -449,6 +460,9 @@ def save_invoice():
 
     inv.supplier_id = data.get("supplier_id")
     inv.party_account_id = data.get("party_account_id") or None
+    _default_label = ProjectLabel.default()
+    _default_lid = _default_label.id if _default_label else None
+    inv.label_id = data.get("label_id") or _default_lid
     inv.driver_name = data.get("driver_name", "")
     inv.driver_contact = data.get("driver_contact", "")
     inv.vehicle_number = data.get("vehicle_number", "")
@@ -512,6 +526,7 @@ def save_invoice():
             quantity=float(row.get("quantity", 1)),
             unit=row.get("unit", "pcs"),
             unit_price=float(row.get("unit_price", 0)),
+            label_id=row.get("label_id") or inv.label_id or _default_lid,
             source_order_id=row.get("source_order_id") or None,
             source_order_item_id=row.get("source_order_item_id") or None,
             source_order_number=row.get("source_order_number", "") or "",
@@ -633,8 +648,16 @@ def save_invoice():
             invoice_gross = round(inventory_dr + bill_total + input_tax, 2)
             amount_payable = round(invoice_gross - wht, 2)
 
+            plid = inv.label_id          # party label → the AP line
+            # Pooled economic lines take the FIRST item's label — items
+            # already fell back to "party label, else default" on save, so a
+            # single-label invoice posts 1:1 to that project.
+            _first_item = InvPurchaseInvoiceItem.query.filter_by(
+                invoice_id=inv.id).order_by(InvPurchaseInvoiceItem.id).first()
+            llid = _first_item.label_id if _first_item else plid
             lines = [
                 {"account_id": inv_acc.id, "debit": inventory_dr, "credit": 0,
+                 "label_id": llid,
                  "description": f"Inventory - {inv.invoice_number}"},
             ]
             if input_tax > 0:
@@ -647,16 +670,19 @@ def save_invoice():
                 lines.append(
                     {"account_id": int(c["charge_account_id"]),
                      "debit": round(float(c["amount"]), 2), "credit": 0,
+                     "label_id": llid,
                      "description": f"{c.get('description') or 'Charge'} - {inv.invoice_number}"},
                 )
             for c in expense_charges:
                 lines.append(
                     {"account_id": int(c["charge_account_id"]),
                      "debit": round(float(c["amount"]), 2), "credit": 0,
+                     "label_id": llid,
                      "description": f"{c.get('description') or 'Expense'} - {inv.invoice_number}"},
                 )
             lines.append(
                 {"account_id": ap_acc.id, "debit": 0, "credit": amount_payable,
+                 "label_id": plid,
                  "description": f"AP - {inv.invoice_number}"},
             )
             if wht > 0.005:
