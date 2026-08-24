@@ -753,7 +753,17 @@ tr.innerHTML='<td class="rn">'+rowCount+'</td><td><input type="text" class="ri a
 // The row was built, wired up and returned — but never put in the document, so
 // this grid rendered no lines at all. The other three documents all append here.
 tbody.appendChild(tr);
-var ci=tr.querySelector('.ac-code');if(ci){ci.addEventListener('input',function(){var v=this.value.trim().toLowerCase();if(v.length===1)autoAddCheck();var m=allProducts.find(function(p){return p.sku.toLowerCase()===v});if(m){tr.dataset.productId=m.id;tr.dataset.weight=m.weight||0;tr.querySelector('.ac-desc-input').value=m.name;tr.querySelector('.ac-unit').textContent=m.unit;tr.querySelector('[data-col="unit_price"]').value=m.unit_price;tr.querySelector('.info-badge').innerHTML='Stock: <strong>'+m.current_stock+'</strong>';recalcRow(tr);recalc()}})}
+var ci=tr.querySelector('.ac-code');if(ci){ci.addEventListener('input',async function(){var v=this.value.trim().toLowerCase();if(v.length===1)autoAddCheck();var m=allProducts.find(function(p){return p.sku.toLowerCase()===v});
+// The preloaded cache holds only the first 20 products, so an exact SKU that
+// is not in it must be resolved against the server — otherwise typing a valid
+// code silently links no product. The stale-value check drops a response that
+// arrives after further typing.
+var priceBefore=tr.querySelector('[data-col="unit_price"]').value;
+if(!m&&v.length>=2){try{var fresh=await loadProducts(v)}catch(e){return}if(this.value.trim().toLowerCase()!==v)return;m=fresh.find(function(p){return p.sku.toLowerCase()===v})}
+if(m){tr.dataset.productId=m.id;tr.dataset.weight=m.weight||0;tr.querySelector('.ac-desc-input').value=m.name;tr.querySelector('.ac-unit').textContent=m.unit;
+// A price the user typed while the lookup was in flight wins over the catalog.
+var up=tr.querySelector('[data-col="unit_price"]');if(up.value===priceBefore)up.value=m.unit_price;
+tr.querySelector('.info-badge').innerHTML='Stock: <strong>'+m.current_stock+'</strong>';recalcRow(tr);recalc()}})}
 var di=tr.querySelector('.ac-desc-input');if(di){setupDescInput(di)}
 qsa('.ri:not(.rc):not(.ac-code)',tr).forEach(function(el){el.addEventListener('input',function(){recalcRow(tr);recalc()});el.addEventListener('change',function(){recalcRow(tr);recalc()})});
 if(editable&&!noFocus)setTimeout(function(){var f=tr.querySelector('.ac-code');if(f)f.focus()},30);return tr}
