@@ -48,6 +48,18 @@ body{background:var(--bg);font-family:Inter,-apple-system,BlinkMacSystemFont,'Se
 .icard-h{display:flex;align-items:center;gap:10px;padding:14px 18px 0;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--primary)}
 .icard-i{width:30px;height:30px;border-radius:8px;background:var(--primary-light);color:var(--primary);display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1;flex:none}
 .icard-b{padding:14px 18px 18px;flex:1}
+/* Collapsible card: Logistics folds down to its header row so the critical
+   path (party → dates) owns the strip and delivery details expand on demand
+   without leaving a dead hole in the three-column grid. */
+.icard-h.togglable{cursor:pointer;user-select:none;padding-bottom:14px}
+.icard-h.togglable:hover{background:var(--bg-top)}
+.icard-h .chev{margin-left:auto;font-size:10px;color:var(--light);transition:transform .18s;line-height:1}
+.icard.collapsed .chev{transform:rotate(-90deg)}
+.icard.collapsed .icard-b{display:none}
+/* Keyboard-hint chips inside action buttons (Ctrl S, Alt N, ...).
+   Hidden on small screens where the buttons stack full-width. */
+.kbd{display:inline-block;margin-left:7px;padding:0 5px;border:1px solid currentColor;border-radius:4px;font-size:9px;font-weight:700;line-height:1.6;opacity:.6;vertical-align:1px;letter-spacing:.4px;font-family:inherit}
+@media(max-width:768px){.kbd{display:none}}
 .two-up{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .party-read{margin-top:12px;padding:12px 14px;background:var(--primary-light);border:1px solid #d3e2f8;border-radius:9px}
 .party-read .fld-v{font-size:13px}
@@ -550,22 +562,6 @@ body{background:#fff;font-size:10px}
         </div>
       </div>
 
-      <div class="icard" id="logisticsCard">
-        <div class="icard-h"><span class="icard-i">&#128666;</span><span>Logistics &amp; Delivery</span></div>
-        <div class="icard-b">
-          <div class="two-up">
-            <div class="fld"><label class="lbl">Transport mode</label>
-              <input type="text" class="inp inp-sm" id="settingsTransportMode" placeholder="Road / rail / air / sea" {{ 'disabled' if not editable else '' }}></div>
-            <div class="fld"><label class="lbl">Transporter</label>
-              <input type="text" class="inp inp-sm" id="settingsTransporter" {{ 'disabled' if not editable else '' }}></div>
-          </div>
-          <div class="fld"><label class="lbl">Waybill / transport doc #</label>
-            <input type="text" class="inp inp-sm" id="settingsTransportDoc" placeholder="LR / GR / B.L." {{ 'disabled' if not editable else '' }}></div>
-          <div class="fld" style="margin-bottom:0;"><label class="lbl">Reference SO #</label>
-            <input type="text" class="inp inp-sm" id="refSO" placeholder="Optional" value="{{ invoice.sales_order.so_number if invoice and invoice.sales_order else '' }}" {{ 'disabled' if not editable else '' }}></div>
-        </div>
-      </div>
-
       <div class="icard">
         <div class="icard-h"><span class="icard-i">&#128197;</span><span>Document Dates</span></div>
         <div class="icard-b">
@@ -595,6 +591,28 @@ body{background:#fff;font-size:10px}
             </select>
             <input type="text" id="invLabelSearch" class="inp inp-sm" placeholder="Type or press Space to search..." autocomplete="off" {{ 'disabled' if not editable else '' }}>
           </div>
+        </div>
+      </div>
+
+      <!-- Logistics sits LAST and starts collapsed: it is optional document
+           data, so the critical entry path (party → dates) stays contiguous.
+           The header row toggles it; a saved invoice that actually carries
+           delivery data re-opens itself on load (see __logisticsAutoExpand). -->
+      <div class="icard collapsed" id="logisticsCard">
+        <div class="icard-h togglable" id="logisticsToggle" title="Show / hide delivery details">
+          <span class="icard-i">&#128666;</span><span>Logistics &amp; Delivery</span><span class="chev">&#9662;</span>
+        </div>
+        <div class="icard-b">
+          <div class="two-up">
+            <div class="fld"><label class="lbl">Transport mode</label>
+              <input type="text" class="inp inp-sm" id="settingsTransportMode" placeholder="Road / rail / air / sea" {{ 'disabled' if not editable else '' }}></div>
+            <div class="fld"><label class="lbl">Transporter</label>
+              <input type="text" class="inp inp-sm" id="settingsTransporter" {{ 'disabled' if not editable else '' }}></div>
+          </div>
+          <div class="fld"><label class="lbl">Waybill / transport doc #</label>
+            <input type="text" class="inp inp-sm" id="settingsTransportDoc" placeholder="LR / GR / B.L." {{ 'disabled' if not editable else '' }}></div>
+          <div class="fld" style="margin-bottom:0;"><label class="lbl">Reference SO #</label>
+            <input type="text" class="inp inp-sm" id="refSO" placeholder="Optional" value="{{ invoice.sales_order.so_number if invoice and invoice.sales_order else '' }}" {{ 'disabled' if not editable else '' }}></div>
         </div>
       </div>
     </div>
@@ -673,7 +691,7 @@ body{background:#fff;font-size:10px}
         <button type="button" class="bsm bsm-d" id="clearAllBtn">&#10005; Clear all lines</button>
         {% endif %}
         <span style="flex:1;"></span>
-        <span style="font-size:11px;color:var(--muted);">Space to search &bull; Enter to add row</span>
+        <span style="font-size:11px;color:var(--muted);">Space to search &bull; Enter = next field &bull; Ctrl+S save</span>
       </div>
     </div>
   </div>
@@ -735,28 +753,38 @@ body{background:#fff;font-size:10px}
     </div>
   </div>
 
-    <!-- ACTION BAR -->
+    <!-- ACTION BAR — the chips mirror the global keys:
+         Ctrl+S save · Ctrl+Shift+S save & approve · Ctrl+P print (saved docs)
+         Alt+N new invoice · Alt+C back to the list. New/Cancel route through
+         the unsaved-changes guard (see the shortcuts script). -->
     <div class="ab">
       {% set can_approve = current_user.is_admin() or current_user.is_manager() %}
       {% if vstatus == 'unapproved' %}
-        <button type="button" class="btn btn-p" id="saveBtn">Save</button>
+        <button type="button" class="btn btn-p" id="saveBtn" title="Save draft — Ctrl+S">Save<span class="kbd">Ctrl S</span></button>
         {% if can_approve %}
-        <button type="button" class="btn btn-s" id="saveApproveBtn">Save &amp; Approve</button>
+        <button type="button" class="btn btn-s" id="saveApproveBtn" title="Save and approve — Ctrl+Shift+S">Save &amp; Approve<span class="kbd">Ctrl ⇧ S</span></button>
         {% endif %}
+        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
+        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list without saving — Alt+C">Cancel<span class="kbd">Alt C</span></a>
       {% elif not is_approved and vstatus != 'unapproved' %}
-        <button type="button" class="btn btn-p" id="saveBtn" disabled>Save</button>
+        <button type="button" class="btn btn-p" id="saveBtn" disabled>Save<span class="kbd">Ctrl S</span></button>
         {% if can_approve %}
-        <button type="button" class="btn btn-s" id="approveBtn">Approve</button>
+        <button type="button" class="btn btn-s" id="approveBtn" title="Approve — Ctrl+Shift+S">Approve<span class="kbd">Ctrl ⇧ S</span></button>
         {% endif %}
-        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
+        <button type="button" class="btn btn-o" onclick="doPrint()" title="Print — Ctrl+P">Print<span class="kbd">Ctrl P</span></button>
         <button type="button" class="btn btn-d" id="deleteBtn" onclick="showConfirm('Delete Invoice','Are you sure you want to delete this invoice?',deleteInvoice)">Delete</button>
+        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
+        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list — Alt+C">Cancel<span class="kbd">Alt C</span></a>
       {% elif is_approved %}
         <button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button>
         <button type="button" class="btn btn-info" id="validateFbrBtn">Validate FBR</button>
         <button type="button" class="btn btn-accent" id="submitFbrBtn">Send to FBR</button>
-        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
+        <button type="button" class="btn btn-o" onclick="doPrint()" title="Print — Ctrl+P">Print<span class="kbd">Ctrl P</span></button>
+        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
+        <!-- "Back to list", not "Cancel": nothing is pending on an approved
+             document. Every state keeps a way back to the list. -->
+        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list — Alt+C">Back to list<span class="kbd">Alt C</span></a>
       {% endif %}
-      <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o">Cancel</a>
     </div>
   </div>
 </div>
@@ -1006,7 +1034,7 @@ body{background:#fff;font-size:10px}
           <span style="font-size:12px;color:var(--muted);">Per-order subtotals (order-sourced)</span>
         </div>
         <div class="flex-row" style="margin-bottom:6px;">
-          <label class="tgl"><input type="checkbox" id="settingsShowTransport" {{ 'disabled' if not editable else '' }}><span class="tgl-s"></span></label>
+          <label class="tgl"><input type="checkbox" id="settingsShowTransport" checked {{ 'disabled' if not editable else '' }}><span class="tgl-s"></span></label>
           <span style="font-size:12px;color:var(--muted);">Transport / logistics block</span>
         </div>
         <!-- The transport fields themselves moved to the Logistics & Delivery
@@ -1243,6 +1271,41 @@ if(pai){(function(){
 })()}
 
 // ============================================================
+// HEADER ENTER = NEXT FIELD
+// ============================================================
+// The header cards are one entry lane in visual order: customer → ledger
+// override (when offered) → invoice date → due date → party label → the
+// expanded logistics fields → the first line of the grid. Enter walks it,
+// Shift+Enter walks back; from the last stop Enter drops into the grid so a
+// document is typed strictly top-to-bottom. When an autocomplete list is
+// open, Enter belongs to the picker — navigation stands down.
+(function(){
+  var strip=document.querySelector('.hdr-strip');if(!strip)return;
+  var LANE='#customerSearch,#partyAccountSearch,#invDate,#dueDate,#invLabelSearch,#settingsTransportMode,#settingsTransporter,#settingsTransportDoc,#refSO';
+  strip.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'||e.ctrlKey||e.altKey||e.metaKey)return;
+    var t=e.target;
+    if(!t.matches||!t.matches('input.inp,input.inp-sm,textarea.inp,select.inp-sm'))return;
+    var w=t.closest('.ac-wrap'),dd=w&&w.querySelector('.ac-dd');
+    if(dd&&dd.classList.contains('show'))return;
+    var back=e.shiftKey;
+    var lane=[].slice.call(strip.querySelectorAll(LANE)).filter(function(el){
+      return !el.disabled&&!el.readOnly&&el.offsetParent!==null;
+    });
+    var i=lane.indexOf(t);if(i===-1)return;
+    e.preventDefault();
+    if(back){
+      if(i>0){var p=lane[i-1];p.focus();if(p.select)p.select()}
+      return;
+    }
+    if(i<lane.length-1){var n=lane[i+1];n.focus();if(n.select)n.select();return}
+    // End of the header: hands off to the grid's first code cell.
+    var c=document.querySelector('#itemsBody .ac-code');
+    if(c&&!c.disabled)c.focus();
+  });
+})();
+
+// ============================================================
 // PILL TOGGLES
 // ============================================================
 // (The grid toolbar no longer carries scope toggles — see the panel handler.)
@@ -1264,7 +1327,7 @@ qsa('.c-disc-amt').forEach(function(el){el.style.display=(id&&!byPct)?'':'none'}
 // ============================================================
 function setupDescInput(inp){var row=inp.closest('tr'),drop=row.querySelector('.ac-dd'),hl=-1,list=[];
 function render(l){hl=-1;if(!l||!l.length){drop.classList.remove('show');return}drop.innerHTML=l.map(function(p,i){return'<div class="ac-it" data-index="'+i+'" data-id="'+p.id+'" data-name="'+p.name+'" data-sku="'+p.sku+'" data-price="'+p.unit_price+'" data-stock="'+p.current_stock+'" data-unit="'+p.unit+'"><span class="ac-n">'+p.name+'</span><span class="ac-s">'+p.sku+' &bull; Stock: '+p.current_stock+'</span></div>'}).join('');drop.classList.add('show')}
-inp.addEventListener('keydown',async function(e){if(e.key===' '){e.preventDefault();list=await loadProducts('');render(list);return}if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(hl+1,list.length-1);hlr();return}if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(hl-1,0);hlr();return}if(e.key==='Enter'){if(e.shiftKey)return;e.preventDefault();if(drop.classList.contains('show')&&hl>=0&&list[hl]){selP(hl);return}var inputs=row.querySelectorAll('.ri:not(:disabled):not(.rc)'),last=inputs[inputs.length-1];if(e.target===last){addRow({});setTimeout(function(){var nr=document.getElementById('itemsBody').lastElementChild,ni=nr.querySelectorAll('.ri:not(:disabled):not(.rc)');if(ni.length)ni[0].focus()},50)}return}if(e.key==='Escape'){drop.classList.remove('show');return}})
+inp.addEventListener('keydown',async function(e){if(e.key===' '){e.preventDefault();list=await loadProducts('');render(list);return}if(e.key==='ArrowDown'){e.preventDefault();hl=Math.min(hl+1,list.length-1);hlr();return}if(e.key==='ArrowUp'){e.preventDefault();hl=Math.max(hl-1,0);hlr();return}if(e.key==='Enter'){if(e.shiftKey)return;e.preventDefault();if(drop.classList.contains('show')&&hl>=0&&list[hl]){selP(hl);return}gridAdvance(row,inp,false);return}if(e.key==='Escape'){drop.classList.remove('show');return}})
 inp.addEventListener('input',async function(){var q=this.value.trim();if(!q.length){drop.classList.remove('show');return}list=await loadProducts(q);render(list)})
 inp.addEventListener('blur',function(){setTimeout(function(){drop.classList.remove('show')},200)})
 if(inp.tagName==='TEXTAREA'){inp.addEventListener('input',function(){this.style.height='auto';this.style.height=this.scrollHeight+'px'})}
@@ -1304,6 +1367,48 @@ function renumberRows(){qsa('#itemsBody .rn').forEach(function(e,i){e.textConten
 function clearAllRows(){document.getElementById('itemsBody').innerHTML='';rowCount=0;addRow({});recalc();toast('Cleared all lines','info')}
 document.getElementById('addLineBtn')?.addEventListener('click',function(){addRow({})})
 document.getElementById('clearAllBtn')?.addEventListener('click',function(){showConfirm('Clear All Lines','This will remove all rows. Are you sure?',clearAllRows)})
+
+// ============================================================
+// ENTER = NEXT CELL (keyboard-first entry)
+// ============================================================
+// The grid is worked left to right: Enter walks the editable cells of a row
+// in display order, wraps into the next row, and spawns a fresh row off the
+// last cell of the last one — an invoice is typed top-to-bottom without the
+// mouse, matching the header lane (customer → dates → first line).
+// Shift+Enter walks backwards. Read-only computed cells (Amount, Net, unit,
+// Order ref) and hidden scope columns are skipped.
+var GRID_CELLS='[data-col="code"],[data-col="description"],[data-col="quantity"],[data-col="unit_price"],[data-col="discount_pct"],[data-col="discount_amount"],[data-col="sales_tax_pct"],select.row-lbl-sel';
+function eligibleCells(tr){
+  return [].slice.call(tr.querySelectorAll(GRID_CELLS)).filter(function(el){
+    return !el.disabled&&!el.readOnly&&el.offsetParent!==null;
+  });
+}
+function gridAdvance(tr,cur,back){
+  if(!tr||!cur)return;
+  var cells=eligibleCells(tr),i=cells.indexOf(cur);
+  if(i>-1&&(back?i>0:i<cells.length-1)){
+    var n=cells[back?i-1:i+1];n.focus();if(n.select)n.select();return;
+  }
+  var rows=[].slice.call(document.querySelectorAll('#itemsBody tr')),ri=rows.indexOf(tr);
+  if(back){
+    if(ri>0){var p=eligibleCells(rows[ri-1]);if(p.length){p[p.length-1].focus();if(p[p.length-1].select)p[p.length-1].select()}}
+    return;
+  }
+  if(ri<rows.length-1){var f=eligibleCells(rows[ri+1]);if(f.length){f[0].focus();if(f[0].select)f[0].select()}return}
+  // Last cell of the last row: a new line is the natural continuation.
+  // Focus lands synchronously (addRow's own focus is a 30ms timer, which
+  // loses a race against the very next keystroke of a fast typist).
+  if(editable){var nt=addRow({},true),nf=eligibleCells(nt);if(nf.length){nf[0].focus();if(nf[0].select)nf[0].select()}}
+}
+document.getElementById('itemsBody').addEventListener('keydown',function(e){
+  if(e.key!=='Enter')return;
+  var t=e.target;
+  // The description textarea owns its own Enter (product pick / advance) in
+  // its keydown handler; computed spans (.rc) and buttons are not stops.
+  if(!t.classList||!t.classList.contains('ri')||t.tagName==='TEXTAREA'||t.classList.contains('rc'))return;
+  e.preventDefault();
+  gridAdvance(t.closest('tr'),t,e.shiftKey);
+});
 
 // ============================================================
 // ADDITIONAL CHARGES MANAGEMENT
@@ -1901,10 +2006,10 @@ function collectData(){var items=[];qsa('#itemsBody tr').forEach(function(tr){it
 function fmt(v){return window.formatAmount(v,2)}
 function cv(s){return parseFloat((s||'').replace(/Rs\.\s*/,'').replace(/,/g,''))||0}
 function disableAll(frozen){qsa('#itemsBody input, #itemsBody button, .inp, .sel, .sli, .btn-p, .btn-s, .btn-d, #saveBtn, #saveApproveBtn, #saveChangesBtn, #approveBtn, #deleteBtn, #unapproveBtn').forEach(function(el){if(frozen){el.disabled=true}else{el.disabled=false}});qsa('.pill-b').forEach(function(b){b.disabled=frozen||!editable});qs('#addLineBtn')&&(qs('#addLineBtn').disabled=frozen||!editable);qs('#clearAllBtn')&&(qs('#clearAllBtn').disabled=frozen||!editable);qs('#fromOrdersBtn')&&(qs('#fromOrdersBtn').disabled=frozen||!editable);qs('#chargesBtn')&&(qs('#chargesBtn').disabled=frozen||!editable)}
-function rebuildActionBar(st){var bar=qs('.ab');if(!bar)return;var can_approve={{ 'true' if current_user.is_admin() or current_user.is_manager() else 'false' }};bar.innerHTML='';if(st==='approved'){bar.innerHTML='<button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button><button type="button" class="btn btn-info" id="validateFbrBtn">Validate FBR</button><button type="button" class="btn btn-accent" id="submitFbrBtn">Send to FBR</button><button type="button" class="btn btn-o" onclick="window.print()">Print</button><a href="{{ url_for("inv_invoices.list_invoices") }}" class="btn btn-o">New Invoice</a>';var ub=document.getElementById('unapproveBtn');if(ub)ub.addEventListener('click',function(){showConfirm('Unapprove Invoice','Unapprove this invoice? Stock will be restored.',unapproveInvoice)});wireFbrBtns()}else if(st==='saved'){bar.innerHTML='<button type="button" class="btn btn-p" id="saveBtn" disabled>Save</button>';if(can_approve)bar.innerHTML+='<button type="button" class="btn btn-s" id="approveBtn">Approve</button>';bar.innerHTML+='<button type="button" class="btn btn-o" onclick="window.print()">Print</button><button type="button" class="btn btn-d" id="deleteBtn">Delete</button><a href="{{ url_for("inv_invoices.list_invoices") }}" class="btn btn-o">New Invoice</a>';qs('#approveBtn')&&qs('#approveBtn').addEventListener('click',function(){showConfirm('Approve Invoice','Approve this invoice? It will be locked and stock deducted.',function(){saveInvoice('approve')})});qs('#deleteBtn')&&qs('#deleteBtn').addEventListener('click',function(){showConfirm('Delete Invoice','Are you sure?',deleteInvoice)})}else{bar.innerHTML='<button type="button" class="btn btn-o" id="saveChangesBtn">Save Changes</button>';if(can_approve)bar.innerHTML+='<button type="button" class="btn btn-p" id="approveBtn">Approve</button>';bar.innerHTML+='<button type="button" class="btn btn-o" onclick="window.print()">Print</button><button type="button" class="btn btn-d" id="deleteBtn">Delete</button><a href="{{ url_for("inv_invoices.list_invoices") }}" class="btn btn-o">New Invoice</a>';qs('#saveChangesBtn')&&qs('#saveChangesBtn').addEventListener('click',function(){saveInvoice('save')});qs('#approveBtn')&&qs('#approveBtn').addEventListener('click',function(){showConfirm('Approve Invoice','Approve this invoice? It will be locked and stock deducted.',function(){saveInvoice('approve')})});qs('#deleteBtn')&&qs('#deleteBtn').addEventListener('click',function(){showConfirm('Delete Invoice','Are you sure?',deleteInvoice)})}}
+function rebuildActionBar(st){var bar=qs('.ab');if(!bar)return;var can_approve={{ 'true' if current_user.is_admin() or current_user.is_manager() else 'false' }};var NEW_URL="{{ url_for('inv_invoices.invoice_form') }}",LIST_URL="{{ url_for('inv_invoices.list_invoices') }}";bar.innerHTML='';if(st==='approved'){bar.innerHTML='<button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button><button type="button" class="btn btn-info" id="validateFbrBtn">Validate FBR</button><button type="button" class="btn btn-accent" id="submitFbrBtn">Send to FBR</button><button type="button" class="btn btn-o" onclick="doPrint()" title="Print - Ctrl+P">Print<span class="kbd">Ctrl P</span></button><a href="'+NEW_URL+'" class="btn btn-o" id="newBtn" title="Start a new invoice - Alt+N">New<span class="kbd">Alt N</span></a><a href="'+LIST_URL+'" class="btn btn-o" id="cancelBtn" title="Back to the list - Alt+C">Back to list<span class="kbd">Alt C</span></a>';var ub=document.getElementById('unapproveBtn');if(ub)ub.addEventListener('click',function(){showConfirm('Unapprove Invoice','Unapprove this invoice? Stock will be restored.',unapproveInvoice)});wireFbrBtns()}else if(st==='saved'){bar.innerHTML='<button type="button" class="btn btn-p" id="saveBtn" disabled>Save<span class="kbd">Ctrl S</span></button>';if(can_approve)bar.innerHTML+='<button type="button" class="btn btn-s" id="approveBtn" title="Approve - Ctrl+Shift+S">Approve<span class="kbd">Ctrl Shift S</span></button>';bar.innerHTML+='<button type="button" class="btn btn-o" onclick="doPrint()" title="Print - Ctrl+P">Print<span class="kbd">Ctrl P</span></button><button type="button" class="btn btn-d" id="deleteBtn">Delete</button><a href="'+NEW_URL+'" class="btn btn-o" id="newBtn" title="Start a new invoice - Alt+N">New<span class="kbd">Alt N</span></a><a href="'+LIST_URL+'" class="btn btn-o" id="cancelBtn" title="Back to the list - Alt+C">Cancel<span class="kbd">Alt C</span></a>';qs('#approveBtn')&&qs('#approveBtn').addEventListener('click',function(){showConfirm('Approve Invoice','Approve this invoice? It will be locked and stock deducted.',function(){saveInvoice('approve')})});qs('#deleteBtn')&&qs('#deleteBtn').addEventListener('click',function(){showConfirm('Delete Invoice','Are you sure?',deleteInvoice)})}else{bar.innerHTML='<button type="button" class="btn btn-o" id="saveChangesBtn" title="Save changes - Ctrl+S">Save Changes<span class="kbd">Ctrl S</span></button>';if(can_approve)bar.innerHTML+='<button type="button" class="btn btn-p" id="approveBtn" title="Approve - Ctrl+Shift+S">Approve<span class="kbd">Ctrl Shift S</span></button>';bar.innerHTML+='<button type="button" class="btn btn-o" onclick="doPrint()" title="Print - Ctrl+P">Print<span class="kbd">Ctrl P</span></button><button type="button" class="btn btn-d" id="deleteBtn">Delete</button><a href="'+NEW_URL+'" class="btn btn-o" id="newBtn" title="Start a new invoice - Alt+N">New<span class="kbd">Alt N</span></a><a href="'+LIST_URL+'" class="btn btn-o" id="cancelBtn" title="Back to the list - Alt+C">Cancel<span class="kbd">Alt C</span></a>';qs('#saveChangesBtn')&&qs('#saveChangesBtn').addEventListener('click',function(){saveInvoice('save')});qs('#approveBtn')&&qs('#approveBtn').addEventListener('click',function(){showConfirm('Approve Invoice','Approve this invoice? It will be locked and stock deducted.',function(){saveInvoice('approve')})});qs('#deleteBtn')&&qs('#deleteBtn').addEventListener('click',function(){showConfirm('Delete Invoice','Are you sure?',deleteInvoice)})}}
 
-async function saveInvoice(action){var data;try{data=collectData()}catch(e){toast('Form error: '+e.message,'error');return}if(!data.customer_id){toast('Please select a customer','error');return}if(data.items.length===0){toast('Add at least one item','error');return}data.action=action;try{var r=await fetch('/inventory/invoices/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});var res=await r.json()}catch(e){toast('Network or server error: '+e.message,'error');return}if(!res.ok){toast(res.error||'Save failed','error');return}toast(res.message,'success');document.getElementById('invoiceId').value=res.id;document.getElementById('invNumber').value=res.number;document.getElementById('invVoucher').value=res.voucher;var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-'+res.voucher_status;badge.textContent=res.voucher_status.charAt(0).toUpperCase()+res.voucher_status.slice(1)}if(res.voucher_status==='approved'){var eb=document.querySelector('.ap-b');if(!eb){var nb=document.createElement('div');nb.className='ap-b';nb.innerHTML='<span class="ap-t">&#10003; APPROVED</span><span>'+new Date().toLocaleString()+'</span>';var w=document.querySelector('.wrap');if(w)w.insertBefore(nb,w.querySelector('.card'))}}else{var eb2=document.querySelector('.ap-b');if(eb2)eb2.remove()}disableAll(true);rebuildActionBar(action==='approve'?res.voucher_status:'saved');recalc()}
-async function unapproveInvoice(){var id=document.getElementById('invoiceId').value;if(!id)return;var btn=document.getElementById('unapproveBtn');if(btn){btn.disabled=true;btn.textContent='Processing...'}var r=await fetch('/inventory/invoices/unapprove/'+id,{method:'POST'});var res=await r.json();if(!res.ok){toast(res.error,'error');if(btn){btn.disabled=false;btn.textContent='Unapprove'}return}toast(res.message,'success');var vs=res.voucher_status||'unapproved';var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-'+vs;badge.textContent=vs.charAt(0).toUpperCase()+vs.slice(1)}disableAll(false);rebuildActionBar('saved')}
+async function saveInvoice(action){var data;try{data=collectData()}catch(e){toast('Form error: '+e.message,'error');return}if(!data.customer_id){toast('Please select a customer','error');return}if(data.items.length===0){toast('Add at least one item','error');return}data.action=action;try{var r=await fetch('/inventory/invoices/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});var res=await r.json()}catch(e){toast('Network or server error: '+e.message,'error');return}if(!res.ok){toast(res.error||'Save failed','error');return}toast(res.message,'success');document.getElementById('invoiceId').value=res.id;document.getElementById('invNumber').value=res.number;document.getElementById('invVoucher').value=res.voucher;var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-'+res.voucher_status;badge.textContent=res.voucher_status.charAt(0).toUpperCase()+res.voucher_status.slice(1)}if(res.voucher_status==='approved'){var eb=document.querySelector('.ap-b');if(!eb){var nb=document.createElement('div');nb.className='ap-b';nb.innerHTML='<span class="ap-t">&#10003; APPROVED</span><span>'+new Date().toLocaleString()+'</span>';var host=document.querySelector('.no-template-print')||document.querySelector('.wrap');if(host)host.insertBefore(nb,host.firstChild)}}else{var eb2=document.querySelector('.ap-b');if(eb2)eb2.remove()}disableAll(true);rebuildActionBar(action==='approve'?res.voucher_status:'saved');formDirty=false;recalc()}
+async function unapproveInvoice(){var id=document.getElementById('invoiceId').value;if(!id)return;var btn=document.getElementById('unapproveBtn');if(btn){btn.disabled=true;btn.textContent='Processing...'}var r=await fetch('/inventory/invoices/unapprove/'+id,{method:'POST'});var res=await r.json();if(!res.ok){toast(res.error,'error');if(btn){btn.disabled=false;btn.textContent='Unapprove'}return}toast(res.message,'success');var vs=res.voucher_status||'unapproved';var badge=document.getElementById('statusBadge');if(badge){badge.className='bdg bdg-'+vs;badge.textContent=vs.charAt(0).toUpperCase()+vs.slice(1)}disableAll(false);rebuildActionBar('saved');formDirty=false}
 document.getElementById('saveBtn')?.addEventListener('click',function(){saveInvoice('save')})
 document.getElementById('saveApproveBtn')?.addEventListener('click',function(){showConfirm('Save & Approve','Save and approve this invoice? Stock will be deducted.',function(){saveInvoice('approve')})})
 document.getElementById('saveChangesBtn')?.addEventListener('click',function(){saveInvoice('save')})
@@ -2025,7 +2130,24 @@ document.getElementById('settingsDiscountMethod')?.addEventListener('change',app
     var strip=card.closest('.hdr-strip');
     if(strip)strip.classList.toggle('two',!on);
   }
-  chk.addEventListener('change',sync);sync();
+  // A user switching the card back on gets it expanded; the load-time sync
+  // must NOT touch the collapse state — the markup ships folded on purpose.
+  chk.addEventListener('change',function(){sync();if(chk.checked)card.classList.remove('collapsed')});
+  sync();
+})();
+// Collapse manager for the Logistics card: the header row folds/unfolds the
+// body, and a saved document that carries delivery data re-opens itself so an
+// approved invoice never hides its own waybill behind a click.
+(function wireLogisticsCollapse(){
+  var card=document.getElementById('logisticsCard');if(!card)return;
+  window.__logisticsAutoExpand=function(){
+    var has=['settingsTransportMode','settingsTransporter','settingsTransportDoc','refSO'].some(function(id){
+      var el=document.getElementById(id);return !!(el&&el.value&&el.value.trim());
+    });
+    if(has)card.classList.remove('collapsed');
+  };
+  var tg=document.getElementById('logisticsToggle');
+  if(tg)tg.addEventListener('click',function(){card.classList.toggle('collapsed')});
 })();
 // A saved invoice already has its customer; show the read-out on load.
 (function seedCustDetails(){
@@ -2187,5 +2309,113 @@ document.addEventListener('keydown',function(e){if((e.key==='ArrowUp'||e.key==='
     });
   }
 })();
+</script>
+
+<script>
+// ============================================================
+// SHORTCUTS · DIRTY GUARD · ESC LAYERS — sales invoice form
+// ============================================================
+// Ctrl+S save · Ctrl+Shift+S save & approve · Ctrl+P print (saved, clean
+// documents only) · Alt+N new invoice · Alt+C back to the list · Esc peels
+// one overlay layer per press. Ctrl+N and Ctrl+C stay with the browser
+// (new window / copy), so the new/cancel pair lives on Alt.
+var LIST_URL='{{ url_for("inv_invoices.list_invoices") }}';
+var NEW_URL='{{ url_for("inv_invoices.invoice_form") }}';
+var formDirty=false;
+function markDirty(){formDirty=true}
+function isFormRegion(el){
+  return !!(el.closest&&(el.closest('.hdr-strip')||el.closest('#itemsBody')||el.closest('.btm')||el.closest('#sidePanel')||el.closest('.ga')));
+}
+// Raw typing inside a search box is not yet document state — picking from its
+// dropdown writes the value that counts (and fires these same events).
+document.addEventListener('input',function(e){
+  var t=e.target;if(!t||!isFormRegion(t))return;
+  if(t.closest('.ac-dd'))return;
+  // Raw typing inside a search box is not yet document state — picking from
+  // its dropdown writes the value that counts (and fires these same events).
+  if(t.id==='customerSearch'||t.id==='partyAccountSearch'||t.id==='invLabelSearch')return;
+  markDirty();
+},true);
+document.addEventListener('change',function(e){
+  var t=e.target;if(t&&isFormRegion(t))markDirty();
+},true);
+
+function leaveTo(dest){
+  if(formDirty&&editable){
+    showConfirm('Discard unsaved changes?','This document has changes that were not saved. Leave anyway?',function(){formDirty=false;window.location.href=dest});
+    return;
+  }
+  window.location.href=dest;
+}
+// Cancel / New are anchors so middle-click still works; a plain click is only
+// intercepted when there are unsaved edits to lose.
+document.addEventListener('click',function(e){
+  var a=e.target.closest&&e.target.closest('#cancelBtn,#newBtn');
+  if(!a)return;
+  if(!(formDirty&&editable))return;
+  e.preventDefault();
+  leaveTo(a.id==='newBtn'?NEW_URL:LIST_URL);
+});
+
+function doSave(){
+  if(!editable){toast('Approved invoices are locked — unapprove to edit','info');return}
+  var b=document.getElementById('saveChangesBtn')||document.getElementById('saveBtn');
+  if(b&&!b.disabled)b.click();else toast('Nothing to save','info');
+}
+function doSaveApprove(){
+  if(!editable){toast('Already approved','info');return}
+  var b=document.getElementById('saveApproveBtn')||document.getElementById('approveBtn');
+  if(!b){toast('Approval rights required','warning');return}
+  if(!b.disabled)b.click();else toast('Nothing to approve','info');
+}
+function doPrint(){
+  // Printing mid-edit would paper over numbers that were never committed.
+  if(formDirty&&editable){toast('Save your changes before printing','warning');return}
+  if(!document.getElementById('invoiceId').value){toast('Save the invoice before printing','warning');return}
+  window.print();
+}
+
+document.addEventListener('keydown',function(e){
+  var k=(e.key||'').toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(mod&&!e.altKey&&!e.shiftKey&&(k==='s'||k==='p')){
+    e.preventDefault();
+    if(k==='s'){doSave()}else{doPrint()}
+    return;
+  }
+  if(mod&&e.shiftKey&&!e.altKey&&k==='s'){e.preventDefault();doSaveApprove();return}
+  if(e.altKey&&!mod){
+    if(k==='n'){e.preventDefault();leaveTo(NEW_URL)}
+    else if(k==='c'){e.preventDefault();leaveTo(LIST_URL)}
+    return;
+  }
+  if(e.key==='Escape'&&!mod&&!e.altKey&&!e.shiftKey){escapeLayer()}
+});
+
+// Esc closes exactly one layer per press, innermost first: charge popover →
+// modals → source gate (whose close means "start blank") → settings panel →
+// open autocomplete lists.
+function escapeLayer(){
+  var pop=document.getElementById('chgPopover');
+  if(pop&&pop.classList.contains('show')){closeChgPopover();return}
+  var mods=[['chargesModal',closeChargesModal],['orderModal',closeOrderModal],['confirmModal',closeConfirm]];
+  for(var i=0;i<mods.length;i++){
+    var m=document.getElementById(mods[i][0]);
+    if(m&&m.classList.contains('show')){mods[i][1]();return}
+  }
+  var gate=document.getElementById('sourceGate');
+  if(gate&&gate.classList.contains('show')){var gx=document.getElementById('gateClose');if(gx)gx.click();return}
+  var panel=document.getElementById('sidePanel');
+  if(panel&&panel.classList.contains('open')){closeSidePanel();return}
+  var dd=document.querySelector('.ac-dd.show');
+  if(dd)dd.classList.remove('show');
+}
+
+window.addEventListener('beforeunload',function(e){
+  if(formDirty&&editable){e.preventDefault();e.returnValue=''}
+});
+
+// A saved document that carries delivery data re-opens its Logistics card so
+// an approved invoice never hides its own waybill behind a click.
+(function(){if(window.__logisticsAutoExpand)window.__logisticsAutoExpand()})();
 </script>
 {% endblock %}
