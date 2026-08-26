@@ -2,8 +2,8 @@
 {% block title %}Trial Balance{% endblock %}
 {% block heading %}Trial Balance{% endblock %}
 {% block actions %}
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}
@@ -58,7 +58,10 @@
         <tr {% if r.is_subtotal %}class="subtotal-row"{% endif %}>
           <td class="mono">{{ r.code }}</td>
           <td>{{ r.name }}</td>
-          <td>{% if r.type %}<span class="badge {% if r.type == 'Asset' %}badge-blue{% elif r.type == 'Liability' %}badge-purple{% elif r.type == 'Equity' %}badge-green{% elif r.type == 'Revenue' %}badge-green{% else %}badge-blue{% endif %}">{{ r.type }}</span>{% endif %}</td>
+          {# One neutral badge for every account type. The five-way colour map
+             this replaced spent four hues restating the word already printed
+             inside the badge. #}
+          <td>{% if r.type %}<span class="badge badge-default">{{ r.type }}</span>{% endif %}</td>
           <td class="num">{{ r.dr_opening|amount_format if r.dr_opening else "—" }}</td>
           <td class="num">{{ r.cr_opening|amount_format if r.cr_opening else "—" }}</td>
           <td class="num">{{ r.dr_movement|amount_format if r.dr_movement else "—" }}</td>
@@ -75,7 +78,7 @@
         {% endfor %}
       </tbody>
       <tfoot>
-        <tr style="font-weight:700;background:#f1f5f9;">
+        <tr style="font-weight:600;background:var(--v2-hover);">
           <td></td>
           <td>TOTAL</td>
           <td></td>
@@ -95,12 +98,12 @@
       </tfoot>
     </table>
   </div>
-  <p class="mt-2 text-sm {% if total_dr_closing == total_cr_closing %}text-green-600{% else %}text-red-600{% endif %}">
+  <p class="mt-2 text-sm {% if total_dr_closing == total_cr_closing %}num-pos{% else %}num-neg{% endif %}">
     <i class="fas {% if total_dr_closing == total_cr_closing %}fa-check-circle{% else %}fa-exclamation-triangle{% endif %}"></i>
     {% if total_dr_closing == total_cr_closing %}Trial Balance is <strong>IN BALANCE</strong>{% else %}Difference: {{ (total_dr_closing - total_cr_closing)|amount_format }}{% endif %}
   </p>
   {% else %}
-  <p class="text-slate-500 text-center py-8">No journal entries posted yet.</p>
+  <p class="t-muted text-center py-8">No journal entries posted yet.</p>
   {% endif %}
 </div>
 {% endblock %}

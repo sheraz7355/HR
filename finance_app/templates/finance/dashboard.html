@@ -4,46 +4,52 @@
 {% block content %}
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
   <a href="{{ url_for('finance.trial_balance') }}" class="stat-card">
-    <div class="value"><i class="fas fa-balance-scale text-blue-600"></i></div>
+    <div class="value"><i class="fas fa-balance-scale"></i></div>
     <div class="label">Trial Balance</div>
   </a>
   <a href="{{ url_for('finance.profit_loss') }}" class="stat-card">
-    <div class="value"><i class="fas fa-chart-line text-green-600"></i></div>
+    <div class="value"><i class="fas fa-chart-line"></i></div>
     <div class="label">Profit & Loss</div>
   </a>
   <a href="{{ url_for('finance.balance_sheet') }}" class="stat-card">
-    <div class="value"><i class="fas fa-file-invoice text-purple-600"></i></div>
+    <div class="value"><i class="fas fa-file-invoice"></i></div>
     <div class="label">Balance Sheet</div>
   </a>
   <a href="{{ url_for('finance.socie') }}" class="stat-card">
-    <div class="value"><i class="fas fa-layer-group text-orange-600"></i></div>
+    <div class="value"><i class="fas fa-layer-group"></i></div>
     <div class="label">SOCIE</div>
   </a>
   <a href="{{ url_for('finance.cash_flow') }}" class="stat-card">
-    <div class="value"><i class="fas fa-money-bill-wave text-emerald-600"></i></div>
+    <div class="value"><i class="fas fa-money-bill-wave"></i></div>
     <div class="label">Cash Flow</div>
   </a>
   <a href="{{ url_for('finance.twcf') }}" class="stat-card">
-    <div class="value"><i class="fas fa-calendar-week text-cyan-600"></i></div>
+    <div class="value"><i class="fas fa-calendar-week"></i></div>
     <div class="label">13-Week Cash Flow</div>
   </a>
   <a href="{{ url_for('finance.ledger') }}" class="stat-card">
-    <div class="value"><i class="fas fa-book text-indigo-600"></i></div>
+    <div class="value"><i class="fas fa-book"></i></div>
     <div class="label">General Ledger</div>
   </a>
 </div>
 <div class="card">
-  <h2 class="font-bold text-lg mb-4">Quick Reference</h2>
+  <div class="card-header">Quick reference</div>
+  {# Every other report page wraps its table in .overflow-x-auto; this one did
+     not, and .report-table sets white-space:nowrap, so at 375px the Format
+     column pushed the whole page sideways. Guide §8: wide tables scroll inside
+     their own container, never the page. #}
+  <div class="overflow-x-auto">
   <table class="report-table">
     <tr><th>Report</th><th>Description</th><th>Format</th></tr>
-    <tr><td>General Ledger</td><td>View transactions for any account with running balance</td><td><span class="badge badge-blue">Filter by Account & Date</span></td></tr>
-    <tr><td>Trial Balance</td><td>List all accounts with debit/credit totals as of a date</td><td><span class="badge badge-green">As of Date</span></td></tr>
-    <tr><td>Profit & Loss</td><td>Revenue minus expenses for a period</td><td><span class="badge badge-purple">Date Range</span></td></tr>
-    <tr><td>Balance Sheet</td><td>Assets = Liabilities + Equity as of a date</td><td><span class="badge badge-blue">As of Date</span></td></tr>
-    <tr><td>SOCIE</td><td>Statement of Changes in Equity over a period</td><td><span class="badge badge-green">Date Range</span></td></tr>
-    <tr><td>Cash Flow</td><td>Operating / Investing / Financing activities</td><td><span class="badge badge-purple">Date Range</span></td></tr>
-    <tr><td>13-Week Cash Flow (TWCF)</td><td>Rolling weekly liquidity forecast: opening cash, aged AR/AP schedule, plan lines, actuals &amp; headroom</td><td><span class="badge badge-green">13 Weekly Columns</span></td></tr>
+    <tr><td>General Ledger</td><td>View transactions for any account with running balance</td><td><span class="badge badge-default">Filter by Account & Date</span></td></tr>
+    <tr><td>Trial Balance</td><td>List all accounts with debit/credit totals as of a date</td><td><span class="badge badge-default">As of Date</span></td></tr>
+    <tr><td>Profit & Loss</td><td>Revenue minus expenses for a period</td><td><span class="badge badge-default">Date Range</span></td></tr>
+    <tr><td>Balance Sheet</td><td>Assets = Liabilities + Equity as of a date</td><td><span class="badge badge-default">As of Date</span></td></tr>
+    <tr><td>SOCIE</td><td>Statement of Changes in Equity over a period</td><td><span class="badge badge-default">Date Range</span></td></tr>
+    <tr><td>Cash Flow</td><td>Operating / Investing / Financing activities</td><td><span class="badge badge-default">Date Range</span></td></tr>
+    <tr><td>13-Week Cash Flow (TWCF)</td><td>Rolling weekly liquidity forecast: opening cash, aged AR/AP schedule, plan lines, actuals &amp; headroom</td><td><span class="badge badge-default">13 Weekly Columns</span></td></tr>
   </table>
-  <p class="mt-4 text-sm text-slate-500">All reports support <strong>Excel (.xlsx)</strong> and <strong>PDF</strong> download.</p>
+  </div>
+  <p class="mt-4 text-sm t-muted">All reports support <strong>Excel (.xlsx)</strong> and <strong>PDF</strong> download.</p>
 </div>
 {% endblock %}

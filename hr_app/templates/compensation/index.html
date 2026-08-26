@@ -23,7 +23,7 @@
     <div class="card">
         <div class="card-header">Payroll Profiles</div>
         <div class="table-wrap">
-            <table>
+            <table style="font-variant-numeric:tabular-nums;">
                 <thead><tr><th>Employee</th><th>Basic Salary</th><th>Effective</th><th>Components</th><th></th></tr></thead>
                 <tbody>
                     {% for p in profiles %}
@@ -45,7 +45,7 @@
     <div class="card">
         <div class="card-header">Payroll History</div>
         <div class="table-wrap">
-            <table>
+            <table style="font-variant-numeric:tabular-nums;">
                 <thead><tr><th>Period</th><th>Run Date</th><th>Employees</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
                 <tbody>
                     {% for r in runs %}
@@ -72,7 +72,7 @@
             <a href="{{ url_for('compensation.tax_settings') }}" class="btn btn-sm btn-primary">Manage Slabs</a>
         </div>
         <div class="table-wrap">
-            <table>
+            <table style="font-variant-numeric:tabular-nums;">
                 <thead><tr><th>Min (Rs.)</th><th>Max (Rs.)</th><th>Rate</th><th>Fixed (Rs.)</th></tr></thead>
                 <tbody>
                     {% for s in slabs %}
@@ -92,7 +92,7 @@
 <div class="card mb-20">
     <div class="card-header">My Payroll Profile</div>
     {% if profile %}
-    <table>
+    <table style="font-variant-numeric:tabular-nums;">
         <tr><td style="font-weight:600;">Basic Salary</td><td>Rs. {{ profile.basic_salary|amount_format(0) }}</td></tr>
         <tr><td style="font-weight:600;">Effective From</td><td>{{ profile.effective_from }}</td></tr>
     </table>
@@ -104,7 +104,7 @@
 <div class="card">
     <div class="card-header">My Salary Slips</div>
     <div class="table-wrap">
-        <table>
+        <table style="font-variant-numeric:tabular-nums;">
             <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>Net Pay</th><th>Actions</th></tr></thead>
             <tbody>
                 {% for s in slips %}

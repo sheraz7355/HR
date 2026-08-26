@@ -24,7 +24,7 @@
             <option value="{{ a.id }}" {{ 'selected' if voucher and voucher.charge_account_id == a.id else '' }}>{{ a.code }} — {{ a.name }}</option>
             {% endfor %}
           </select>
-          <small style="display:block;margin-top:4px;color:#6b7280;">The consumed value (at automatic historic cost) is transferred from the product's inventory ledger to this account — e.g. an employee's account when charging them for damage.</small>
+          <small style="display:block;margin-top:4px;color:var(--muted);">The consumed value (at automatic historic cost) is transferred from the product's inventory ledger to this account — e.g. an employee's account when charging them for damage.</small>
         </div>
         <div class="form-group">
           <label>Status</label>
@@ -38,7 +38,7 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><strong>Items</strong> <span class="badge badge-info" style="background:#3b82f6;">Consumption</span></div>
+    <div class="card-header"><strong>Items</strong> <span class="badge badge-info" style="background:var(--accent);color:var(--card);">Consumption</span></div>
     <div class="card-body">
       <table class="table" id="items-table">
         <thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th></th></tr></thead>
@@ -60,7 +60,7 @@
     </div>
   </div>
 
-  <div style="background:#fee2e2;padding:8px;margin:8px 0;border:2px solid red;font-weight:bold;">DEBUG: voucher={% if voucher %}{{ voucher.voucher_number }}, status="{{ voucher.status }}"{% else %}None{% endif %}</div>
+  <div style="background:var(--danger-light);padding:8px;margin:8px 0;border:2px solid red;font-weight:bold;">DEBUG: voucher={% if voucher %}{{ voucher.voucher_number }}, status="{{ voucher.status }}"{% else %}None{% endif %}</div>
   {% if not voucher %}
   <div class="form-actions">
     <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save as Unapproved</button>

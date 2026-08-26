@@ -6,7 +6,7 @@
 </div>
 <div class="card">
     {% for a in announcements %}
-    <div style="padding:14px 0;border-bottom:1px solid #f0f0f0;">
+    <div style="padding:14px 0;border-bottom:1px solid var(--border-soft);">
         <div class="flex-between">
             <strong style="font-size:14px;">{{ a.title }}</strong>
             <span class="badge badge-{{ 'danger' if a.priority == 'urgent' else 'warning' if a.priority == 'high' else 'info' }}">{{ a.priority }}</span>

@@ -18,7 +18,8 @@ customer, supplier or employee already carry the party's name, so an account
 is the finest grain the ledger can answer at.
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import math
 from decimal import Decimal, ROUND_HALF_UP
 
 from shared.extensions import db
@@ -402,7 +403,11 @@ def aging(as_of=None):
     """
     in_scope = scope(as_dict=True)
     if not in_scope:
-        return {RECEIVABLE: _aging_side([]), PAYABLE: _aging_side([])}
+        # Still scaled: the template reads bucket["width"] unconditionally,
+        # and an empty scope is the most likely way to reach this page.
+        empty = {RECEIVABLE: _aging_side([]), PAYABLE: _aging_side([])}
+        _scale_buckets(empty[RECEIVABLE], empty[PAYABLE])
+        return empty
     as_of_day = as_of.date() if isinstance(as_of, datetime) else (
         as_of if isinstance(as_of, date) else datetime.utcnow().date())
 
@@ -432,10 +437,37 @@ def aging(as_of=None):
         party = _age_party(account_id, acct, rows, abs(net), as_of_day, side)
         if party:
             (receivable if side == RECEIVABLE else payable).append(party)
-    return {
+    sides = {
         RECEIVABLE: _aging_side(receivable),
         PAYABLE: _aging_side(payable),
     }
+    _scale_buckets(sides[RECEIVABLE], sides[PAYABLE])
+    return sides
+
+
+def _scale_buckets(recv, pay):
+    """Give the paired buckets a width both sides can be measured against.
+
+    ``share`` is a bucket's percentage of *its own side*. That is the right
+    number to print and the wrong one to draw: the dashboard puts the
+    receivable and payable bars for one bucket in the same row, under one
+    label, with a legend inviting the comparison. Drawn from ``share`` on
+    equal-length tracks, 725,000 of receivable and 200 of payable come out as
+    two identical full-width bars — the chart asks to be read as a comparison
+    and then answers a different question on each row.
+
+    ``width`` scales every bar against the largest single bucket on either
+    side, so one pixel means the same amount everywhere in the chart. With
+    both sides empty every width is 0 rather than a division by it.
+    """
+    peak = max((b["amount"] for b in recv["buckets"] + pay["buckets"]),
+               default=0.0)
+    for side in (recv, pay):
+        for bucket in side["buckets"]:
+            bucket["width"] = (
+                _f(Decimal(str(bucket["amount"])) / Decimal(str(peak)) * 100)
+                if peak else 0.0)
+        side["peak"] = peak
 
 
 # ── Liquidity snapshot ───────────────────────────────────────────────────────
@@ -536,4 +568,217 @@ def liquidity(as_of=None):
         "inventory": inventory,
         "current_ratio": _f(ca / cl) if ratios else None,
         "quick_ratio": _f((ca - inventory) / cl) if ratios else None,
+    }
+
+
+# ── Profitability ────────────────────────────────────────────────────────────
+#
+# Revenue, gross profit and net profit month by month, straight off the posted
+# ledger. The arithmetic is deliberately NOT reimplemented here: it calls the
+# same _pl_by_section() the Profit & Loss report renders from, so the number on
+# the executive dashboard and the number on the statement can never disagree.
+# That is the whole point of sourcing this from the ledger rather than from
+# shared/invoicing_performance.py, which counts documents and would drift the
+# moment anyone posted a journal by hand.
+#
+# The import is function-local on purpose. shared/ importing from finance_app/
+# is a layering inversion, and doing it at module scope would make every
+# importer of this module drag in the finance blueprint.
+
+# Sections whose contributions add up to net sales, and the one that is cost of
+# sales. Both are keys from DEFAULT_PL_STRUCTURE; a company that has renamed
+# its structure keeps working because a missing key simply contributes nothing.
+_REVENUE_SECTIONS = ("sales", "sales_returns")
+_COGS_SECTIONS = ("cost_of_sales",)
+
+
+def _month_starts(end_day, count):
+    """The first day of each of the `count` months ending with end_day's."""
+    year, month = end_day.year, end_day.month
+    out = []
+    for _ in range(count):
+        out.append(date(year, month, 1))
+        month -= 1
+        if month == 0:
+            year, month = year - 1, 12
+    return list(reversed(out))
+
+
+def _month_end(day):
+    return (date(day.year + 1, 1, 1) if day.month == 12
+            else date(day.year, day.month + 1, 1)) - timedelta(days=1)
+
+
+def _pl_figures(from_date, to_date):
+    """(net sales, cost of sales, gross profit, net profit) for one window.
+
+    `contrib` from _pl_by_section is a signed contribution to profit: revenue
+    positive, expenses negative, contra accounts self-correcting. So net profit
+    is simply every section added up — the same running total _pl_rows()
+    accumulates — and cost of sales has to be negated to read as a cost.
+    """
+    from finance_app.routes.reports import _pl_by_section
+
+    by_section = _pl_by_section(from_date, to_date)
+    total = lambda keys: sum(  # noqa: E731 - a name would not make this clearer
+        (item["contrib"] for key in keys for item in by_section.get(key, [])),
+        Decimal("0"))
+
+    revenue = total(_REVENUE_SECTIONS)
+    cogs_contrib = total(_COGS_SECTIONS)
+    net = sum((item["contrib"] for items in by_section.values() for item in items),
+              Decimal("0"))
+    return (_f(revenue), _f(-cogs_contrib), _f(revenue + cogs_contrib), _f(net))
+
+
+def _delta(now, before):
+    """Percentage change, or None where the base makes one meaningless.
+
+    Growth from zero is undefined, not infinite, and growth from a negative
+    base has no sign anyone can read — both render as an em dash.
+    """
+    if before is None or before <= 0:
+        return None
+    return _f(Decimal(str(now - before)) / Decimal(str(before)) * 100)
+
+
+def profitability(months=12, as_of=None):
+    """Monthly revenue / gross / net profit plus the current month's deltas.
+
+    Returns the series oldest-first (a chart reads left to right), the totals
+    for the whole window, the figures for the latest month with their
+    year-on-year deltas, and the peak/trough the chart has to fit.
+    """
+    end_day = as_of.date() if isinstance(as_of, datetime) else (
+        as_of if isinstance(as_of, date) else datetime.utcnow().date())
+
+    series = []
+    for start in _month_starts(end_day, months):
+        end = _month_end(start)
+        revenue, cogs, gross, net = _pl_figures(start, end)
+        series.append({
+            "start": start, "label": start.strftime("%b"),
+            "full_label": start.strftime("%b %Y"),
+            "revenue": revenue, "cogs": cogs, "gross": gross, "net": net,
+        })
+
+    latest = series[-1] if series else {"revenue": 0.0, "cogs": 0.0,
+                                        "gross": 0.0, "net": 0.0}
+    # Same month last year, so a seasonal business is compared like for like.
+    prior = None
+    if series:
+        want = date(series[-1]["start"].year - 1, series[-1]["start"].month, 1)
+        prior = next((m for m in series if m["start"] == want), None)
+    if prior is None and series:
+        prior_start = date(end_day.year - 1, end_day.month, 1)
+        revenue, cogs, gross, net = _pl_figures(prior_start,
+                                                _month_end(prior_start))
+        prior = {"revenue": revenue, "cogs": cogs, "gross": gross, "net": net}
+
+    totals = {key: _f(sum(Decimal(str(m[key])) for m in series)) if series else 0.0
+              for key in ("revenue", "cogs", "gross", "net")}
+    values = [m[key] for m in series for key in ("revenue", "net")]
+    return {
+        "months": series,
+        "totals": totals,
+        "latest": latest,
+        "prior": prior,
+        "deltas": {key: _delta(latest[key], prior[key] if prior else None)
+                   for key in ("revenue", "gross", "net")},
+        "peak": max(values, default=0.0),
+        "trough": min(min(values, default=0.0), 0.0),
+        "margin": (_f(Decimal(str(totals["net"])) / Decimal(str(totals["revenue"])) * 100)
+                   if totals["revenue"] else None),
+    }
+
+
+# ── Profitability chart geometry ─────────────────────────────────────────────
+#
+# Coordinates are worked out here, not in Jinja: a chart's geometry is exactly
+# the kind of thing that needs a test, and a template is the one place in this
+# codebase nothing can unit-test (UI_V2_GUIDE.md §6). The template receives
+# strings and prints them.
+#
+# Two series, not three. The chart exists to answer "are we making money", so
+# net profit is the subject and revenue is the context it is read against;
+# gross profit is a tile above rather than a third line competing for the same
+# ink. Revenue is also dashed, so the pair survives greyscale and colour vision
+# deficiency without relying on the ink/muted difference alone (§6, §8).
+
+PROFIT_SERIES = [
+    {"key": "revenue", "label": "Revenue",    "var": "rev", "dash": "5 4"},
+    {"key": "net",     "label": "Net profit", "var": "net", "dash": ""},
+]
+
+
+def profit_chart(data):
+    """Turn a `profitability()` payload into ready-to-print SVG geometry."""
+    from shared.invoicing_performance import (
+        PAD_B, PAD_L, PAD_T, PLOT_H, PLOT_W, VIEW_H, VIEW_W, _nice_step)
+
+    months = data["months"]
+    if not months:
+        return None
+    # A ledger with no posted revenue or expenses would otherwise render a
+    # flat line along zero with a duplicated axis — a chart that looks like
+    # a finding when it is really an absence. The caller shows an empty
+    # state instead.
+    if not any(m["revenue"] or m["net"] for m in months):
+        return None
+
+    hi = max([m["revenue"] for m in months] + [m["net"] for m in months] + [0.0])
+    lo = min([m["net"] for m in months] + [0.0])
+    if hi == lo:
+        hi = lo + 1.0
+    step = _nice_step(hi - lo)
+    top = math.ceil(hi / step) * step
+    bottom = math.floor(lo / step) * step
+    if top == bottom:
+        top = bottom + step
+
+    span = float(len(months) - 1) or 1.0
+
+    def y_of(value):
+        return PAD_T + PLOT_H * (top - value) / (top - bottom)
+
+    def x_of(i):
+        return PAD_L + (PLOT_W * i / span if len(months) > 1 else PLOT_W / 2)
+
+    dp = 0 if step >= 1 else max(0, -math.floor(math.log10(step)))
+    ticks, tick = [], bottom
+    while tick <= top + step / 1000.0:
+        ticks.append({"v": tick, "y": round(y_of(tick), 2), "dp": dp})
+        tick += step
+
+    zero_y = round(y_of(0), 2)
+    series = []
+    for spec in PROFIT_SERIES:
+        pts = [(round(x_of(i), 2), round(y_of(m[spec["key"]]), 2))
+               for i, m in enumerate(months)]
+        series.append({
+            **spec,
+            "points": " ".join(f"{x},{y}" for x, y in pts),
+            # The wash closes onto the zero line rather than the floor of the
+            # box: with a loss month, a fill dropped to the bottom would read
+            # as though the value were positive the whole way down.
+            "area": (f"{pts[0][0]},{zero_y} "
+                     + " ".join(f"{x},{y}" for x, y in pts)
+                     + f" {pts[-1][0]},{zero_y}"),
+            "dots": [{"x": x, "y": y, "v": months[i][spec["key"]],
+                      "month": months[i]["full_label"]}
+                     for i, (x, y) in enumerate(pts)],
+            "last": {"x": pts[-1][0], "y": pts[-1][1],
+                     "v": months[-1][spec["key"]]},
+        })
+    return {
+        "view_w": VIEW_W, "view_h": VIEW_H,
+        "pad_l": PAD_L, "pad_t": PAD_T, "pad_b": PAD_B,
+        "plot_w": PLOT_W, "plot_h": PLOT_H,
+        "plot_r": PAD_L + PLOT_W, "plot_b": PAD_T + PLOT_H,
+        "zero_y": zero_y,
+        "ticks": ticks, "series": series,
+        "cols": [{"x": round(x_of(i), 2), "label": m["label"],
+                  "full_label": m["full_label"], "i": i}
+                 for i, m in enumerate(months)],
+        "band": round(PLOT_W / span, 2),
     }

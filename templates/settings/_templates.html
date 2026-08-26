@@ -12,8 +12,8 @@
   <div style="margin-bottom:22px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:8px;">
       <div>
-        <h4 style="font-size:14px;margin:0;color:#0f172a;">{{ heading }}</h4>
-        <div style="font-size:12px;color:#94a3b8;margin-top:1px;">{{ blurb }}</div>
+        <h4 style="font-size:14px;margin:0;color:var(--text);">{{ heading }}</h4>
+        <div style="font-size:12px;color:var(--light);margin-top:1px;">{{ blurb }}</div>
       </div>
       <a href="{{ url_for('settings.create_template', type=doc_type) }}"
          class="btn btn-primary btn-sm">+ New design</a>
@@ -28,21 +28,21 @@
         {% for t in rows %}
         <tr>
           <td><strong>{{ t.name }}</strong></td>
-          <td style="text-transform:capitalize;color:#475569;">
+          <td style="text-transform:capitalize;color:var(--muted);">
             {{ 'Custom HTML' if t.is_custom else (t.design or 'Classic') }}
           </td>
           <td>
             {% if t.is_custom %}
-              <span style="color:#94a3b8;">&mdash;</span>
+              <span style="color:var(--light);">&mdash;</span>
             {% else %}
               <span style="display:inline-block;width:15px;height:15px;border-radius:50%;
-                background:{{ t.accent_color or '#0f766e' }};box-shadow:0 0 0 1px #e2e8f0;
+                background:{{ t.accent_color or '#0f766e' }};box-shadow:0 0 0 1px var(--border);
                 vertical-align:middle;"></span>
             {% endif %}
           </td>
           <td>
             {% if t.is_default %}<span class="pill pill-on">In use</span>
-            {% else %}<span style="color:#94a3b8;font-size:12px;">Not used</span>{% endif %}
+            {% else %}<span style="color:var(--light);font-size:12px;">Not used</span>{% endif %}
           </td>
           <td class="actions">
             <a href="{{ url_for('settings.edit_template', id=t.id) }}" class="btn btn-sm btn-outline">Edit</a>
@@ -54,7 +54,7 @@
       </tbody>
     </table>
     {% else %}
-    <p style="color:#64748b;font-size:13px;margin:0;">
+    <p style="color:var(--muted);font-size:13px;margin:0;">
       No design yet &mdash;
       <a href="{{ url_for('settings.create_template', type=doc_type) }}">create one</a>.
     </p>

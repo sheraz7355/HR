@@ -5,21 +5,21 @@
 <style>
   .be-wrap{overflow-x:auto}
   .be-tbl{width:100%;border-collapse:collapse;font-size:13px}
-  .be-tbl th{background:#f1f5f9;padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#64748b;border-bottom:2px solid #e2e8f0}
-  .be-tbl td{padding:4px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-  .be-tbl .be-inp{width:100%;padding:6px 8px;border:1px solid #d8d3c4;border-radius:3px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .12s,background .12s}
-  .be-tbl .be-inp:focus{border-color:#0f5257}
-  .be-tbl .be-inp.err{border-color:#dc2626;background:#fef2f2}
-  .be-tbl .be-inp.ok{border-color:#16a34a;background:#f0fdf4}
-  .be-tbl .be-del{width:32px;height:32px;border-radius:50%;border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s}
-  .be-tbl .be-del:hover{background:#fef2f2}
-  .be-summary{font-size:13px;color:#64748b;margin-bottom:10px}
+  .be-tbl th{background:var(--bg-top);padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border)}
+  .be-tbl td{padding:4px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+  .be-tbl .be-inp{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .12s,background .12s;font-variant-numeric:tabular-nums}
+  .be-tbl .be-inp:focus{border-color:var(--accent)}
+  .be-tbl .be-inp.err{border-color:var(--danger);background:var(--danger-light)}
+  .be-tbl .be-inp.ok{border-color:var(--success);background:var(--success-light)}
+  .be-tbl .be-del{width:32px;height:32px;border-radius:50%;border:1px solid var(--danger-light);background:var(--card);color:var(--danger);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+  .be-tbl .be-del:hover{background:var(--danger-light)}
+  .be-summary{font-size:13px;color:var(--muted);margin-bottom:10px}
   .be-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
-  .be-add{background:#fff;border:1px dashed #0f5257;color:#0f5257;padding:6px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;transition:all .12s}
-  .be-add:hover{background:#f0fdfa}
+  .be-add{background:var(--card);border:1px dashed var(--accent);color:var(--accent);padding:6px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;transition:all .12s}
+  .be-add:hover{background:var(--accent-light)}
   .be-msg{font-size:10.5px;margin-top:2px;line-height:1.3}
-  .be-msg.err{color:#dc2626}
-  .be-msg.ok{color:#16a34a}
+  .be-msg.err{color:var(--danger)}
+  .be-msg.ok{color:var(--success)}
 </style>
 {% endblock %}
 {% block content %}
@@ -38,7 +38,7 @@
           <tbody id="beBody">
             {% for r in rows %}
             <tr>
-              <td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">{{ loop.index }}</td>
+              <td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">{{ loop.index }}</td>
               <td><input type="text" class="be-inp be-name" value="{{ r.name }}"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-abbr" value="{{ r.abbreviation }}" maxlength="20"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-expl" value="{{ r.explanation }}"></td>
@@ -46,7 +46,7 @@
             </tr>
             {% else %}
             <tr>
-              <td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">1</td>
+              <td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">1</td>
               <td><input type="text" class="be-inp be-name" placeholder="Unit name"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-abbr" placeholder="e.g. kg" maxlength="20"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-expl" placeholder="Optional"></td>
@@ -114,7 +114,7 @@ function addRow() {
   var tbody = document.getElementById('beBody');
   var tr = document.createElement('tr');
   tr.innerHTML =
-    '<td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">' + (tbody.children.length + 1) + '</td>' +
+    '<td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">' + (tbody.children.length + 1) + '</td>' +
     '<td><input type="text" class="be-inp be-name" placeholder="Unit name"><div class="be-msg"></div></td>' +
     '<td><input type="text" class="be-inp be-abbr" placeholder="e.g. kg" maxlength="20"><div class="be-msg"></div></td>' +
     '<td><input type="text" class="be-inp be-expl" placeholder="Optional"></td>' +

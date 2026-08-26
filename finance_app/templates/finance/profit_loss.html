@@ -2,8 +2,8 @@
 {% block title %}Profit & Loss{% endblock %}
 {% block heading %}Profit & Loss Statement{% endblock %}
 {% block actions %}
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}
@@ -82,14 +82,14 @@
         </tr>
           {% endif %}
         {% else %}
-        <tr><td colspan="{{ 3 if not comp_periods else 3 + comp_periods|length }}" class="text-slate-400 text-center" style="padding:24px;">No profit &amp; loss activity in this period</td></tr>
+        <tr><td colspan="{{ 3 if not comp_periods else 3 + comp_periods|length }}" class="t-muted text-center" style="padding:24px;">No profit &amp; loss activity in this period</td></tr>
         {% endfor %}
       </tbody>
       <tfoot>
         {% if comp_mode and comp_periods %}
         <tr class="grand-total">
           <td colspan="2">NET PROFIT / (LOSS)</td>
-          <td class="num {% if net_profit >= 0 %}text-green-400{% else %}text-red-400{% endif %}">{{ net_profit|amount_format }}</td>
+          <td class="num {% if net_profit >= 0 %}num-pos{% else %}num-neg{% endif %}">{{ net_profit|amount_format }}</td>
           {% for row in pl_rows if row.kind == 'subtotal' %}
           {% if loop.last and row.get('comp_amounts') %}
           {% for amt in row.comp_amounts[1:] %}
@@ -101,7 +101,7 @@
         {% else %}
         <tr class="grand-total">
           <td colspan="2">NET PROFIT / (LOSS)</td>
-          <td class="num {% if net_profit >= 0 %}text-green-400{% else %}text-red-400{% endif %}">{{ net_profit|amount_format }}</td>
+          <td class="num {% if net_profit >= 0 %}num-pos{% else %}num-neg{% endif %}">{{ net_profit|amount_format }}</td>
         </tr>
         {% endif %}
       </tfoot>

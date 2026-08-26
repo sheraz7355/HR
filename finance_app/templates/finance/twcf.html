@@ -3,8 +3,8 @@
 {% block heading %}13-Week Cash Flow (TWCF){% endblock %}
 {% block actions %}
 {% if loaded %}
-<a href="?start={{ start.strftime('%Y-%m-%d') }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?start={{ start.strftime('%Y-%m-%d') }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?start={{ start.strftime('%Y-%m-%d') }}&format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?start={{ start.strftime('%Y-%m-%d') }}&format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endif %}
 <a href="{{ url_for('settings.index', tab='cash_flow') }}" class="btn btn-outline btn-sm"><i class="fas fa-cog"></i> Settings</a>
@@ -16,47 +16,63 @@
      weeks scroll, so the row names stay readable at any width. */
   .twcf-scroll { max-width: 100%; overflow-x: auto; }
   table.twcf { min-width: 1280px; }
+  /* The sticky label column paints its own background, so every row variant
+     has to repeat the background base.html gives that row — otherwise the
+     frozen cell shows white over a washed row as the weeks scroll under it. */
   table.twcf th.stick, table.twcf td.stick {
     position: sticky; left: 0; z-index: 3;
-    background: #fff; box-shadow: 1px 0 0 #e2e8f0;
+    background: var(--v2-surface); box-shadow: 1px 0 0 var(--v2-line);
   }
-  table.twcf thead th.stick { background: #1e293b; z-index: 6; }
-  table.twcf .sec-head td.stick { background: #f1f5f9; }
-  table.twcf .sec-total td.stick { background: #fafafa; }
-  table.twcf .grand-total td.stick { background: #1e293b; color: #fff; }
-  table.twcf .profit-line td.stick { background: #eff6ff; }
-  table.twcf .profit-line.neg td.stick { background: #fef2f2; }
-  table.twcf .recon-line td.stick { background: #f8fafc; }
+  table.twcf thead th.stick { background: var(--v2-surface); z-index: 6; }
+  table.twcf .sec-head td.stick { background: var(--v2-hover); }
+  table.twcf .sec-total td.stick { background: var(--v2-surface); }
+  table.twcf .subtotal-row td.stick { background: var(--v2-hover); }
+  table.twcf .opening-row td.stick, table.twcf .closing-row td.stick { background: var(--v2-hover); }
+  table.twcf .grand-total td.stick { background: var(--v2-ink); color: var(--v2-ground); }
+  table.twcf .profit-line td.stick { background: var(--v2-sunk); }
+  table.twcf .profit-line.neg td.stick { background: var(--v2-neg-bg); }
+  table.twcf .recon-line td.stick { background: var(--v2-hover); }
   table.twcf td.wk { min-width: 92px; }
-  table.twcf .wk-hd small { display: block; font-size: 10px; font-weight: 400; color: #cbd5e1; }
-  .badge-auto { background: #ecfdf5; color: #047857; }
-  .badge-plan { background: #fef3c7; color: #92400e; }
-  .badge-in { background: #d1fae5; color: #065f46; }
-  .badge-out { background: #fee2e2; color: #991b1b; }
-  .badge-hr { background: #ede9fe; color: #5b21b6; }
-  .twcf-form label { font-size: 12px; font-weight: 600; color: #475569; display: block; margin-bottom: 4px; }
+  table.twcf .wk-hd small { display: block; font-size: 10px; font-weight: 400; color: var(--v2-muted); }
+  /* Row-source badges. Direction of money (in/out) and a figure that is still
+     a forecast (plan) are the three that earn colour; where the number came
+     from otherwise — the ledger, or HR payroll — is neutral. */
+  .badge-in { background: var(--v2-pos-bg); color: var(--v2-pos); }
+  .badge-out { background: var(--v2-neg-bg); color: var(--v2-neg); }
+  .badge-plan { background: var(--v2-warn-bg); color: var(--v2-warn); }
+  .badge-auto { background: var(--v2-sunk); color: var(--v2-body); }
+  .badge-hr { background: var(--v2-sunk); color: var(--v2-body); }
+  .twcf-form label { font-size: 12px; font-weight: 500; color: var(--v2-muted); display: block; margin-bottom: 4px; }
   .twcf-form input:not([type="radio"]), .twcf-form select { width: 100%; }
   .line-row td { vertical-align: middle; }
   /* At-a-glance summary strip */
-  .twcf-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; }
-  .twcf-kpi .k-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
-  .twcf-kpi .k-value { font-size: 18px; font-weight: 700; color: #0f172a; margin-top: 4px; line-height: 1.15; }
-  .twcf-kpi.k-closing { background: #0f172a; border-color: #0f172a; }
-  .twcf-kpi.k-closing .k-label { color: #94a3b8; }
-  .twcf-kpi.k-closing .k-value { color: #fff; }
+  .twcf-kpi { background: var(--v2-surface); border: 1px solid var(--v2-line); border-radius: 11px; padding: 10px 12px; }
+  .twcf-kpi .k-label { font-size: 11.5px; font-weight: 500; color: var(--v2-muted); display: flex; align-items: center; gap: 6px; }
+  .twcf-kpi .k-value { font-size: 18px; font-weight: 600; color: var(--v2-ink); margin-top: 4px; line-height: 1.15; letter-spacing: -.02em; }
+  /* The k-closing tile holds the one number this forecast exists to produce,
+     so it gets the inverted slab. Both tokens flip with the theme, and the
+     label rides the same ground colour at reduced opacity rather than a second
+     grey that would have to be re-picked for dark.
+     Note the wording: this <style> block renders on a bare open, before the
+     matrix loads, and test_initial_open_requires_click_to_load asserts the
+     matrix's own labels are absent from that HTML. A comment that quotes one
+     of them verbatim fails the test from inside a CSS comment. */
+  .twcf-kpi.k-closing { background: var(--v2-ink); border-color: var(--v2-ink); }
+  .twcf-kpi.k-closing .k-label { color: var(--v2-ground); opacity: .72; }
+  .twcf-kpi.k-closing .k-value { color: var(--v2-ground); }
   /* Explainer */
-  #twcf-explain summary { cursor: pointer; font-weight: 700; font-size: 14px; color: #1e40af; list-style: none; display: flex; align-items: center; gap: 8px; }
+  #twcf-explain summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--v2-ink); list-style: none; display: flex; align-items: center; gap: 8px; }
   #twcf-explain summary::-webkit-details-marker { display: none; }
-  #twcf-explain ul { margin: 10px 0 0; padding-left: 20px; color: #475569; font-size: 13px; display: grid; gap: 6px; }
+  #twcf-explain ul { margin: 10px 0 0; padding-left: 20px; color: var(--v2-body); font-size: 13px; display: grid; gap: 6px; }
   /* Money in / out toggle */
-  .twcf-dir { display: flex; align-items: center; gap: 6px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; background: #fff; cursor: pointer; font-weight: 600; font-size: 13px; color: #334155; flex: 1; }
-  .twcf-dir small { font-weight: 400; color: #64748b; }
-  .twcf-dir:has(input:checked) { background: #eff6ff; border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb; }
-  .twcf-dir.twcf-dir-out:has(input:checked) { background: #fef2f2; border-color: #dc2626; box-shadow: 0 0 0 1px #dc2626; }
+  .twcf-dir { display: flex; align-items: center; gap: 6px; border: 1px solid var(--v2-line-2); border-radius: 8px; padding: 8px 10px; background: var(--v2-surface); cursor: pointer; font-weight: 500; font-size: 13px; color: var(--v2-ink); flex: 1; }
+  .twcf-dir small { font-weight: 400; color: var(--v2-muted); }
+  .twcf-dir:has(input:checked) { background: var(--v2-pos-bg); border-color: var(--v2-pos); box-shadow: 0 0 0 1px var(--v2-pos); }
+  .twcf-dir.twcf-dir-out:has(input:checked) { background: var(--v2-neg-bg); border-color: var(--v2-neg); box-shadow: 0 0 0 1px var(--v2-neg); }
   /* Live landing preview */
-  .twcf-hint { margin-top: 10px; font-size: 13px; color: #334155; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 8px 10px; }
-  .twcf-src { font-size: 10px; font-weight: 500; color: #64748b; }
-  .twcf-legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: #475569; }
+  .twcf-hint { margin-top: 10px; font-size: 13px; color: var(--v2-body); background: var(--v2-hover); border: 1px dashed var(--v2-line-2); border-radius: 8px; padding: 8px 10px; }
+  .twcf-src { font-size: 10px; font-weight: 500; color: var(--v2-muted); }
+  .twcf-legend { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: var(--v2-body); }
   @media (max-width: 640px) {
     .twcf-form .grid { grid-template-columns: 1fr; }
     .twcf-line-actions { display: flex; gap: 6px; }
@@ -71,16 +87,16 @@
     <span class="k-value">{{ matrix.opening|amount_format }}</span>
   </div>
   <div class="twcf-kpi">
-    <span class="k-label"><i class="fas fa-arrow-down text-green-600"></i> Total receipts</span>
-    <span class="k-value text-green-600">{{ matrix.total_in|amount_format }}</span>
+    <span class="k-label"><i class="fas fa-arrow-down num-pos"></i> Total receipts</span>
+    <span class="k-value num-pos">{{ matrix.total_in|amount_format }}</span>
   </div>
   <div class="twcf-kpi">
-    <span class="k-label"><i class="fas fa-arrow-up text-red-600"></i> Total payments</span>
-    <span class="k-value text-red-600">{{ matrix.total_out|amount_format }}</span>
+    <span class="k-label"><i class="fas fa-arrow-up num-neg"></i> Total payments</span>
+    <span class="k-value num-neg">{{ matrix.total_out|amount_format }}</span>
   </div>
   <div class="twcf-kpi k-closing">
     <span class="k-label"><i class="fas fa-flag-checkered"></i> Projected closing</span>
-    <span class="k-value {% if matrix.closing[-1] < 0 %}text-red-400{% else %}text-emerald-400{% endif %}">{{ matrix.closing[-1]|amount_format }}</span>
+    <span class="k-value {% if matrix.closing[-1] < 0 %}num-neg{% else %}num-pos{% endif %}">{{ matrix.closing[-1]|amount_format }}</span>
   </div>
 </div>
 {% endif %}
@@ -89,14 +105,14 @@
 <form method="get" class="card mb-6 no-print">
   <div class="flex flex-wrap items-end gap-4">
     <div>
-      <label class="block text-sm font-semibold text-slate-600 mb-1">Forecast starts on</label>
+      <label class="block text-sm font-semibold t-muted mb-1">Forecast starts on</label>
       <input type="date" name="start" value="{{ start.strftime('%Y-%m-%d') }}" class="form-input">
     </div>
     <div class="flex gap-2">
       <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Rebuild</button>
       <button type="button" class="btn btn-outline" id="twcf-this-week"><i class="fas fa-calendar-week"></i> This week</button>
     </div>
-    <p class="w-full text-sm text-slate-500 mt-1">
+    <p class="w-full text-sm t-muted mt-1">
       13 weekly columns, Mon–Sun. Rolling the start date forward re-buckets every auto and recurring line — that is how the forecast rolls.
     </p>
   </div>
@@ -105,7 +121,7 @@
 {% if loaded %}
 <!-- How it works -->
 <details id="twcf-explain" class="card mb-6 no-print">
-  <summary><i class="fas fa-circle-question text-blue-600"></i> How this forecast works</summary>
+  <summary><i class="fas fa-circle-question t-muted"></i> How this forecast works</summary>
   <ul>
     <li><strong>Opening cash</strong> — the actual cash balance just before the window starts, straight from your general ledger.</li>
     <li><strong>Auto rows</strong> — open customer and supplier balances are aged and spread across the weeks (0–30 days → weeks 1–2, 31–60 → weeks 3–5, 61–90 → weeks 6–8, older → weeks 9–13). No entry needed.</li>
@@ -118,12 +134,12 @@
 <!-- Add a future cash item -->
 <div class="card mb-6 no-print">
   <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
-    <h2 class="font-bold text-lg"><i class="fas fa-plus-circle text-blue-600"></i> Add a future cash item</h2>
+    <h2 class="font-bold text-lg"><i class="fas fa-plus-circle t-muted"></i> Add a future cash item</h2>
     {% if editing %}
     <a href="?start={{ start.strftime('%Y-%m-%d') }}" class="btn btn-outline btn-sm"><i class="fas fa-times"></i> Cancel edit</a>
     {% endif %}
   </div>
-  <p class="text-sm text-slate-500 mb-4">Money you expect to receive or pay in the next 13 weeks. It appears in the matrix as a <span class="badge badge-plan">plan</span> row.</p>
+  <p class="text-sm t-muted mb-4">Money you expect to receive or pay in the next 13 weeks. It appears in the matrix as a <span class="badge badge-plan">plan</span> row.</p>
   <form method="post" action="{{ url_for('finance.twcf') }}" class="twcf-form">
     <input type="hidden" name="start" value="{{ start.strftime('%Y-%m-%d') }}">
     <input type="hidden" name="action" value="{{ 'edit' if editing else 'add' }}">
@@ -134,11 +150,11 @@
         <div class="flex gap-2">
           <label class="twcf-dir">
             <input type="radio" name="direction" value="in" {{ 'checked' if not editing or editing.direction == 'in' }}>
-            <i class="fas fa-arrow-down text-green-600"></i> Receipt <small>money in</small>
+            <i class="fas fa-arrow-down num-pos"></i> Receipt <small>money in</small>
           </label>
           <label class="twcf-dir twcf-dir-out">
             <input type="radio" name="direction" value="out" {{ 'checked' if editing and editing.direction == 'out' }}>
-            <i class="fas fa-arrow-up text-red-600"></i> Payment <small>money out</small>
+            <i class="fas fa-arrow-up num-neg"></i> Payment <small>money out</small>
           </label>
         </div>
       </div>
@@ -199,17 +215,20 @@
         </select>
       </div>
     </div>
-    <p id="twcf-preview-hint" class="twcf-hint"><i class="fas fa-circle-info text-blue-600"></i> <span id="twcf-preview-text">Choose the date and amount to see exactly where this lands in the 13 weeks.</span></p>
+    <p id="twcf-preview-hint" class="twcf-hint"><i class="fas fa-circle-info t-muted"></i> <span id="twcf-preview-text">Choose the date and amount to see exactly where this lands in the 13 weeks.</span></p>
   </form>
 </div>
 {% else %}
 <!-- Load prompt (bare open, no start yet) -->
 <div class="card mb-6 no-print" id="twcf-load-prompt">
   <div class="text-center py-10">
-    <i class="fas fa-calendar-week text-4xl text-slate-300 mb-3"></i>
-    <h2 class="font-bold text-lg text-slate-700">Choose a start date and load the forecast</h2>
-    <p class="text-sm text-slate-500 mt-1 mb-4">The 13-week matrix is computed on demand — pick <strong>Forecast starts on</strong> above and click <strong>Rebuild</strong>, or load from this week.</p>
-    <a href="?start={{ start.strftime('%Y-%m-%d') }}" class="btn btn-primary"><i class="fas fa-play"></i> Load 13-week forecast</a>
+    <i class="fas fa-calendar-week text-4xl t-faint mb-3"></i>
+    <h2 class="font-bold text-lg t-ink">Choose a start date and load the forecast</h2>
+    <p class="text-sm t-muted mt-1 mb-4">The 13-week matrix is computed on demand — pick <strong>Forecast starts on</strong> above and click <strong>Rebuild</strong>, or load from this week.</p>
+    {# Outline, not a second fill: Rebuild in the filter card above is this
+       view's committing action and is already filled, and this empty state
+       sits on screen at the same time as it (UI_V2_GUIDE.md §5). #}
+    <a href="?start={{ start.strftime('%Y-%m-%d') }}" class="btn btn-outline"><i class="fas fa-play"></i> Load 13-week forecast</a>
   </div>
 </div>
 {% endif %}
@@ -223,8 +242,8 @@
       <div class="report-period">Forecast window {{ start.strftime('%d %B, %Y') }} to {{ (weeks[-1].end).strftime('%d %B, %Y') }}</div>
     </div>
     <div class="flex gap-2 no-print">
-      <span class="badge badge-green">13 weeks</span>
-      {% if matrix.floor is not none %}<span class="badge badge-blue">Floor {{ matrix.floor|amount_format }}</span>{% endif %}
+      <span class="badge badge-default">13 weeks</span>
+      {% if matrix.floor is not none %}<span class="badge badge-default">Floor {{ matrix.floor|amount_format }}</span>{% endif %}
     </div>
   </div>
 
@@ -232,7 +251,7 @@
     <span class="badge badge-auto">auto — from your ledgers</span>
     <span class="badge badge-plan">plan — your lines</span>
     {% if matrix.has_payroll_auto %}<span class="badge badge-hr"><i class="fas fa-users"></i> from HR payroll</span>{% endif %}
-    <span class="text-xs text-slate-500"><i class="fas fa-check-circle text-green-600"></i> finished week — actual used</span>
+    <span class="text-xs t-muted"><i class="fas fa-check-circle num-pos"></i> finished week — actual used</span>
   </div>
 
   <div class="twcf-scroll">
@@ -263,31 +282,31 @@
             {% if row.auto %}<span class="badge badge-auto" title="Computed automatically from your data — no entry needed">auto</span>{% else %}<span class="badge badge-plan" title="From your forecast lines">plan</span>{% endif %}
             {% if row.source == 'payroll' %}<small class="twcf-src"><i class="fas fa-users"></i> from HR payroll</small>{% endif %}
           </td>
-          {% for v in row['values'] %}<td class="num wk {% if v is not none and v < 0 %}text-red-600{% endif %}">{{ v|amount_format if v is not none else '' }}</td>{% endfor %}
-          <td class="num {% if row['values']|sum < 0 %}text-red-600{% endif %}">{{ row['values']|sum|amount_format }}</td>
+          {% for v in row['values'] %}<td class="num wk {% if v is not none and v < 0 %}num-neg{% endif %}">{{ v|amount_format if v is not none else '' }}</td>{% endfor %}
+          <td class="num {% if row['values']|sum < 0 %}num-neg{% endif %}">{{ row['values']|sum|amount_format }}</td>
         </tr>
         {% elif row.kind == 'total' %}
         <tr class="sec-total">
           <td class="stick">{{ row.label }}</td>
-          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}text-red-600{% endif %}">{{ v|amount_format }}</td>{% endfor %}
+          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}num-neg{% endif %}">{{ v|amount_format }}</td>{% endfor %}
           <td class="num">{{ row.total|amount_format }}</td>
         </tr>
         {% elif row.kind == 'net' %}
         <tr class="profit-line {% if row['values']|sum < 0 %}neg{% endif %}">
           <td class="stick">{{ row.label }}</td>
-          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}text-red-600{% elif v > 0 %}text-green-600{% endif %}">{{ v|amount_format }}</td>{% endfor %}
+          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}num-neg{% elif v > 0 %}num-pos{% endif %}">{{ v|amount_format }}</td>{% endfor %}
           <td class="num">{{ row.total|amount_format }}</td>
         </tr>
         {% elif row.kind == 'variance' %}
         <tr class="recon-line">
           <td class="stick"><i class="fas fa-scale-balanced"></i> {{ row.label }}</td>
-          {% for v in row['values'] %}<td class="num wk {% if v is not none and v < 0 %}text-red-600{% elif v is not none and v > 0 %}text-green-600{% endif %}">{{ v|amount_format if v is not none else '—' }}</td>{% endfor %}
+          {% for v in row['values'] %}<td class="num wk {% if v is not none and v < 0 %}num-neg{% elif v is not none and v > 0 %}num-pos{% endif %}">{{ v|amount_format if v is not none else '—' }}</td>{% endfor %}
           <td class="num">{{ row['values']|select|sum|amount_format }}</td>
         </tr>
         {% elif row.kind == 'grand' %}
         <tr class="grand-total">
           <td class="stick">{{ row.label }}</td>
-          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}text-red-400{% endif %}">{{ v|amount_format }}</td>{% endfor %}
+          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}num-neg{% endif %}">{{ v|amount_format }}</td>{% endfor %}
           <td class="num">{{ row.total|amount_format }}</td>
         </tr>
         {% elif row.kind == 'plain' %}
@@ -299,8 +318,8 @@
         {% elif row.kind == 'headroom' %}
         <tr class="subtotal-row">
           <td class="stick">{{ row.label }}</td>
-          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}text-red-600{% endif %}">{{ v|amount_format }}</td>{% endfor %}
-          <td class="num {% if row.total < 0 %}text-red-600{% endif %}">{{ row.total|amount_format }}</td>
+          {% for v in row['values'] %}<td class="num wk {% if v < 0 %}num-neg{% endif %}">{{ v|amount_format }}</td>{% endfor %}
+          <td class="num {% if row.total < 0 %}num-neg{% endif %}">{{ row.total|amount_format }}</td>
         </tr>
         {% endif %}
         {% endfor %}
@@ -317,13 +336,13 @@
 <div class="card no-print">
   <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
     <h2 class="font-bold text-lg">
-      <i class="fas fa-list-check text-blue-600"></i> Forecast Lines
-      <span class="text-sm font-normal text-slate-500">({{ lines|length }})</span>
+      <i class="fas fa-list-check t-muted"></i> Forecast Lines
+      <span class="text-sm font-normal t-muted">({{ lines|length }})</span>
     </h2>
   </div>
 
   {% if matrix.has_payroll_auto %}
-  <p class="text-sm text-slate-500 mb-4"><i class="fas fa-users text-indigo-600"></i> Salaries &amp; wages are already forecast from approved HR payroll — add lines only for other payments.</p>
+  <p class="text-sm t-muted mb-4"><i class="fas fa-users t-muted"></i> Salaries &amp; wages are already forecast from approved HR payroll — add lines only for other payments.</p>
   {% endif %}
 
   {% if lines %}
@@ -353,7 +372,7 @@
                 <input type="hidden" name="start" value="{{ start.strftime('%Y-%m-%d') }}">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="line_id" value="{{ line.id }}">
-                <button type="submit" class="btn btn-danger btn-sm"><i class="fas fa-trash"></i></button>
+                <button type="submit" class="btn btn-outline btn-sm"><i class="fas fa-trash"></i></button>
               </form>
             </div>
           </td>
@@ -363,7 +382,7 @@
     </table>
   </div>
   {% else %}
-  <p class="text-sm text-slate-500">No forecast lines yet. Add payroll, rent, taxes, loan repayments or one-off items — they land in the matrix as <span class="badge badge-plan">plan</span> rows.</p>
+  <p class="text-sm t-muted">No forecast lines yet. Add payroll, rent, taxes, loan repayments or one-off items — they land in the matrix as <span class="badge badge-plan">plan</span> rows.</p>
   {% endif %}
 </div>
 {% endif %}

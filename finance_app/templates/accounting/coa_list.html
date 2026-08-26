@@ -5,38 +5,48 @@
 <style>
 .coa-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px}
 .coa-search{position:relative;flex:1;max-width:420px}
-.coa-search input{width:100%;padding:9px 12px 9px 34px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none;transition:border-color .12s,box-shadow .12s}
-.coa-search input:focus{border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
+.coa-search input{width:100%;padding:9px 12px 9px 34px;border:1px solid var(--v2-line-2);border-radius:8px;font-size:13px;outline:none;background:var(--v2-surface);color:var(--v2-ink);font-family:inherit;transition:border-color .12s}
+.coa-search input:focus{outline:2px solid var(--v2-ink);outline-offset:2px}
 .coa-search::before{content:'\1F50D';position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;opacity:.5}
-.coa-legend{display:flex;gap:10px;align-items:center;font-size:11px;color:#64748b;flex-wrap:wrap}
+.coa-legend{display:flex;gap:10px;align-items:center;font-size:11.5px;color:var(--v2-muted);flex-wrap:wrap}
 .coa-legend .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
-.tree-header{display:flex;align-items:center;padding:10px 12px;background:#f1f5f9;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#64748b;border-bottom:2px solid #1d4ed8;position:sticky;top:0;z-index:5}
-.tree-row{display:flex;align-items:center;padding:5px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;transition:background .1s}
-.tree-row:hover{background:#f8fafc}
+.dot-post{background:var(--v2-accent)}
+.dot-agg{background:var(--v2-faint)}
+.tree-header{display:flex;align-items:center;padding:10px 12px;background:var(--v2-surface);font-size:11.5px;font-weight:500;color:var(--v2-muted);border-bottom:1px solid var(--v2-line);position:sticky;top:0;z-index:5}
+.tree-row{display:flex;align-items:center;padding:5px 12px;border-bottom:1px solid var(--v2-line);font-size:13px;transition:background .1s}
+.tree-row:hover{background:var(--v2-hover)}
 .tree-row.inactive{opacity:.45}
 .tree-row.hidden{display:none}
 .tree-row .indent{display:inline-block;flex-shrink:0}
-.tw{width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:#64748b;font-size:10px;flex-shrink:0;border-radius:4px;padding:0;line-height:22px;text-align:center}
-.tw:hover{background:#e2e8f0}
+.tw{width:22px;height:22px;border:none;background:transparent;cursor:pointer;color:var(--v2-muted);font-size:10px;flex-shrink:0;border-radius:4px;padding:0;line-height:22px;text-align:center}
+.tw:hover{background:var(--v2-sunk)}
 .tw.leafpad{cursor:default;visibility:hidden}
-.lvl-badge{display:inline-block;min-width:20px;height:20px;border-radius:4px;text-align:center;line-height:20px;font-size:10px;font-weight:700;color:#fff;margin-right:9px;flex-shrink:0}
-.lvl1{background:#0f172a}.lvl2{background:#334155}.lvl3{background:#64748b}.lvl4{background:#94a3b8}.lvl5{background:#1d4ed8}
-.acct-code{color:#64748b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;min-width:150px;flex-shrink:0}
-.acct-name{font-weight:500;color:#1e293b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tree-row[data-level="1"] .acct-name,.tree-row[data-level="2"] .acct-name{font-weight:700;text-transform:uppercase;font-size:12px;letter-spacing:.4px}
-.tree-row[data-level="3"] .acct-name{font-weight:600}
-.chip{font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:2px 7px;border-radius:10px;margin-left:6px;flex-shrink:0;text-transform:uppercase}
-.chip-fixed{background:#eff6ff;color:#1d4ed8}
-.chip-post{background:#ecfdf5;color:#047857}
-.chip-cf-operating{background:#eff6ff;color:#1d4ed8}
-.chip-cf-investing{background:#f3e8ff;color:#7c3aed}
-.chip-cf-financing{background:#fff7ed;color:#c2410c}
-.chip-cf-cash{background:#ecfeff;color:#0e7490}
-.chip-pl{background:#fefce8;color:#a16207}
-.chip-inactive{background:#fef2f2;color:#dc2626}
+/* The level badge used to be a five-colour ramp. Depth is already drawn by the
+   indent to its left, so the ramp was restating the indent in colour — and the
+   quiet end of it could not be built accessibly anyway: the ground token on
+   --v2-muted measures 3.8:1 and on --v2-faint 3.4:1, both under the 4.5 floor
+   for text this size, in every theme. Levels 1-4 are one neutral chip; level 5
+   keeps a fill because it is the only level you can post to, which is the one
+   thing about a row that changes what you can do with it. */
+.lvl-badge{display:inline-block;min-width:20px;height:20px;border-radius:4px;text-align:center;line-height:20px;font-size:10px;font-weight:600;background:var(--v2-sunk);color:var(--v2-body);margin-right:9px;flex-shrink:0;font-variant-numeric:tabular-nums}
+.lvl5{background:var(--v2-accent);color:var(--v2-ground)}
+.acct-code{color:var(--v2-body);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;min-width:150px;flex-shrink:0}
+.acct-name{font-weight:400;color:var(--v2-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree-row[data-level="1"] .acct-name,.tree-row[data-level="2"] .acct-name{font-weight:600;font-size:12.5px}
+.tree-row[data-level="3"] .acct-name{font-weight:500}
+/* Tag chips are neutral by default: the word inside each one already says what
+   it is, so the seven-hue set they replaced was spending colour to restate a
+   label. The two that are a state rather than a classification keep theirs. */
+.chip{font-size:11px;font-weight:500;padding:2px 7px;border-radius:6px;margin-left:6px;flex-shrink:0;background:var(--v2-sunk);color:var(--v2-body)}
+.chip-post{background:var(--v2-accent-soft);color:var(--v2-accent-ink)}
+.chip-inactive{background:var(--v2-neg-bg);color:var(--v2-neg)}
 .actions{margin-left:auto;display:flex;gap:4px;flex-shrink:0;align-items:center}
-.bdg-bsm{display:inline-block;padding:2px 9px;font-size:11px;border-radius:4px;text-decoration:none;font-weight:600}
-.tree-empty{text-align:center;padding:40px;color:#64748b}
+.bdg-bsm{display:inline-block;padding:3px 9px;font-size:11.5px;border-radius:6px;text-decoration:none;font-weight:500;font-family:inherit;background:var(--v2-surface);color:var(--v2-ink);border:1px solid var(--v2-line-2);cursor:pointer}
+.bdg-bsm:hover{background:var(--v2-hover)}
+.bsm-del{color:var(--v2-neg)}
+.bsm-del:hover{background:var(--v2-neg-bg)}
+.tree-empty{text-align:center;padding:40px;color:var(--v2-muted)}
+.coa-note{font-size:12px;color:var(--v2-muted);margin-top:10px}
 @media(max-width:640px){
   .tree-header{display:none}
   .tree-row{flex-wrap:wrap;padding:7px 10px;gap:2px 8px}
@@ -55,10 +65,10 @@
       <input type="text" id="coaSearch" placeholder="Search by code or name..." autocomplete="off" aria-label="Search accounts">
     </div>
     <div class="coa-legend">
-      <span><span class="dot" style="background:#1d4ed8;"></span>Level 5 = posting level</span>
-      <span><span class="dot" style="background:#94a3b8;"></span>Levels 1–4 aggregate only</span>
-      <button type="button" class="bdg-bsm" id="expandAll" style="background:#eef2ff;color:#4338ca;border:none;cursor:pointer;">Expand all</button>
-      <button type="button" class="bdg-bsm" id="collapseAll" style="background:#eef2ff;color:#4338ca;border:none;cursor:pointer;">Collapse all</button>
+      <span><span class="dot dot-post"></span>Level 5 = posting level</span>
+      <span><span class="dot dot-agg"></span>Levels 1–4 aggregate only</span>
+      <button type="button" class="bdg-bsm" id="expandAll">Expand all</button>
+      <button type="button" class="bdg-bsm" id="collapseAll">Collapse all</button>
     </div>
     <a href="{{ url_for('coa.add_account') }}" class="btn btn-primary">+ New Account</a>
   </div>
@@ -90,12 +100,12 @@
       {% if not a.is_active %}<span class="chip chip-inactive">inactive</span>{% endif %}
       <span class="actions">
         {% if a.level < 5 %}
-          <a href="{{ url_for('coa.add_account', parent_id=a.id) }}" class="bdg-bsm" style="background:#eff6ff;color:#1d4ed8;">+ Child</a>
+          <a href="{{ url_for('coa.add_account', parent_id=a.id) }}" class="bdg-bsm">+ Child</a>
         {% endif %}
-        <a href="{{ url_for('coa.edit_account', id=a.id) }}" class="bdg-bsm" style="background:#eef2ff;color:#4338ca;">Edit</a>
+        <a href="{{ url_for('coa.edit_account', id=a.id) }}" class="bdg-bsm">Edit</a>
         {% if a.can_delete() %}
         <form method="POST" action="{{ url_for('coa.delete_account', id=a.id) }}" style="display:inline" onsubmit="return confirm('Delete {{ a.name }}?');">
-          <button type="submit" class="bdg-bsm" style="background:#fef2f2;color:#dc2626;border:none;cursor:pointer;">Delete</button>
+          <button type="submit" class="bdg-bsm bsm-del">Delete</button>
         </form>
         {% endif %}
       </span>
@@ -105,7 +115,7 @@
     {% endfor %}
     </div>
   </div>
-  <p style="font-size:12px;color:#64748b;margin-top:10px;">
+  <p class="coa-note">
     Journal entries can only be posted to <strong>level-5 operational accounts</strong>; levels 1–4 aggregate their children's balances automatically.
     Cash-flow and P&amp;L tags are inherited from the nearest tagged parent unless set on the account itself.
   </p>

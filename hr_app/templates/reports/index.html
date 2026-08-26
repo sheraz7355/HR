@@ -44,7 +44,7 @@
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
                 {% set cols = [('employee','Employee'), ('total_hours','Total Hours'), ('overtime','Overtime'), ('leaves','Leaves'), ('sick_days','Sick Days'), ('late_days','Late Days'), ('present_days','Days Present'), ('pf_balance','PF Balance'), ('loan_balance','Loan Balance')] %}
                 {% for key, label in cols %}
-                <label style="font-size:13px;display:flex;align-items:center;gap:4px;background:#f0f0f0;padding:4px 8px;border-radius:4px;">
+                <label style="font-size:13px;display:flex;align-items:center;gap:4px;background:var(--bg-top);padding:4px 8px;border-radius:4px;">
                     <input type="checkbox" class="col-check" value="{{ key }}" checked> {{ label }}
                 </label>
                 {% endfor %}

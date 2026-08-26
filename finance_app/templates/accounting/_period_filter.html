@@ -1,38 +1,38 @@
 <style>
 .period-toggle{display:flex;gap:0;margin-bottom:12px}
-.period-toggle label{display:flex;align-items:center;gap:6px;padding:6px 16px;font-size:13px;font-weight:600;border:1px solid #cbd5e1;cursor:pointer;background:#fff;color:#64748b;transition:all .12s;user-select:none;margin:0}
+.period-toggle label{display:flex;align-items:center;gap:6px;padding:6px 16px;font-size:13px;font-weight:600;border:1px solid var(--v2-line-2);cursor:pointer;background:var(--v2-surface);color:var(--v2-body);transition:background .12s,border-color .12s,color .12s;user-select:none;margin:0}
 .period-toggle label:first-child{border-radius:6px 0 0 6px}
 .period-toggle label:last-child{border-radius:0 6px 6px 0}
 .period-toggle label:not(:last-child){border-right:none}
-.period-toggle label.active{background:#eff6ff;border-color:#1d4ed8;color:#1d4ed8;z-index:1}
+.period-toggle label.active{background:var(--v2-accent-soft);border-color:var(--v2-accent);color:var(--v2-accent-ink);z-index:1}
 .period-toggle input[type=radio]{display:none}
 @media (max-width: 500px){
   /* The segmented row no longer fits at 320px: wrap it into pills. */
   .period-toggle{flex-wrap:wrap;gap:6px}
-  .period-toggle label{border-radius:6px !important;border:1px solid #cbd5e1 !important}
+  .period-toggle label{border-radius:6px !important;border:1px solid var(--v2-line-2) !important}
 }
 .period-fields{display:none}
 .period-fields.active{display:block}
-.period-fields select,.period-fields input{padding:7px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:5px;font-family:inherit}
-.period-fields select:focus,.period-fields input:focus{outline:none;border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
-.period-fields select:disabled,.period-fields input:disabled{background:#f1f5f9;color:#94a3b8}
+.period-fields select,.period-fields input{padding:7px 10px;font-size:13px;border:1px solid var(--v2-line-2);border-radius:8px;font-family:inherit;background:var(--v2-surface);color:var(--v2-ink)}
+.period-fields select:focus,.period-fields input:focus{outline:2px solid var(--v2-ink);outline-offset:2px}
+.period-fields select:disabled,.period-fields input:disabled{background:var(--v2-sunk);color:var(--v2-faint)}
 .comp-dd-wrap{position:relative;max-width:360px}
-.comp-dd-trigger{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:5px;cursor:pointer;color:#64748b;user-select:none;min-height:36px}
-.comp-dd-trigger:hover{border-color:#94a3b8}
-.comp-dd-trigger.open{border-color:#1d4ed8}
+.comp-dd-trigger{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:13px;border:1px solid var(--v2-line-2);border-radius:8px;cursor:pointer;color:var(--v2-muted);background:var(--v2-surface);user-select:none;min-height:36px}
+.comp-dd-trigger:hover{border-color:var(--v2-faint)}
+.comp-dd-trigger.open{border-color:var(--v2-accent)}
 .comp-dd-trigger .label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.comp-dd-trigger .arrow{border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid #94a3b8;margin-left:6px;flex-shrink:0;transition:transform .15s}
+.comp-dd-trigger .arrow{border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--v2-faint);margin-left:6px;flex-shrink:0;transition:transform .15s}
 .comp-dd-trigger.open .arrow{transform:rotate(180deg)}
-.comp-dd-panel{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;border:1px solid #cbd5e1;border-radius:5px;margin-top:2px;max-height:220px;overflow-y:auto;background:#fff}
+.comp-dd-panel{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;border:1px solid var(--v2-line-2);border-radius:8px;margin-top:2px;max-height:220px;overflow-y:auto;background:var(--v2-surface);box-shadow:var(--v2-pop)}
 .comp-dd-panel.open{display:block}
-.comp-dd-src{display:block;width:calc(100% - 24px);margin:8px 12px 4px;padding:6px 9px;font-size:12.5px;font-family:inherit;border:1px solid #cbd5e1;border-radius:5px;outline:none}
-.comp-dd-src:focus{border-color:#1d4ed8;box-shadow:0 0 0 3px rgba(29,78,216,.12)}
-.comp-dd-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid #f1f5f9}
-.comp-dd-opt:hover{border-color:#1d4ed8}
+.comp-dd-src{display:block;width:calc(100% - 24px);margin:8px 12px 4px;padding:6px 9px;font-size:12.5px;font-family:inherit;border:1px solid var(--v2-line-2);border-radius:8px;outline:none;background:var(--v2-surface);color:var(--v2-ink)}
+.comp-dd-src:focus{outline:2px solid var(--v2-ink);outline-offset:-1px}
+.comp-dd-opt{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:13px;color:var(--v2-body);border-bottom:1px solid var(--v2-line)}
+.comp-dd-opt:hover{background:var(--v2-hover);color:var(--v2-ink)}
 .comp-dd-opt:last-child{border-bottom:none}
-.comp-dd-opt input[type=checkbox]{accent-color:#1d4ed8;margin:0;flex-shrink:0}
+.comp-dd-opt input[type=checkbox]{accent-color:var(--v2-accent);margin:0;flex-shrink:0}
 .comp-dd-opt .name{flex:1}
-.comp-dd-opt .dates{font-size:11px;color:#64748b}
+.comp-dd-opt .dates{font-size:11px;color:var(--v2-muted)}
 </style>
 
 <div class="period-filter-component">
@@ -49,10 +49,23 @@
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="3" fill="currentColor" style="display:{{ 'block' if filter_mode|default('period') == 'custom' else 'none' }}"/></svg>
       Custom Range
     </label>
+    {# Comparative is offered only to pages whose route can act on it, and
+       passing comp_mode into the include is exactly that signal — the six
+       statement pages do, the voucher register does not.
+
+       This is not cosmetic. voucher_list() reads vtype, status and
+       _resolve_voucher_period() only; it never looks at comp_mode or
+       comp_period_ids. And _resolve_voucher_period() applies the chosen
+       period under `if filter_mode == "period"`, so picking Comparative
+       made it skip the period you selected and silently fall back to the
+       default period — a filter that reported success and returned rows
+       for a different date range than the one on screen. #}
+    {% if comp_mode is defined %}
     <label class="period-opt {{ 'active' if filter_mode|default('period') == 'comparative' else '' }}" data-mode="comparative">
       <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="3" fill="currentColor" style="display:{{ 'block' if filter_mode|default('period') == 'comparative' else 'none' }}"/></svg>
       Comparative
     </label>
+    {% endif %}
   </div>
 
   <div class="period-fields {{ 'active' if filter_mode|default('period') in ('period','comparative') else '' }}" id="periodSelectFields">
@@ -69,11 +82,11 @@
   <div class="period-fields {{ 'active' if filter_mode|default('period') == 'custom' else '' }}" id="customDateFields">
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <div>
-        <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px;">From</label>
+        <label style="display:block;font-size:11.5px;font-weight:500;color:var(--v2-muted);margin-bottom:3px;">From</label>
         <input type="date" name="from" value="{{ from_val|default(from_str|default('')) }}" style="width:150px;">
       </div>
       <div>
-        <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px;">End</label>
+        <label style="display:block;font-size:11.5px;font-weight:500;color:var(--v2-muted);margin-bottom:3px;">End</label>
         <input type="date" name="to" value="{{ to_val|default(to_str|default('')) }}" style="width:150px;">
       </div>
     </div>
@@ -83,8 +96,8 @@
      option class is label-dd-opt (NOT comp-dd-opt) so the comparative
      dropdown's JS never touches these checkboxes. -->
 {% if show_labels|default(true) %}
-<div class="period-fields" style="display:block;margin-top:10px;border-top:1px solid #e2e8f0;padding-top:10px;">
-  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Project Labels</label>
+<div class="period-fields" style="display:block;margin-top:10px;border-top:1px solid var(--v2-line);padding-top:10px;">
+  <label style="display:block;font-size:11.5px;font-weight:500;color:var(--v2-muted);margin-bottom:5px;">Project Labels</label>
   <input type="hidden" name="label_ids" id="labelIdsInput" value="{{ label_ids_str|default('') }}">
   <div class="comp-dd-wrap" style="max-width:360px;">
     <div class="comp-dd-trigger" id="labelDDTrigger" role="button" tabindex="0" aria-expanded="false">
@@ -97,23 +110,24 @@
       <label class="comp-dd-opt label-dd-opt">
         <input type="checkbox" value="{{ l.id }}"
                {% for lid in label_ids|default([]) %}{% if l.id == lid|int %}checked{% endif %}{% endfor %}>
-        <span class="name">{{ l.name }}{% if not l.is_active %} <span style="color:#94a3b8">(inactive)</span>{% endif %}</span>
+        <span class="name">{{ l.name }}{% if not l.is_active %} <span style="color:var(--v2-faint)">(inactive)</span>{% endif %}</span>
       </label>
       {% else %}
-      <p style="padding:10px 12px;margin:0;font-size:12px;color:#94a3b8">No labels yet — create them under <a href="{{ url_for('settings.index', tab='labels') }}">Settings &rsaquo; Project Labels</a>.</p>
+      <p style="padding:10px 12px;margin:0;font-size:12px;color:var(--v2-muted)">No labels yet — create them under <a href="{{ url_for('settings.index', tab='labels') }}">Settings &rsaquo; Project Labels</a>.</p>
       {% endfor %}
-      <div style="padding:6px 8px;border-top:1px solid #e2e8f0">
-        <button type="button" id="labelDdOkBtn" style="padding:4px 14px;font-size:12px;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:#1d4ed8;color:#fff;width:100%">OK</button>
+      <div style="padding:6px 8px;border-top:1px solid var(--v2-line)">
+        <button type="button" id="labelDdOkBtn" style="padding:5px 14px;font-size:12px;font-weight:500;border:none;border-radius:6px;cursor:pointer;background:var(--v2-ink);color:var(--v2-ground);width:100%">OK</button>
       </div>
     </div>
   </div>
-  <p style="margin:6px 0 0;font-size:11px;color:#94a3b8">Reports show only postings tagged with a selected label; bank/cash, AR/AP and tax lines are never tagged, so they drop out of a label-filtered report.</p>
+  <p style="margin:6px 0 0;font-size:11px;color:var(--v2-muted)">Reports show only postings tagged with a selected label; bank/cash, AR/AP and tax lines are never tagged, so they drop out of a label-filtered report.</p>
 </div>
 {% endif %}
 
+  {% if comp_mode is defined %}
   <div class="period-fields {{ 'active' if filter_mode|default('period') == 'comparative' else '' }}" id="comparativeFields">
-    <div style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:10px;">
-      <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.3px;">Comparative Periods</label>
+    <div style="margin-top:8px;border-top:1px solid var(--v2-line);padding-top:10px;">
+      <label style="display:block;font-size:11.5px;font-weight:500;color:var(--v2-muted);margin-bottom:5px;">Comparative Periods</label>
       <div class="comp-dd-wrap">
         <div class="comp-dd-trigger" id="compDDTrigger">
           <span class="label" id="compDDLabel">Select periods</span>
@@ -127,13 +141,14 @@
             <span class="dates">{{ p.start_date.strftime('%d/%m/%y') }} - {{ p.end_date.strftime('%d/%m/%y') }}</span>
           </label>
           {% endfor %}
-          <div style="padding:6px 8px;border-top:1px solid #e2e8f0">
-            <button type="button" id="compDdOkBtn" style="padding:4px 14px;font-size:12px;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:#1d4ed8;color:#fff;width:100%">OK</button>
+          <div style="padding:6px 8px;border-top:1px solid var(--v2-line)">
+            <button type="button" id="compDdOkBtn" style="padding:5px 14px;font-size:12px;font-weight:500;border:none;border-radius:6px;cursor:pointer;background:var(--v2-ink);color:var(--v2-ground);width:100%">OK</button>
           </div>
         </div>
       </div>
     </div>
   </div>
+  {% endif %}
 </div>
 
 <script>
@@ -154,6 +169,8 @@
   var ddPanel = container.querySelector('#compDDPanel');
   var ddLabel = container.querySelector('#compDDLabel');
   var ddOptions = container.querySelectorAll('.comp-dd-opt');
+  // Pages that cannot act on a comparative filter never render its panel.
+  var HAS_COMP = !!compFields;
 
   function activeMode() { return modeInput.value; }
 
@@ -197,6 +214,7 @@
   }
 
   function initCompMode() {
+    if (!HAS_COMP) return;
     periodFields.classList.add('active');
     customFields.classList.remove('active');
     compFields.classList.add('active');
@@ -224,7 +242,7 @@
 
       periodFields.classList.remove('active');
       customFields.classList.remove('active');
-      compFields.classList.remove('active');
+      if (HAS_COMP) compFields.classList.remove('active');
       periodSelect.disabled = true;
       var inputs = customFields.querySelectorAll('input');
       inputs.forEach(function(inp) { inp.disabled = true; });
@@ -250,6 +268,7 @@
     }
   });
 
+  if (HAS_COMP) {
   // Dropdown trigger click
   ddTrigger.addEventListener('click', function() {
     if (activeMode() !== 'comparative') return;
@@ -290,9 +309,10 @@
       ddTrigger.classList.remove('open');
     }
   });
+  }
 
   // Init
-  if (activeMode() === 'comparative') {
+  if (HAS_COMP && activeMode() === 'comparative') {
     initCompMode();
   } else if (activeMode() === 'custom') {
     var inputs = customFields.querySelectorAll('input');
@@ -311,7 +331,7 @@
   {% endfor %}
 
   // On page load in comparative mode, restore selections
-  if (activeMode() === 'comparative') {
+  if (HAS_COMP && activeMode() === 'comparative') {
     filterCompOptions();
     if (compPeriodIdsInput.value) {
       var savedIds = compPeriodIdsInput.value.split(',');

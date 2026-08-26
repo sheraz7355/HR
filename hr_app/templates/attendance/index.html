@@ -81,11 +81,11 @@ async function doAction(url, btn, statusEl) {
     try {
         const r = await fetch(url, { method: 'POST' });
         const d = await r.json();
-        if (d.error) { statusEl.textContent = d.error; statusEl.style.color = '#c62828'; return; }
+        if (d.error) { statusEl.textContent = d.error; statusEl.style.color = 'var(--danger)'; return; }
         statusEl.textContent = d.message;
-        statusEl.style.color = '#2e7d32';
+        statusEl.style.color = 'var(--success)';
         setTimeout(() => location.reload(), 1500);
-    } catch(e) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = '#c62828'; }
+    } catch(e) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = 'var(--danger)'; }
     btn.disabled = false;
 }
 

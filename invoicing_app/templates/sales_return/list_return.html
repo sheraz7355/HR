@@ -3,7 +3,7 @@
 {% block page_title %}Sales Returns (Credit Notes){% endblock %}
 {% block content %}
 <div class="page-header">
-  <a href="{{ url_for('inv_sales_return.return_form') }}" class="btn btn-primary" style="background:#dc2626;">+ New Return</a>
+  <a href="{{ url_for('inv_sales_return.return_form') }}" class="btn btn-primary" style="background:var(--danger);">+ New Return</a>
 </div>
 <div class="card">
   <div class="table-responsive">
@@ -53,8 +53,8 @@
   </div>
 </div>
 <style>
-.badge-new { background:#f1f5f9; color:#475569; }
-.badge-unapproved { background:#fef3c7; color:#92400e; }
-.badge-approved { background:#dcfce7; color:#16a34a; }
+.badge-new { background:var(--bg-top); color:var(--accent); }
+.badge-unapproved { background:var(--danger-light); color:var(--danger); }
+.badge-approved { background:var(--bg-top); color:var(--success); }
 </style>
 {% endblock %}

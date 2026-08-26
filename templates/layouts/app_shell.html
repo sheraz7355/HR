@@ -16,13 +16,34 @@
 {% set module_key = module_key|default('hr') %}
 {% set meta = nav_meta(module_key) %}
 {% set nav_blocks = nav_for(module_key) %}
+{# UI v2 rollout gate. static/css/ui.css is scoped to [data-ui="v2"], so a
+   module opts in by joining this set and rolls back by leaving it — no other
+   module's chrome moves. Every module the shell serves is now on it; the set
+   stays because it is still the rollback lever, and because a module added
+   later starts on v1 until someone converts its palette (UI_V2_GUIDE.md §9).
+   With the last module across, ui.css now honours prefers-color-scheme. #}
+{% import "partials/icons.html" as ico with context %}
+{% set UI_V2_MODULES = ['invoicing', 'inventory', 'hr', 'executive',
+                        'fbr', 'fixed_assets', 'settings',
+                        'finance', 'accounting'] %}
+{% set ui_v2 = module_key in UI_V2_MODULES %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if ui_v2 %} data-ui="v2"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ meta.label }}{% endblock %}</title>
+  {% if ui_v2 %}<script>(function(){try{var t=localStorage.getItem("ax-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {# Inter, loaded rather than merely named. The app has always listed Inter
+     first in its font stack but never fetched it, so on Windows every screen
+     silently rendered in Segoe UI. display=swap keeps text visible if the
+     font is slow or the host is offline — this is the one external request
+     the shell makes, so self-host the woff2 if that is not acceptable. #}
+  {% if ui_v2 %}<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">{% endif %}
   <style>
     /* Shell-only additions; module accents come from `meta`. */
     .sidebar-footer { margin-top: auto; padding: 10px 12px 14px;
@@ -33,25 +54,31 @@
     .page-actions:empty { display: none; }
     /* Company switcher (multi-company): compact pill + dropdown in the topbar. */
     .company-switch { position: relative; }
-    .company-switch-btn { display: flex; align-items: center; gap: 6px; background: #fff;
+    /* Every colour here is a bridge name — one defined by app.css for v1 *and*
+       re-pointed at a v2 token by ui.css — because this shell serves both.
+       A --v2-* name would be undefined on a v1 module and take the whole
+       declaration down with it (UI_V2_GUIDE.md §3). The literals these
+       replaced were the §7 trap: a #fff pill carrying var(--ink) text went
+       near-white-on-white the moment dark mode landed. */
+    .company-switch-btn { display: flex; align-items: center; gap: 6px; background: var(--surface);
                           border: 1px solid var(--line); color: var(--ink); border-radius: 6px;
                           padding: 5px 10px; font: inherit; font-size: 12px; font-weight: 600;
                           cursor: pointer; max-width: 190px; }
-    .company-switch-btn:hover { background: var(--paper); }
-    .company-switch-dot { width: 16px; height: 16px; border-radius: 4px; background: #1d4ed8;
-                          color: #fff; font-size: 9px; font-weight: 700; display: inline-flex;
+    .company-switch-btn:hover { background: var(--wash); }
+    .company-switch-dot { width: 16px; height: 16px; border-radius: 4px; background: var(--primary);
+                          color: var(--on-fill); font-size: 9px; font-weight: 700; display: inline-flex;
                           align-items: center; justify-content: center; flex: none; }
     .company-switch-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .company-switch-menu { display: none; position: absolute; top: 100%; right: 0; z-index: 90;
-                           min-width: 210px; max-width: 270px; margin-top: 6px; background: #fff;
+                           min-width: 210px; max-width: 270px; margin-top: 6px; background: var(--surface);
                            border: 1px solid var(--line); border-radius: 8px;
                            box-shadow: 0 10px 30px rgba(0,0,0,.16); overflow: hidden; }
     .company-switch-menu.show { display: block; }
     .company-switch-menu a { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
                              font-size: 12.5px; color: var(--ink); text-decoration: none; }
-    .company-switch-menu a:hover { background: #f1f5f9; }
-    .company-switch-menu a.active { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
-    .company-switch-menu .check { margin-left: auto; color: #1d4ed8; font-weight: 700; }
+    .company-switch-menu a:hover { background: var(--wash); }
+    .company-switch-menu a.active { background: var(--ledger-dim); color: var(--link); font-weight: 600; }
+    .company-switch-menu .check { margin-left: auto; color: var(--link); font-weight: 700; }
     @media (max-width: 768px) {
       .company-switch-name { display: none; }
       .company-switch-btn { max-width: none; }
@@ -110,19 +137,19 @@
           {% if block.kind == 'flat' %}
             {% for item in block['items'] %}
             <a href="{{ url_for(item.endpoint) if not item.tab else url_for(item.endpoint, tab=item.tab) }}" class="nav-item {{ 'active' if item.active }}">
-              <span class="nav-icon">{{ item.icon|safe }}</span><span>{{ item.label }}</span>
+              <span class="nav-icon">{% if ui_v2 %}{{ ico.for_endpoint(item.endpoint) }}{% else %}{{ item.icon|safe }}{% endif %}</span><span>{{ item.label }}</span>
             </a>
             {% endfor %}
           {% else %}
           <div class="nav-group {{ 'expanded' if block.expanded }}" data-group="{{ block.slug }}">
             <div class="nav-group-header">
-              <span class="nav-icon">{{ block.icon|safe }}</span><span>{{ block.name }}</span>
+              <span class="nav-icon">{% if ui_v2 %}{{ ico.for_group(block.slug) }}{% else %}{{ block.icon|safe }}{% endif %}</span><span>{{ block.name }}</span>
               <span class="group-chevron">&#9662;</span>
             </div>
             <div class="nav-group-items">
               {% for item in block['items'] %}
               <a href="{{ url_for(item.endpoint) if not item.tab else url_for(item.endpoint, tab=item.tab) }}" class="nav-item {{ 'active' if item.active }}">
-                <span class="nav-icon">{{ item.icon|safe }}</span><span>{{ item.label }}</span>
+                <span class="nav-icon">{% if ui_v2 %}{{ ico.for_endpoint(item.endpoint) }}{% else %}{{ item.icon|safe }}{% endif %}</span><span>{{ item.label }}</span>
               </a>
               {% endfor %}
             </div>
@@ -137,10 +164,10 @@
          than being duplicated into every module's sidebar. #}
       <div class="sidebar-footer">
         <a href="{{ url_for('dashboard.hub') }}" class="nav-item" style="color:rgba(255,255,255,.62);">
-          <span class="nav-icon">&#9632;</span><span>ERP Hub</span>
+          <span class="nav-icon">{% if ui_v2 %}{{ ico.svg("hub") }}{% else %}&#9632;{% endif %}</span><span>ERP Hub</span>
         </a>
         <a href="{{ url_for('auth.logout') }}" class="nav-item" style="color:rgba(255,255,255,.62);">
-          <span class="nav-icon">&#9654;</span><span>Logout</span>
+          <span class="nav-icon">{% if ui_v2 %}{{ ico.svg("logout") }}{% else %}&#9654;{% endif %}</span><span>Logout</span>
         </a>
       </div>
     </aside>
@@ -152,6 +179,13 @@
           {% block page_title %}{% block heading %}{{ meta.label }}{% endblock %}{% endblock %}
         </h2>
         <div class="topbar-right">
+          {% if ui_v2 %}
+          <button type="button" class="theme-toggle" id="theme-toggle"
+                  aria-label="Switch between light and dark theme" title="Light / dark">
+            <span class="t-light">{{ ico.svg("moon") }}</span>
+            <span class="t-dark">{{ ico.svg("sun") }}</span>
+          </button>
+          {% endif %}
           <div class="company-switch" id="company-switch">
             <button type="button" class="company-switch-btn" id="company-switch-btn" aria-haspopup="true" aria-expanded="false" title="Switch company">
               <span class="company-switch-dot">&#9632;</span>
@@ -175,7 +209,7 @@
           <span class="mod-badge" style="font-size:11px;background:{{ meta.badge_bg }};color:{{ meta.badge_fg }};padding:2px 8px;border-radius:4px;font-weight:600;">{{ meta.badge }}</span>
           {% if unread_count is defined %}
           <div class="notif-dropdown" id="notif-dropdown">
-            <button class="notif-btn" id="notif-btn">&#128276;{% if unread_count > 0 %}<span class="notif-badge">{{ unread_count }}</span>{% endif %}</button>
+            <button class="notif-btn" id="notif-btn">{% if ui_v2 %}{{ ico.svg("bell") }}{% else %}&#128276;{% endif %}{% if unread_count > 0 %}<span class="notif-badge">{{ unread_count }}</span>{% endif %}</button>
             <div class="notif-menu hidden" id="notif-menu">
               <div class="notif-menu-header">
                 <strong>Notifications</strong>
@@ -278,5 +312,19 @@
     })();
   </script>
   {% block extra_scripts %}{% endblock %}
+  {% if ui_v2 %}
+  <script>
+  (function(){
+    var b = document.getElementById("theme-toggle");
+    if (!b) return;
+    b.addEventListener("click", function(){
+      var root = document.documentElement;
+      var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("ax-theme", next); } catch (e) {}
+    });
+  })();
+  </script>
+  {% endif %}
 </body>
 </html>

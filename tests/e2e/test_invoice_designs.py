@@ -8,7 +8,7 @@ a design, untick a field, save.
 import os
 
 # Same port the harness starts the server on (tests/e2e/conftest.py).
-BASE_URL = "http://localhost:" + os.environ.get("E2E_PORT", "5050")
+BASE_URL = "http://127.0.0.1:" + os.environ.get("E2E_PORT", "5050")
 NEW_SALES = f"{BASE_URL}/settings/templates/create?type=sales"
 NEW_PURCHASE = f"{BASE_URL}/settings/templates/create?type=purchase"
 

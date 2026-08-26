@@ -1,33 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ui="v2">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ title }} - {{ voucher.voucher_number if voucher.voucher_number else voucher.invoice_number or voucher.return_number }}</title>
+{# Standalone popup (no app_shell), so the UI v2 opt-in is repeated here: the
+   tokens this page's styles reference are declared on [data-ui="v2"] in
+   static/css/ui.css. The ax-theme bootstrap is the same one-liner the shell
+   uses, so Print preview follows dark mode like every other inventory page.
+   Colour literals below survive only as var() fallbacks — see form_inv.html. #}
+<script>(function(){try{var t=localStorage.getItem("ax-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
 <style>
-  body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-  .print-area { max-width: 800px; margin: 0 auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 32px 40px; }
-  .voucher-header { text-align: center; border-bottom: 2px solid #1a1a2e; padding-bottom: 16px; margin-bottom: 24px; }
-  .voucher-header h1 { margin: 0; font-size: 20px; color: #1a1a2e; }
-  .voucher-header .voucher-no { font-size: 16px; color: #6c63ff; font-weight: 600; margin-top: 4px; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px; background: var(--bg,#f5f5f5); }
+  .print-area { max-width: 800px; margin: 0 auto; background: var(--card,#ffffff); border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 32px 40px; }
+  .voucher-header { text-align: center; border-bottom: 2px solid var(--primary,#1a1a2e); padding-bottom: 16px; margin-bottom: 24px; }
+  .voucher-header h1 { margin: 0; font-size: 20px; color: var(--primary,#1a1a2e); }
+  .voucher-header .voucher-no { font-size: 16px; color: var(--accent,#6c63ff); font-weight: 600; margin-top: 4px; }
   .voucher-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; font-size: 14px; }
-  .voucher-meta .label { color: #666; font-weight: 500; }
-  .voucher-meta .value { color: #1a1a2e; }
-  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-  th { background: #f8f9ff; padding: 10px 12px; text-align: left; font-weight: 600; color: #1a1a2e; border-bottom: 2px solid #e8eaff; }
-  td { padding: 10px 12px; border-bottom: 1px solid #eef0f5; }
-  tfoot td { font-weight: 600; background: #f8f9ff; }
+  .voucher-meta .label { color: var(--muted,#666); font-weight: 500; }
+  .voucher-meta .value { color: var(--text,#1a1a2e); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th { background: var(--bg-top,#f8f9ff); padding: 10px 12px; text-align: left; font-weight: 600; color: var(--text,#1a1a2e); border-bottom: 2px solid var(--border,#e8eaff); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border-soft,#eef0f5); }
+  tfoot td { font-weight: 600; background: var(--bg-top,#f8f9ff); }
   .status-badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
-  .status-new,.status-unapproved { background: #fef3c7; color: #d97706; }
-  .status-approved { background: #dcfce7; color: #16a34a; }
-  .status-in_progress { background: #dbeafe; color: #2563eb; }
-  .status-paid { background: #dcfce7; color: #16a34a; }
-  .status-unpaid { background: #fee2e2; color: #dc2626; }
+  .status-new,.status-unapproved { background: var(--warning-light,#fef3c7); color: var(--warning,#d97706); }
+  .status-approved { background: var(--success-light,#dcfce7); color: var(--success,#16a34a); }
+  .status-in_progress { background: var(--accent-light,#dbeafe); color: var(--accent,#2563eb); }
+  .status-paid { background: var(--success-light,#dcfce7); color: var(--success,#16a34a); }
+  .status-unpaid { background: var(--danger-light,#fee2e2); color: var(--danger,#dc2626); }
   .actions { text-align: center; margin-top: 24px; }
-  .btn-print { padding: 10px 32px; background: #6c63ff; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
-  .btn-print:hover { background: #5a52d5; }
-  .btn-close { padding: 10px 32px; background: #fff; color: #6b7280; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 15px; cursor: pointer; margin-left: 8px; text-decoration: none; display: inline-block; }
+  .btn-print { padding: 10px 32px; background: var(--accent,#6c63ff); color: var(--card,#ffffff); border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .btn-print:hover { filter: brightness(.94); }
+  .btn-close { padding: 10px 32px; background: var(--card,#ffffff); color: var(--muted,#6b7280); border: 1px solid var(--border,#d0d5dd); border-radius: 8px; font-size: 15px; cursor: pointer; margin-left: 8px; text-decoration: none; display: inline-block; }
   @media print {
     body { background: #fff; padding: 0; font-size: 11px; }
     .print-area { box-shadow: none; border-radius: 0; padding: 14px 18px; max-width: none; margin: 0; }
@@ -44,8 +51,8 @@
 <body>
 <div class="print-area" id="print-area">
   <div style="text-align:center;margin-bottom:10px;">
-    <div style="font-size:19px;font-weight:800;color:#1a1a2e;line-height:1.1;">{{ company.company_name if company else 'My Company' }}</div>
-    <div style="font-size:10px;color:#555;margin-top:2px;">
+    <div style="font-size:19px;font-weight:800;color:var(--text,#1a1a2e);line-height:1.1;">{{ company.company_name if company else 'My Company' }}</div>
+    <div style="font-size:10px;color:var(--muted,#555);margin-top:2px;">
       {%- if company %}{{ company.address or '' }}{% if company.city %}, {{ company.city }}{% endif %}
       {% if company.phone %} &bull; Tel: {{ company.phone }}{% endif %}{% if company.tax_id %} &bull; NTN: {{ company.tax_id }}{% endif %}{% endif -%}
     </div>
@@ -87,7 +94,7 @@
   </table>
 
   {% if voucher.approved_by %}
-  <div style="margin-top:16px;font-size:12px;color:#666;border-top:1px solid #eee;padding-top:12px;">
+  <div style="margin-top:16px;font-size:12px;color:var(--muted,#666);border-top:1px solid var(--border-soft,#eee);padding-top:12px;">
     Approved by: {{ voucher.approved_by }} on {{ (voucher.approved_at).strftime('%d-%b-%Y %H:%M') if voucher.approved_at else '' }}
   </div>
   {% endif %}

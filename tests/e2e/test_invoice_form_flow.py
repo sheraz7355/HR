@@ -16,7 +16,7 @@ Four behaviours land together in invoicing_app/templates/invoices/form_inv.html:
 
 import os
 
-BASE_URL = "http://localhost:" + os.environ.get("E2E_PORT", "5050")
+BASE_URL = "http://127.0.0.1:" + os.environ.get("E2E_PORT", "5050")
 NEW_INVOICE = f"{BASE_URL}/inventory/invoices/"
 LIST_INVOICES = f"{BASE_URL}/inventory/invoices/list"
 SKU = "CBL-SOL-4MM"  # seeded demo product (app.py inventory seed)
@@ -49,13 +49,25 @@ def _seed_line(page):
 
 
 class TestHeaderOrder:
-    def test_cards_run_party_dates_logistics(self, admin_page):
+    def test_header_runs_customer_then_delivery(self, admin_page):
+        """The three boxed cards became two flat sections: the critical path
+        (party + dates + label) on one labelled field row, then delivery as a
+        fold-out strip. Container chrome went; nothing was removed."""
         _open_new(admin_page)
         titles = admin_page.eval_on_selector_all(
-            ".hdr-strip > .icard .icard-h span:nth-child(2)",
+            ".hdr-strip > .fsec > .fsec-h > span:first-of-type",
             "els => els.map(e => e.textContent.trim())")
-        assert titles == ["Customer Details", "Document Dates",
-                          "Logistics & Delivery"]
+        assert titles == ["Customer details", "Delivery details"]
+
+    def test_customer_row_carries_the_whole_critical_path(self, admin_page):
+        """Field order is entry order — Enter walks the DOM, so the row must
+        read party, document, dates, then the optional label."""
+        _open_new(admin_page)
+        ids = admin_page.eval_on_selector_all(
+            ".frow-5 .ffield :is(input,select):not([type=hidden])",
+            "els => els.filter(e => e.offsetParent !== null).map(e => e.id)")
+        assert ids == ["customerSearch", "invNumber", "invDate",
+                       "dueDate", "invLabelSearch"]
 
     def test_logistics_starts_collapsed_but_visible(self, admin_page):
         _open_new(admin_page)

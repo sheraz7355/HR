@@ -17,7 +17,7 @@
               {% if row.section %}
               <input type="hidden" name="row_ident_{{ loop.index0 }}" value="section:{{ row.section }}">
               {% if row.negate %}<input type="hidden" name="row_negate_{{ loop.index0 }}" value="1">{% endif %}
-              <span class="pill" style="background:#dbeafe;color:#1d4ed8;">Section</span>
+              <span class="pill" style="background:var(--accent-light);color:var(--accent);">Section</span>
               <span style="font-family:monospace;font-size:11px;color:var(--muted);">{{ row.section }}</span>
               {% else %}
               <input type="hidden" name="row_ident_{{ loop.index0 }}" value="subtotal:{{ row.subtotal }}">

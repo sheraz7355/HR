@@ -40,6 +40,12 @@ def dashboard():
     as_of = _parse_date(request.args.get("as_of"))
     sides = er.both_sides(as_of)
     ages = er.aging(as_of)
+    # Profitability is ledger-derived (er.profitability calls the same
+    # _pl_by_section the P&L statement renders from), so the headline figures
+    # here and on the statement can never disagree. It is independent of the
+    # exec account selection, which only scopes the receivable/payable side —
+    # so it renders whether or not the module has been configured.
+    profit = er.profitability(as_of=as_of)
     return render_template(
         "executive/dashboard.html",
         receivable=sides[er.RECEIVABLE],
@@ -47,6 +53,8 @@ def dashboard():
         recv_age=ages[er.RECEIVABLE],
         pay_age=ages[er.PAYABLE],
         liq=er.liquidity(as_of),
+        profit=profit,
+        profit_geo=er.profit_chart(profit),
         configured=bool(er.selections()),
         as_of=request.args.get("as_of", ""),
         can_edit=current_user.can(RESOURCE, "edit"),

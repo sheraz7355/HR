@@ -1,5 +1,16 @@
 # Design System — Professional Enterprise Logic
 
+> **Superseded.** Every module the app shell serves now follows
+> **`UI_V2_GUIDE.md`** — a lighter, near-monochrome system with a single
+> accent, real dark mode, and tokens in `static/css/ui.css`. The gate is
+> `UI_V2_MODULES` in `templates/layouts/app_shell.html`.
+>
+> This document is kept for two reasons, not as the current standard: a module
+> added later starts on v1 until someone converts its palette (`UI_V2_GUIDE.md`
+> §9 is that procedure), and taking a module out of `UI_V2_MODULES` rolls it
+> back to what is described here. If you are styling a page today, you want the
+> other file.
+
 The visual standard for this ERP's forms and pages. Adapted from the reference
 designs in `../templates/Designs/`:
 

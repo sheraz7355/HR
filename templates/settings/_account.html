@@ -18,13 +18,13 @@
       <div class="fgroup">
         <label class="lbl">Role</label>
         <input type="text" class="inp" value="{{ current_user.get_role_name()|title }}" disabled
-               style="background:#f8fafc;color:var(--muted);">
+               style="background:var(--bg-top);color:var(--muted);">
         <div class="help">Roles and module access are set by an administrator.</div>
       </div>
     </div>
 
     <div style="border-top:1px solid var(--line);margin:16px 0 14px;padding-top:14px;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Change Password</div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:10px;">Change Password</div>
       <div class="fgrid">
         <div class="fgroup">
           <label class="lbl">New Password</label>

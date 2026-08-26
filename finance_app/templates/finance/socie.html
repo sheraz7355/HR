@@ -2,8 +2,8 @@
 {% block title %}SOCIE{% endblock %}
 {% block heading %}Statement of Changes in Equity{% endblock %}
 {% block actions %}
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="?filter_mode={{ filter_mode }}&period_id={{ selected_period_id }}&from={{ from_str }}&to={{ to_str }}&comp_mode={{ comp_mode }}&comp_period_ids={{ comp_period_ids_str }}&label_ids={{ label_ids_str|default('') }}&format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 
@@ -24,31 +24,37 @@
   table.socie td:nth-child(2), table.socie th:nth-child(2) { min-width: 150px; white-space: nowrap; }
   table.socie .num { text-align: right; font-variant-numeric: tabular-nums; }
   table.socie thead th.num { text-align: right; }
-  table.socie thead th.total-col, table.socie td.total-col { background: #0f172a; }
-  table.socie tbody td.total-col { background: #f1f5f9; font-weight: 600; }
+  /* The total column is the one the reader scans, so it carries the emphasis:
+     an ink header cell over a sunk body column. */
+  table.socie thead th.total-col { background: var(--v2-ink); color: var(--v2-ground); }
+  table.socie tbody td.total-col { background: var(--v2-sunk); font-weight: 600; }
   table.socie tr.socie-opening td, table.socie tr.socie-closing td {
-      font-weight: 700; background: #f8fafc; border-top: 1px solid #94a3b8;
-      border-bottom: 1px solid #94a3b8; }
+      font-weight: 600; background: var(--v2-hover); border-top: 1px solid var(--v2-line-2);
+      border-bottom: 1px solid var(--v2-line-2); }
   table.socie tr.socie-closing td.total-col, table.socie tr.socie-opening td.total-col {
-      background: #e2e8f0; }
-  table.socie tr.socie-section td { background: #f1f5f9; font-weight: 700; font-size: 11.5px;
-      letter-spacing: .5px; text-transform: uppercase; color: #334155; }
-  table.socie tr.socie-subtotal td { font-weight: 700; border-top: 1px solid #cbd5e1;
-      background: #fbfdff; }
-  table.socie tr.socie-grand td { font-weight: 800; font-size: 14px; background: #1e293b;
-      color: #fff; border-top: 3px double #fff; }
-  table.socie tr.socie-grand td.total-col { background: #0f172a; }
-  table.socie tr.socie-grand .neg, table.socie tr.socie-grand .nil { color: #fca5a5; }
-  table.socie .neg { color: #b91c1c; }
-  table.socie .nil { color: #94a3b8; }
+      background: var(--v2-sunk); }
+  table.socie tr.socie-section td { background: var(--v2-hover); font-weight: 600; font-size: 12px;
+      color: var(--v2-ink); }
+  table.socie tr.socie-subtotal td { font-weight: 600; border-top: 1px solid var(--v2-line-2);
+      background: var(--v2-surface); }
+  table.socie tr.socie-grand td { font-weight: 600; font-size: 14px; background: var(--v2-ink);
+      color: var(--v2-ground); border-top: 1px solid var(--v2-ground); }
+  table.socie tr.socie-grand td.total-col { background: var(--v2-ink); }
+  /* On the inverted grand-total row --v2-neg is a dark red on a dark fill in
+     light mode and a pale salmon on a pale fill in dark mode — unreadable both
+     ways. Both states ride the ground colour there instead; the minus sign and
+     the em dash still carry the meaning. */
+  table.socie tr.socie-grand .neg, table.socie tr.socie-grand .nil { color: var(--v2-ground); opacity: .82; }
+  table.socie .neg { color: var(--v2-neg); }
+  table.socie .nil { color: var(--v2-muted); }
   table.socie .ind-1 { padding-left: 30px; }
   /* The shared row-hover would wash out the emphasised balance rows. */
-  table.socie tbody tr.socie-opening:hover td, table.socie tbody tr.socie-closing:hover td { background: #f1f5f9; }
-  table.socie tbody tr.socie-section:hover td { background: #e8eef5; }
-  table.socie tbody tr.socie-grand:hover td { background: #1e293b; }
-  table.socie tbody tr:hover td.total-col { background: #e2e8f0; }
-  table.socie tbody tr.socie-grand:hover td.total-col { background: #0f172a; }
-  .socie-note { font-size: 12px; color: #64748b; margin-top: 12px; line-height: 1.6; }
+  table.socie tbody tr.socie-opening:hover td, table.socie tbody tr.socie-closing:hover td { background: var(--v2-hover); }
+  table.socie tbody tr.socie-section:hover td { background: var(--v2-hover); }
+  table.socie tbody tr.socie-grand:hover td { background: var(--v2-ink); }
+  table.socie tbody tr:hover td.total-col { background: var(--v2-sunk); }
+  table.socie tbody tr.socie-grand:hover td.total-col { background: var(--v2-ink); }
+  .socie-note { font-size: 12px; color: var(--v2-muted); margin-top: 12px; line-height: 1.6; }
   @media print { table.socie { font-size: 11px; } }
 </style>
 
@@ -114,7 +120,7 @@
     Total equity agrees with the equity section of the balance sheet at the same date.
   </div>
   {% elif period_specs %}
-  <p class="text-slate-500" style="padding:24px 0;">No equity balances or movements in the selected period(s).</p>
+  <p class="t-muted" style="padding:24px 0;">No equity balances or movements in the selected period(s).</p>
   {% endif %}
 </div>
 {% endblock %}

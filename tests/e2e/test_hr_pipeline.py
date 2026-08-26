@@ -5,7 +5,7 @@ import pytest
 import os
 
 # Same port the harness starts the server on (tests/e2e/conftest.py).
-BASE_URL = "http://localhost:" + os.environ.get("E2E_PORT", "5050")
+BASE_URL = "http://127.0.0.1:" + os.environ.get("E2E_PORT", "5050")
 
 
 class TestHrLogin:

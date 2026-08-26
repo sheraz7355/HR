@@ -27,15 +27,15 @@
           {# 44px radius circle, dash offset carrying the settled share. #}
           <svg class="trk-ring-svg" width="104" height="104" viewBox="0 0 104 104" role="img"
                aria-label="{{ '%.0f'|format(pct) }} percent settled">
-            <circle cx="52" cy="52" r="44" fill="none" stroke="#eef2f7" stroke-width="12"></circle>
+            <circle cx="52" cy="52" r="44" fill="none" style="stroke:var(--border-soft)" stroke-width="12"></circle>
             <circle cx="52" cy="52" r="44" fill="none"
-                    stroke="{{ '#047857' if row.pay_state == 'paid' else ('#0d9488' if row.pay_state == 'partial' else '#b91c1c') }}"
+                    style="stroke:{{ 'var(--success)' if row.pay_state == 'paid' else ('var(--accent)' if row.pay_state == 'partial' else 'var(--danger)') }}"
                     stroke-width="12" stroke-linecap="round"
                     stroke-dasharray="{{ '%.2f'|format(2 * 3.14159 * 44) }}"
                     stroke-dashoffset="{{ '%.2f'|format(2 * 3.14159 * 44 * (1 - pct / 100)) }}"
                     transform="rotate(-90 52 52)"></circle>
             <text x="52" y="57" text-anchor="middle" font-size="19" font-weight="800"
-                  fill="#161c22" font-family="Inter,sans-serif">{{ '%.0f'|format(pct) }}%</text>
+                  style="fill:var(--text)" font-family="Inter,sans-serif">{{ '%.0f'|format(pct) }}%</text>
           </svg>
           <div class="trk-ring-copy">
             <div class="lbl">Outstanding</div>
@@ -61,7 +61,7 @@
       <div class="trk-card-title"><span class="trk-dot"></span><span>{{ 'Receipts' if doc_type == 'SI' else 'Payments' }} assigned to this invoice</span></div>
       <span class="trk-card-hint">{{ history|length }} entr{{ 'y' if history|length == 1 else 'ies' }} &middot; oldest first</span>
     </div>
-    <div class="trk-card-body" style="background:#fbfdff;">
+    <div class="trk-card-body" style="background:var(--card);">
       {% if history %}
       <div class="trk-timeline">
         {% for h in history %}

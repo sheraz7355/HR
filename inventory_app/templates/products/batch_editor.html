@@ -5,23 +5,23 @@
 <style>
   .be-wrap{overflow-x:auto}
   .be-tbl{width:100%;border-collapse:collapse;font-size:13px}
-  .be-tbl th{background:#f1f5f9;padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap}
-  .be-tbl td{padding:4px;border-bottom:1px solid #f1f5f9;vertical-align:top}
-  .be-tbl .be-inp{width:100%;padding:6px 8px;border:1px solid #d8d3c4;border-radius:3px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .12s,background .12s;min-width:60px}
-  .be-tbl .be-inp:focus{border-color:#0f5257}
-  .be-tbl .be-inp.err{border-color:#dc2626;background:#fef2f2}
-  .be-tbl .be-inp.ok{border-color:#16a34a;background:#f0fdf4}
-  .be-tbl .be-sel{width:100%;padding:5px 6px;border:1px solid #d8d3c4;border-radius:3px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box;background:#fff;cursor:pointer;min-width:72px}
-  .be-tbl .be-sel:focus{border-color:#0f5257}
-  .be-tbl .be-del{width:32px;height:32px;border-radius:50%;border:1px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s}
-  .be-tbl .be-del:hover{background:#fef2f2}
-  .be-summary{font-size:13px;color:#64748b;margin-bottom:10px}
+  .be-tbl th{background:var(--bg-top);padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);border-bottom:2px solid var(--border);white-space:nowrap}
+  .be-tbl td{padding:4px;border-bottom:1px solid var(--border-soft);vertical-align:top}
+  .be-tbl .be-inp{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:3px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;transition:border-color .12s,background .12s;min-width:60px;font-variant-numeric:tabular-nums}
+  .be-tbl .be-inp:focus{border-color:var(--accent)}
+  .be-tbl .be-inp.err{border-color:var(--danger);background:var(--danger-light)}
+  .be-tbl .be-inp.ok{border-color:var(--success);background:var(--success-light)}
+  .be-tbl .be-sel{width:100%;padding:5px 6px;border:1px solid var(--border);border-radius:3px;font-size:12px;font-family:inherit;outline:none;box-sizing:border-box;background:var(--card);cursor:pointer;min-width:72px}
+  .be-tbl .be-sel:focus{border-color:var(--accent)}
+  .be-tbl .be-del{width:32px;height:32px;border-radius:50%;border:1px solid var(--danger-light);background:var(--card);color:var(--danger);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all .12s}
+  .be-tbl .be-del:hover{background:var(--danger-light)}
+  .be-summary{font-size:13px;color:var(--muted);margin-bottom:10px}
   .be-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
-  .be-add{background:#fff;border:1px dashed #0f5257;color:#0f5257;padding:6px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;transition:all .12s}
-  .be-add:hover{background:#f0fdfa}
+  .be-add{background:var(--card);border:1px dashed var(--accent);color:var(--accent);padding:6px 14px;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;transition:all .12s}
+  .be-add:hover{background:var(--accent-light)}
   .be-msg{font-size:10.5px;margin-top:2px;line-height:1.3}
-  .be-msg.err{color:#dc2626}
-  .be-msg.ok{color:#16a34a}
+  .be-msg.err{color:var(--danger)}
+  .be-msg.ok{color:var(--success)}
 </style>
 {% endblock %}
 {% block content %}
@@ -53,7 +53,7 @@
           <tbody id="beBody">
             {% for r in rows %}
             <tr>
-              <td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">{{ loop.index }}</td>
+              <td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">{{ loop.index }}</td>
               <td><input type="text" class="be-inp be-sku" value="{{ r.sku }}" style="text-transform:uppercase"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-name" value="{{ r.name }}"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-desc" value="{{ r.description }}"></td>
@@ -68,7 +68,7 @@
             </tr>
             {% else %}
             <tr>
-              <td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">1</td>
+              <td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">1</td>
               <td><input type="text" class="be-inp be-sku" placeholder="SKU" style="text-transform:uppercase"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-name" placeholder="Product name"><div class="be-msg"></div></td>
               <td><input type="text" class="be-inp be-desc" placeholder="Optional"></td>
@@ -88,7 +88,7 @@
 
       <div class="be-actions">
         <button type="button" class="be-add" onclick="addRow()">+ Add Row</button>
-        <button type="button" class="be-add" onclick="openUnitModal()" style="border-color:#7c3aed;color:#7c3aed;">+ New Unit</button>
+        <button type="button" class="be-add" onclick="openUnitModal()" style="border-color:var(--accent);color:var(--accent);">+ New Unit</button>
         <button type="submit" class="btn btn-primary" onclick="return collectData()">Save All</button>
         <a href="{{ url_for('inv_products.list_products') }}" class="btn btn-outline">Cancel</a>
       </div>
@@ -97,21 +97,21 @@
 </div>
 
 <div id="unitModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:8px;padding:24px;width:440px;max-width:94vw;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+  <div style="background:var(--card);border-radius:8px;padding:24px;width:440px;max-width:94vw;box-shadow:var(--shadow-lg);">
     <h3 style="margin:0 0 16px;font-size:17px;">New Unit</h3>
     <div class="form-group">
       <label>Name *</label>
-      <input type="text" id="unitName" class="form-control focus-ring" style="border:1px solid #d8d3c4;">
+      <input type="text" id="unitName" class="form-control focus-ring" style="border:1px solid var(--border);">
       <div id="unitNameMsg" style="font-size:11px;margin-top:2px;"></div>
     </div>
     <div class="form-group">
       <label>Abbreviation *</label>
-      <input type="text" id="unitAbbr" class="form-control focus-ring" maxlength="20" style="border:1px solid #d8d3c4;">
+      <input type="text" id="unitAbbr" class="form-control focus-ring" maxlength="20" style="border:1px solid var(--border);">
       <div id="unitAbbrMsg" style="font-size:11px;margin-top:2px;"></div>
     </div>
     <div class="form-group">
       <label>Explanation</label>
-      <textarea id="unitExpl" class="form-control focus-ring" rows="2" style="border:1px solid #d8d3c4;"></textarea>
+      <textarea id="unitExpl" class="form-control focus-ring" rows="2" style="border:1px solid var(--border);"></textarea>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
       <button type="button" class="btn btn-outline" onclick="closeUnitModal()">Cancel</button>
@@ -174,7 +174,7 @@ function addRow() {
   var sel = document.querySelector('.be-unit');
   if (sel) { for (var i = 0; i < sel.options.length; i++) { unitOpts += '<option value="' + sel.options[i].value + '">' + sel.options[i].text + '</option>'; } }
   tr.innerHTML =
-    '<td style="text-align:center;color:#94a3b8;font-size:11px;" class="be-idx">' + (tbody.children.length + 1) + '</td>' +
+    '<td style="text-align:center;color:var(--light);font-size:11px;" class="be-idx">' + (tbody.children.length + 1) + '</td>' +
     '<td><input type="text" class="be-inp be-sku" placeholder="SKU" style="text-transform:uppercase"><div class="be-msg"></div></td>' +
     '<td><input type="text" class="be-inp be-name" placeholder="Product name"><div class="be-msg"></div></td>' +
     '<td><input type="text" class="be-inp be-desc" placeholder="Optional"></td>' +
@@ -300,22 +300,22 @@ function closeUnitModal() {
 function clearUnitMsgs() {
   var els = document.querySelectorAll('#unitNameMsg, #unitAbbrMsg');
   for (var i = 0; i < els.length; i++) { els[i].textContent = ''; els[i].className = ''; }
-  document.getElementById('unitName').style.borderColor = '#d8d3c4';
-  document.getElementById('unitAbbr').style.borderColor = '#d8d3c4';
+  document.getElementById('unitName').style.borderColor = 'var(--border)';
+  document.getElementById('unitAbbr').style.borderColor = 'var(--border)';
 }
 
 function checkUnitField(field, value, msgEl, inp) {
-  if (!value) { msgEl.textContent = ''; msgEl.className = ''; inp.style.borderColor = '#d8d3c4'; return; }
+  if (!value) { msgEl.textContent = ''; msgEl.className = ''; inp.style.borderColor = 'var(--border)'; return; }
   var url = UNIT_CHECK_URL + '?field=' + encodeURIComponent(field) + '&value=' + encodeURIComponent(value);
   fetch(url, { credentials: 'same-origin' })
     .then(function(r){ return r.json(); })
     .then(function(d){
       if (d.exists) {
-        inp.style.borderColor = '#dc2626';
+        inp.style.borderColor = 'var(--danger)';
         msgEl.className = 'dup-check err';
         msgEl.textContent = 'Already taken';
       } else {
-        inp.style.borderColor = '#16a34a';
+        inp.style.borderColor = 'var(--success)';
         msgEl.className = 'dup-check ok';
         msgEl.textContent = 'Available';
       }
@@ -328,7 +328,7 @@ function debounceUnit(field, msgId, inpId) {
   var inp = document.getElementById(inpId);
   var msgEl = document.getElementById(msgId);
   var val = inp.value.trim();
-  inp.style.borderColor = '#d8d3c4';
+  inp.style.borderColor = 'var(--border)';
   msgEl.textContent = 'Checking...';
   msgEl.className = '';
   if (!val) { msgEl.textContent = ''; return; }

@@ -6,35 +6,35 @@
   <!-- Stats -->
   <div class="stats-grid">
     <div class="stat-card">
-      <div class="stat-icon" style="background: #ede9fe; color: #7c3aed;">P</div>
+      <div class="stat-icon" style="background:var(--accent-light);color:var(--accent);">P</div>
       <div class="stat-body">
         <div class="stat-value">{{ total_products }}</div>
         <div class="stat-label">Products</div>
       </div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: #dbeafe; color: #2563eb;">C</div>
+      <div class="stat-icon" style="background:var(--accent-light);color:var(--accent);">C</div>
       <div class="stat-body">
         <div class="stat-value">{{ total_categories }}</div>
         <div class="stat-label">Categories</div>
       </div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: #fef3c7; color: #d97706;">$</div>
+      <div class="stat-icon" style="background:var(--warning-light);color:var(--warning);">$</div>
       <div class="stat-body">
         <div class="stat-value">{{ total_stock_value|amount_format(0) }}</div>
         <div class="stat-label">Stock Value</div>
       </div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: #fce7f3; color: #db2777;">!</div>
+      <div class="stat-icon" style="background:var(--danger-light);color:var(--danger);">!</div>
       <div class="stat-body">
         <div class="stat-value {% if low_stock > 0 %}text-danger{% endif %}">{{ low_stock }}</div>
         <div class="stat-label">Low Stock</div>
       </div>
     </div>
     <div class="stat-card">
-      <div class="stat-icon" style="background: #fef3c7; color: #d97706;">V</div>
+      <div class="stat-icon" style="background:var(--warning-light);color:var(--warning);">V</div>
       <div class="stat-body">
         <div class="stat-value">{{ pending_vouchers }}</div>
         <div class="stat-label">Pending Vouchers</div>
@@ -98,28 +98,28 @@
   <!-- Voucher Stats -->
   <div class="row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:20px;">
     <a href="{{ url_for('inv_vouchers.consumption_list') }}" class="stat-card" style="text-decoration:none;cursor:pointer;">
-      <div class="stat-icon" style="background:#ede9fe;color:#7c3aed;">C</div>
+      <div class="stat-icon" style="background:var(--accent-light);color:var(--accent);">C</div>
       <div class="stat-body">
         <div class="stat-value">{{ consumption_count }}</div>
         <div class="stat-label">Consumptions</div>
       </div>
     </a>
     <a href="{{ url_for('inv_vouchers.scrap_list') }}" class="stat-card" style="text-decoration:none;cursor:pointer;">
-      <div class="stat-icon" style="background:#fef3c7;color:#d97706;">S</div>
+      <div class="stat-icon" style="background:var(--warning-light);color:var(--warning);">S</div>
       <div class="stat-body">
         <div class="stat-value">{{ scrap_count }}</div>
         <div class="stat-label">Scraps</div>
       </div>
     </a>
     <a href="{{ url_for('inv_vouchers.adjustment_list') }}" class="stat-card" style="text-decoration:none;cursor:pointer;">
-      <div class="stat-icon" style="background:#dbeafe;color:#2563eb;">A</div>
+      <div class="stat-icon" style="background:var(--accent-light);color:var(--accent);">A</div>
       <div class="stat-body">
         <div class="stat-value">{{ adjustment_count }}</div>
         <div class="stat-label">Adjustments</div>
       </div>
     </a>
     <a href="{{ url_for('inv_vouchers.stock_take_list') }}" class="stat-card" style="text-decoration:none;cursor:pointer;">
-      <div class="stat-icon" style="background:#fce7f3;color:#db2777;">T</div>
+      <div class="stat-icon" style="background:var(--danger-light);color:var(--danger);">T</div>
       <div class="stat-body">
         <div class="stat-value">{{ stock_take_count }}</div>
         <div class="stat-label">Stock Takes</div>
@@ -131,9 +131,9 @@
 <style>
 .alert-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 16px 0; }
 .alert-card { padding: 12px 18px; border-radius: 8px; font-size: 14px; font-weight: 500; }
-.alert-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-.alert-info { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-.alert-danger { background: #fce4ec; color: #c62828; border: 1px solid #f8bbd0; }
-.text-danger { color: #dc2626 !important; }
+.alert-warning { background: var(--warning-light); color: var(--warning); border: 1px solid var(--warning); }
+.alert-info { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); }
+.alert-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger); }
+.text-danger { color: var(--danger) !important; }
 </style>
 {% endblock %}

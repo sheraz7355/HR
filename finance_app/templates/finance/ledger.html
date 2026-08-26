@@ -2,41 +2,45 @@
 {% block title %}General Ledger{% endblock %}
 {% block heading %}General Ledger{% endblock %}
 {% block actions %}
-<a href="{{ request.full_path|safe }}&amp;format=excel" class="btn btn-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="{{ request.full_path|safe }}&amp;format=pdf" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+<a href="{{ request.full_path|safe }}&amp;format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="{{ request.full_path|safe }}&amp;format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}
 <style>
-.acc-opt{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;transition:all .12s;background:#fff;margin:0}
-.acc-opt:hover{border-color:#94a3b8}
-.acc-opt.active{border-color:#1d4ed8;background:#eff6ff}
-.acc-opt input[type=radio]{accent-color:#1d4ed8;margin:0}
+.acc-opt{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--v2-line-2);border-radius:8px;cursor:pointer;transition:background .12s,border-color .12s;background:var(--v2-surface);color:var(--v2-ink);margin:0}
+.acc-opt:hover{border-color:var(--v2-faint)}
+/* The selected mode is the one place in this picker where colour is a signal,
+   so it gets the accent; everything else is neutral. */
+.acc-opt.active{border-color:var(--v2-accent);background:var(--v2-accent-soft);color:var(--v2-accent-ink)}
+.acc-opt input[type=radio]{accent-color:var(--v2-accent);margin:0}
 .prog-section{margin-bottom:14px}
-.prog-label{font-size:13px;font-weight:600;color:#475569;margin-bottom:8px;display:block}
-.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-.modal-content{background:#fff;border-radius:14px;max-width:520px;width:92%;max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.2)}
-.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #e2e8f0}
-.modal-header h3{font-size:16px;font-weight:700;margin:0}
-.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;padding:0 4px}
-.modal-close:hover{color:#475569}
+.prog-label{font-size:13px;font-weight:500;color:var(--v2-muted);margin-bottom:8px;display:block}
+/* The scrim is deliberately a fixed black at 50% rather than a token: it sits
+   over the page in both themes and has to darken a white one. */
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.modal-content{background:var(--v2-surface);color:var(--v2-ink);border:1px solid var(--v2-line);border-radius:12px;max-width:520px;width:92%;max-height:82vh;display:flex;flex-direction:column;box-shadow:var(--v2-pop)}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--v2-line)}
+.modal-header h3{font-size:15px;font-weight:600;margin:0}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--v2-muted);padding:0 4px}
+.modal-close:hover{color:var(--v2-ink)}
 .modal-body{padding:16px 20px;overflow-y:auto;flex:1}
-.modal-footer{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid #e2e8f0}
-.chk-item{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:14px}
-.chk-item:hover{color:#1d4ed8}
-.chk-item input{accent-color:#1d4ed8}
+.modal-footer{display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--v2-line)}
+.chk-item{display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px;color:var(--v2-body)}
+.chk-item:hover{color:var(--v2-ink)}
+.chk-item input{accent-color:var(--v2-accent)}
 .chk-item.hidden{display:none}
 summary{list-style:none}
 summary::-webkit-details-marker{display:none}
 summary{cursor:pointer}
-.ledger-section{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:16px;overflow:hidden}
-.ledger-section summary{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#f8fafc;font-size:14px}
-.ledger-section summary:hover{background:#f1f5f9}
-.ledger-section[open] summary{border-bottom:1px solid #e2e8f0;background:#eff6ff}
-.sel-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:13px;font-weight:500;border:1px solid #cbd5e1;border-radius:8px;cursor:pointer;background:#fff;color:#475569;transition:all .12s}
-.sel-btn:hover{border-color:#1d4ed8;color:#1d4ed8}
+.ledger-section{border:1px solid var(--v2-line);border-radius:10px;margin-bottom:16px;overflow:hidden;background:var(--v2-surface)}
+.ledger-section summary{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--v2-surface);color:var(--v2-ink);font-size:13.5px;font-weight:500}
+.ledger-section summary:hover{background:var(--v2-hover)}
+.ledger-section[open] summary{border-bottom:1px solid var(--v2-line);background:var(--v2-hover)}
+.sel-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;font-size:13px;font-weight:500;border:1px solid var(--v2-line-2);border-radius:8px;cursor:pointer;background:var(--v2-surface);color:var(--v2-ink);transition:background .12s,border-color .12s}
+.sel-btn:hover{border-color:var(--v2-faint);background:var(--v2-hover)}
 .sel-btn:disabled{opacity:.4;cursor:not-allowed}
-.head-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px}
+.head-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:200px;overflow-y:auto;border:1px solid var(--v2-line);border-radius:8px;padding:10px 14px}
 </style>
 
 <form method="get" class="card mb-6 no-print" id="ledgerForm">
@@ -47,7 +51,7 @@ summary{cursor:pointer}
     {% endwith %}
   </div>
 
-  <hr class="my-4 border-slate-200">
+  <hr class="my-4 rule">
 
   <!-- LEVEL 1 -->
   <div class="prog-section">
@@ -80,10 +84,10 @@ summary{cursor:pointer}
     <!-- Custom -->
     <div id="customSection" style="{{ 'display:none' if selection_mode != 'custom' else '' }}">
       <button type="button" id="openAccountModal" class="sel-btn">
-        <i class="fas fa-list"></i> Select Accounts <span id="selectedCountBadge" class="ml-1" style="background:#1d4ed8;color:#fff;border-radius:999px;padding:1px 7px;font-size:11px;">0</span>
+        <i class="fas fa-list"></i> Select Accounts <span id="selectedCountBadge" class="ml-1" style="background:var(--v2-ink);color:var(--v2-ground);border-radius:999px;padding:1px 7px;font-size:11px;">0</span>
       </button>
       <input type="hidden" name="account_ids" id="accountIdsInput" value="{{ selected_account_ids }}">
-      <span style="font-size:12px;color:#94a3b8;margin-left:10px;">Pick individual leaf accounts</span>
+      <span style="font-size:12px;color:var(--v2-faint);margin-left:10px;">Pick individual leaf accounts</span>
     </div>
 
     <!-- Head -->
@@ -99,11 +103,11 @@ summary{cursor:pointer}
         {% endfor %}
       </div>
       <input type="hidden" name="head_ids" id="headIdsInput" value="{{ selected_head_ids }}">
-      <span id="headCount" style="font-size:12px;color:#94a3b8;margin-top:6px;display:block;">
+      <span id="headCount" style="font-size:12px;color:var(--v2-faint);margin-top:6px;display:block;">
         {{ selected_head_ids.split(',')|select('ne','')|list|length if selected_head_ids else 0 }} head(s) selected
       </span>
       {% else %}
-      <p style="font-size:13px;color:#94a3b8;font-style:italic;">No head (grouping) accounts exist yet. Add a parent-child hierarchy in Chart of Accounts first.</p>
+      <p style="font-size:13px;color:var(--v2-faint);font-style:italic;">No head (grouping) accounts exist yet. Add a parent-child hierarchy in Chart of Accounts first.</p>
       {% endif %}
     </div>
   </div>
@@ -117,8 +121,8 @@ summary{cursor:pointer}
   {% for sec in account_sections %}
   <details class="ledger-section" {{ 'open' if loop.first else '' }}>
     <summary>
-      <span><strong>{{ sec.account.code }}</strong> — {{ sec.account.name }} <span class="text-slate-400 text-xs">({{ sec.account.type }})</span></span>
-      <span style="font-size:13px;font-weight:600;color:{{ '#16a34a' if sec.subtotal >= 0 else '#dc2626' }};">
+      <span><strong>{{ sec.account.code }}</strong> — {{ sec.account.name }} <span class="t-muted text-xs">({{ sec.account.type }})</span></span>
+      <span style="font-size:13px;font-weight:600;color:var({{ '--v2-pos' if sec.subtotal >= 0 else '--v2-neg' }});">
         {{ sec.closing|amount_format }} {{ sec.closing_side }}
       </span>
     </summary>
@@ -151,7 +155,7 @@ summary{cursor:pointer}
             <td class="num font-semibold">{{ r.balance|amount_format }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="6" class="text-slate-500 text-center" style="padding:14px;">No transactions in this period.</td></tr>
+          <tr><td colspan="6" class="t-muted text-center" style="padding:14px;">No transactions in this period.</td></tr>
           {% endfor %}
         </tbody>
         <tfoot>
@@ -161,7 +165,7 @@ summary{cursor:pointer}
             <td class="num">{{ sec.total_credit|amount_format }}</td>
             <td></td>
           </tr>
-          <tr class="closing-row" style="font-weight:700;background:#f1f5f9;">
+          <tr class="closing-row" style="font-weight:600;background:var(--v2-hover);">
             <td colspan="5" style="text-align:right;">Closing Balance</td>
             <td class="num">{{ sec.closing|amount_format }} {{ sec.closing_side }}</td>
           </tr>
@@ -172,7 +176,7 @@ summary{cursor:pointer}
   {% endfor %}
 {% elif mode %}
   <div class="card">
-    <p class="text-slate-500 text-center py-8">
+    <p class="t-muted text-center py-8">
       {% if mode == 'all' %}
         No transactions found for any account in the selected period.
       {% elif selection_mode == 'custom' and selected_account_ids %}
@@ -194,21 +198,21 @@ summary{cursor:pointer}
       <button type="button" class="modal-close" id="closeModal">&times;</button>
     </div>
     <div class="modal-body">
-      <input type="text" id="accountSearch" placeholder="Search by name or code..." style="width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box;">
+      <input type="text" id="accountSearch" placeholder="Search by name or code..." style="width:100%;padding:9px 12px;border:1px solid var(--v2-line-2);border-radius:8px;font-size:14px;margin-bottom:12px;box-sizing:border-box;">
       <div id="accountList">
         {% for a in leaf_accounts %}
         <label class="chk-item account-item" data-code="{{ a.code }}" data-name="{{ a.name }}">
           <input type="checkbox" value="{{ a.id }}" class="acct-cb"
             {{ 'checked' if a.id|string in selected_account_ids.split(',') else '' }}>
-          <span class="font-mono text-xs text-slate-400">{{ a.code }}</span>
+          <span class="font-mono text-xs t-muted">{{ a.code }}</span>
           <span>{{ a.name }}</span>
-          <span class="text-xs text-slate-400 italic">({{ a.type }})</span>
+          <span class="text-xs t-muted italic">({{ a.type }})</span>
         </label>
         {% endfor %}
       </div>
     </div>
     <div class="modal-footer">
-      <span id="modalSelectedCount" style="font-size:13px;color:#64748b;">0 selected</span>
+      <span id="modalSelectedCount" style="font-size:13px;color:var(--v2-muted);">0 selected</span>
       <button type="button" id="doneModal" class="btn btn-primary btn-sm">Done</button>
     </div>
   </div>

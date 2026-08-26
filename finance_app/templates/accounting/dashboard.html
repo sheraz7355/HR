@@ -2,54 +2,89 @@
 {% block title %}Accounting Dashboard{% endblock %}
 {% block page_title %}Accounting Dashboard{% endblock %}
 {% block content %}
-<div class="wrap">
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;">
-    <div class="card" style="padding:20px;text-align:center;">
-      <div style="font-size:32px;font-weight:800;color:var(--ledger);">{{ stats.total }}</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:4px;">Total Vouchers</div>
-    </div>
-    <div class="card" style="padding:20px;text-align:center;">
-      <div style="font-size:32px;font-weight:800;color:var(--amber);">{{ stats.unapproved }}</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:4px;">Unapproved</div>
-    </div>
-    <div class="card" style="padding:20px;text-align:center;">
-      <div style="font-size:32px;font-weight:800;color:var(--green);">{{ stats.approved }}</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:4px;">Approved</div>
-    </div>
+{# This page used to reach for .wrap / .card-h / .tb-w / .tb / .bdg / .bsm.
+   None of those are defined anywhere the accounting module loads — they are
+   the invoicing form templates' private vocabulary, declared inside their own
+   <style> blocks — so the recent-vouchers table rendered unstyled and the
+   status pills rendered as bare text. Everything here now uses the shared
+   names ui.css actually paints. #}
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-label">Total vouchers</div>
+    <div class="stat-value">{{ stats.total }}</div>
   </div>
-
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;">
-    {% for vt in ['CPV','CRV','BPV','BRV','JV'] %}
-    <a href="{{ url_for('accounting.voucher_form') }}?type={{ vt }}" class="card" style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 16px;text-decoration:none;color:var(--text);transition:all .12s;cursor:pointer;" onmouseover="this.style.borderColor='var(--ledger)';" onmouseout="this.style.borderColor='var(--border)';">
-      <div style="font-size:28px;margin-bottom:8px;font-weight:800;color:var(--ledger);">{{ vt }}</div>
-      <div style="font-size:12px;color:var(--muted);">
-        {% if vt == 'CPV' %}Cash Payment{% elif vt == 'CRV' %}Cash Receipt{% elif vt == 'BPV' %}Bank Payment{% elif vt == 'BRV' %}Bank Receipt{% else %}Journal Voucher{% endif %}
-      </div>
-      <div style="font-size:11px;color:var(--light);margin-top:4px;">{{ stats.by_type.get(vt,0) }} entries</div>
-    </a>
-    {% endfor %}
+  <div class="stat-card">
+    <div class="stat-label">Unapproved</div>
+    <div class="stat-value">{{ stats.unapproved }}</div>
   </div>
-
-  <div class="card">
-    <div class="card-h">Recent Vouchers</div>
-    <div class="tb-w">
-      <table class="tb">
-        <thead><tr><th>Voucher #</th><th>Type</th><th>Date</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          {% for v in recent %}
-          <tr>
-            <td><a href="{{ url_for('accounting.voucher_form', id=v.id) }}" style="font-weight:600;color:var(--ledger);text-decoration:none;">{{ v.voucher_number }}</a></td>
-            <td><span class="bdg" style="background:#eef2ff;color:#4338ca;">{{ v.voucher_type }}</span></td>
-            <td>{{ v.voucher_date.strftime('%Y-%m-%d') if v.voucher_date else '' }}</td>
-            <td>{% if v.status == 'unapproved' %}<span class="bdg" style="background:#f1f5f9;color:var(--muted);">Unapproved</span>{% else %}<span class="bdg" style="background:#dcfce7;color:#15803d;">Approved</span>{% endif %}</td>
-            <td><a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="bsm">View</a></td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--light);">No vouchers yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+  <div class="stat-card">
+    <div class="stat-label">Approved</div>
+    <div class="stat-value">{{ stats.approved }}</div>
   </div>
 </div>
+
+<div class="acct-types">
+  {% for vt in ['CPV','CRV','BPV','BRV','JV'] %}
+  <a href="{{ url_for('accounting.voucher_form') }}?type={{ vt }}" class="acct-type">
+    <span class="acct-type-code">{{ vt }}</span>
+    <span class="acct-type-name">
+      {% if vt == 'CPV' %}Cash payment{% elif vt == 'CRV' %}Cash receipt{% elif vt == 'BPV' %}Bank payment{% elif vt == 'BRV' %}Bank receipt{% else %}Journal voucher{% endif %}
+    </span>
+    <span class="acct-type-count">{{ stats.by_type.get(vt,0) }} entries</span>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header">Recent vouchers</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Voucher #</th><th>Type</th><th>Date</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for v in recent %}
+        <tr>
+          <td><a href="{{ url_for('accounting.voucher_form', id=v.id) }}">{{ v.voucher_number }}</a></td>
+          <td><span class="badge badge-default">{{ v.voucher_type }}</span></td>
+          <td>{{ v.voucher_date.strftime('%Y-%m-%d') if v.voucher_date else '' }}</td>
+          <td>
+            {% if v.status == 'unapproved' %}
+              <span class="badge badge-warning">Unapproved</span>
+            {% else %}
+              <span class="badge badge-success">Approved</span>
+            {% endif %}
+          </td>
+          <td><a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="btn btn-outline btn-sm">View</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="acct-empty">No vouchers yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<style>
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+               gap: 12px; margin-bottom: 12px; }
+  /* The five voucher types are a keyboard-first launcher: the code is what an
+     operator actually types, so it is the loud element and the description
+     supports it. Neutral throughout — which type you want is not a status. */
+  .acct-types { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                gap: 10px; margin-bottom: 12px; }
+  .acct-type { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px;
+               background: var(--v2-surface); border: 1px solid var(--v2-line);
+               border-radius: 11px; text-decoration: none; }
+  /* app.css underlines every a:hover; on a card-shaped link that drags a line
+     through all three lines of text. */
+  .acct-type:hover { border-color: var(--v2-faint); background: var(--v2-hover); text-decoration: none; }
+  .acct-type:hover .acct-type-code, .acct-type:hover .acct-type-name { text-decoration: none; }
+  /* ui.css gives .table-wrap overflow:hidden so the border-radius clips the
+     table corners — which means a table wider than the phone is cut off rather
+     than scrollable. Five columns of real voucher data are wider than 375px. */
+  .card .table-wrap { overflow-x: auto; }
+  .acct-type-code { font-size: 18px; font-weight: 600; color: var(--v2-ink); letter-spacing: -.02em; }
+  .acct-type-name { font-size: 12.5px; color: var(--v2-body); }
+  .acct-type-count { font-size: 11.5px; color: var(--v2-muted); font-variant-numeric: tabular-nums; }
+  .acct-empty { text-align: center; padding: 30px; color: var(--v2-muted); }
+</style>
 {% endblock %}

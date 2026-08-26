@@ -5,14 +5,14 @@
 <style>
 /* Slide-over assignment panel — feed-only, so it lives here rather than in the
    shared sheet every tracking page loads. */
-.trk-scrim{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:400;opacity:0;
+.trk-scrim{position:fixed;inset:0;background:rgba(9,11,13,.46);z-index:400;opacity:0;
   pointer-events:none;transition:opacity .2s ease}
 .trk-scrim.show{opacity:1;pointer-events:auto}
 .trk-drawer{position:fixed;top:0;right:0;bottom:0;width:min(660px,100%);background:var(--paper);
   z-index:401;display:flex;flex-direction:column;transform:translateX(100%);
   transition:transform .26s cubic-bezier(.4,0,.2,1);box-shadow:-12px 0 40px rgba(15,23,42,.22)}
 .trk-drawer.show{transform:translateX(0)}
-.trk-drawer-head{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;background:#fff;
+.trk-drawer-head{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;background:var(--card);
   border-bottom:1px solid var(--trk-line)}
 .trk-drawer-head h2{margin:0;font-size:17px;color:var(--ink);letter-spacing:-.01em}
 .trk-drawer-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
@@ -20,11 +20,11 @@
   width:32px;height:32px;font-size:17px;color:var(--muted);cursor:pointer;flex:none;font-family:inherit}
 .trk-drawer-close:hover{border-color:var(--trk-late);color:var(--trk-late)}
 .trk-drawer-body{flex:1;overflow-y:auto;padding:16px 18px}
-.trk-drawer-foot{padding:14px 18px;background:#fff;border-top:1px solid var(--trk-line)}
-.trk-drawer-block{border:1px solid var(--trk-line);border-radius:12px;background:#fff;
+.trk-drawer-foot{padding:14px 18px;background:var(--card);border-top:1px solid var(--trk-line)}
+.trk-drawer-block{border:1px solid var(--trk-line);border-radius:12px;background:var(--card);
   box-shadow:var(--trk-shadow);overflow:hidden;margin-bottom:14px}
 .trk-drawer-block>h3{margin:0;padding:12px 15px;border-bottom:1px solid var(--trk-line);
-  background:linear-gradient(90deg,#f8fafc,#fff);font-size:12.5px;color:var(--ink)}
+  background:var(--surface-low);font-size:12.5px;color:var(--ink)}
 .trk-drawer-block .pad{padding:14px 15px}
 .trk-loading{padding:32px;text-align:center;color:var(--muted);font-size:13px}
 /* The force-close panel asks two short questions, so it does not need the
@@ -216,7 +216,7 @@
             {% if r.state == 'review' %}
             {# The old split is deliberately still here — it is shown so it can
                be re-cut against the new amount, not silently thrown away. #}
-            <div class="trk-meta" style="color:#b91c1c;font-weight:700;">
+            <div class="trk-meta" style="color:var(--danger);font-weight:700;">
               This voucher was edited after it was assigned:
               {{ r.assigned|amount_format(2) }} is assigned but it now carries
               only {{ r.amount|amount_format(2) }}. Re-assign it.

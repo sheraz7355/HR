@@ -5,43 +5,73 @@
    accent (teal) with one colour per direction of money. #}
 <style>
 :root{
-  --trk-accent:#0d9488; --trk-accent-dark:#0f766e; --trk-accent-soft:#ccfbf1;
-  --trk-in:#047857; --trk-in-soft:#ecfdf5;
-  --trk-out:#4338ca; --trk-out-soft:#eef2ff;
-  --trk-late:#b91c1c; --trk-late-soft:#fef2f2;
-  --trk-warn:#b45309; --trk-warn-soft:#fffbeb;
-  --trk-line:#e3e8ef; --trk-shadow:0 8px 20px rgba(15,23,42,.05);
-}
+  /* Palette bridge — see static/css/ui.css. Every name here resolves to a v2
+     token so this page follows the shell's theme instead of holding a private
+     light-only palette. Literals are fallbacks, not values. */
+  --bg:var(--v2-ground,#f7f6f3); --bg-top:var(--v2-hover,#f1efea);
+  --card:var(--v2-surface,#ffffff);
+  --border:var(--v2-line-2,#ddd9d1); --border-soft:var(--v2-line,#e8e5df);
+  --surface-low:var(--v2-hover,#f1efea); --surface-variant:var(--v2-sunk,#ebe8e2);
+  --text:var(--v2-ink,#1a1917); --muted:var(--v2-body,#57544e); --light:var(--v2-faint,#ada79d);
+  --primary:var(--v2-ink,#1a1917); --primary-hover:var(--v2-ink-2,#33312d);
+  --primary-light:var(--v2-sunk,#ebe8e2);
+  --accent:var(--v2-accent,#2563eb); --accent-light:var(--v2-accent-soft,#eff4fe);
+  --danger:var(--v2-neg,#c0392b); --danger-light:var(--v2-neg-bg,#fdecea);
+  --success:var(--v2-pos,#12794f); --success-light:var(--v2-pos-bg,#e7f6ee);
+  --success-dark:var(--v2-pos,#12794f);
+  --warning:var(--v2-warn,#8f6100); --warning-light:var(--v2-warn-bg,#fdf3e0);
+  --warning-dark:var(--v2-warn,#8f6100);
+  --radius:8px; --radius-card:8px;
+  --shadow-sm:none;
+  --shadow:var(--v2-shadow,0 1px 2px rgba(23,24,26,.04));
+  --shadow-lg:var(--v2-pop,0 4px 16px -4px rgba(23,24,26,.12));
+
+  /* The --trk-* half of the bridge. These name what a colour *means* on the
+     tracking pages — direction of money, lateness — and about sixteen rules
+     below still read them. They were a private teal/indigo palette; mapped
+     onto v2 tokens they follow the theme instead, while money-in stays
+     distinguishable from money-out. Do not drop them without also rewriting
+     those rules: an undefined var invalidates the whole declaration, so the
+     cards silently lose their border and shadow and the flow badges lose
+     their colour coding. */
+  --trk-accent:var(--v2-accent,#2563eb);
+  --trk-accent-dark:var(--v2-accent-ink,#1d4ed8);
+  --trk-accent-soft:var(--v2-accent-soft,#eff4fe);
+  --trk-in:var(--v2-pos,#12794f); --trk-in-soft:var(--v2-pos-bg,#e7f6ee);
+  --trk-out:var(--v2-accent,#2563eb); --trk-out-soft:var(--v2-accent-soft,#eff4fe);
+  --trk-late:var(--v2-neg,#c0392b); --trk-late-soft:var(--v2-neg-bg,#fdecea);
+  --trk-warn:var(--v2-warn,#8f6100); --trk-warn-soft:var(--v2-warn-bg,#fdf3e0);
+  --trk-line:var(--v2-line,#e8e5df);
+  --trk-shadow:var(--v2-shadow,0 1px 2px rgba(23,24,26,.04))}
 .trk{max-width:1320px;margin:0 auto}
 .trk *{box-sizing:border-box}
 
 /* ── Cards (detail pages only) ── */
-.trk-card{border:1px solid var(--trk-line);border-radius:14px;background:#fff;
+.trk-card{border:1px solid var(--trk-line);border-radius:14px;background:var(--card);
   box-shadow:var(--trk-shadow);overflow:hidden;margin-bottom:18px}
 .trk-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:13px 17px;border-bottom:1px solid var(--trk-line);
-  background:linear-gradient(90deg,#f8fafc,#fff)}
-.trk-card-title{display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;font-weight:800}
+  background:var(--surface-low)}
+.trk-card-title{display:flex;align-items:center;gap:9px;color:var(--ink);font-size:13px;font-weight:600}
 .trk-dot{width:8px;height:8px;border-radius:50%;background:var(--trk-accent);
-  box-shadow:0 0 0 4px rgba(13,148,136,.13);flex:none}
+  box-shadow:0 0 0 4px var(--accent-light);flex:none}
 .trk-card-hint{color:var(--muted);font-size:11px}
 .trk-card-body{padding:15px 17px}
 .trk-field{min-width:0}
-.trk-lbl{display:block;margin:0 0 6px;color:var(--muted);font-size:10px;font-weight:800;
-  letter-spacing:.09em;text-transform:uppercase}
+.trk-lbl{display:block;margin:0 0 6px;color:var(--muted);font-size:11px;font-weight:600}
 .trk-input,.trk-select{width:100%;min-height:38px;padding:8px 11px;border:1px solid var(--line);
-  border-radius:8px;background:#fff;color:var(--ink);font-family:inherit;font-size:13px;outline:none}
+  border-radius:8px;background:var(--card);color:var(--ink);font-family:inherit;font-size:13px;outline:none}
 .trk-input:focus,.trk-select:focus{border-color:var(--trk-accent);
-  box-shadow:0 0 0 3px rgba(13,148,136,.12)}
+  box-shadow:0 0 0 3px var(--accent-light)}
 .trk-chips{display:flex;flex-wrap:wrap;gap:7px}
 .trk-chip{position:relative;display:inline-flex}
 .trk-chip input{position:absolute;opacity:0;width:0;height:0}
 .trk-chip span{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1px solid var(--line);
-  border-radius:999px;background:#fff;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;
+  border-radius:999px;background:var(--card);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;
   user-select:none;transition:all .15s ease;white-space:nowrap}
 .trk-chip span:hover{border-color:var(--trk-accent);color:var(--trk-accent-dark)}
-.trk-chip input:checked+span{background:var(--trk-accent);border-color:var(--trk-accent);color:#fff}
-.trk-chip input:focus-visible+span{box-shadow:0 0 0 3px rgba(13,148,136,.2)}
+.trk-chip input:checked+span{background:var(--trk-accent);border-color:var(--trk-accent);color:var(--card)}
+.trk-chip input:focus-visible+span{box-shadow:0 0 0 3px var(--accent-light)}
 /* Selected but empty: still legibly "on", without the full-strength fill that
    would make an empty bucket the loudest thing in the row. */
 .trk-chip.is-empty input:checked+span{background:var(--trk-accent-soft);
@@ -56,12 +86,12 @@
 .trk-pagehead-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .trk-idline{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;margin:0;flex:1 1 auto;
   color:var(--muted);font-size:13px}
-.trk-idline b{color:var(--ink);font-size:17px;font-weight:800;
+.trk-idline b{color:var(--ink);font-size:17px;font-weight:600;
   font-variant-numeric:tabular-nums}
-.trk-idline strong{color:var(--ink);font-weight:700}
+.trk-idline strong{color:var(--ink);font-weight:600}
 .trk-idline .sep{opacity:.4}
 .trk-back{display:inline-block;margin-bottom:4px;color:var(--muted);font-size:11.5px;
-  font-weight:700;text-decoration:none}
+  font-weight:600;text-decoration:none}
 .trk-back:hover{color:var(--trk-accent-dark)}
 .trk-filterbar{display:flex;flex-direction:column;gap:10px;margin:0 0 12px}
 .trk-filterbar-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -73,21 +103,21 @@
 /* Headline figures as a sentence, not a row of cards. */
 .trk-statline{display:flex;flex-wrap:wrap;align-items:baseline;gap:7px;margin:2px 0 10px;
   color:var(--muted);font-size:12.5px}
-.trk-statline b{color:var(--ink);font-size:15px;font-weight:800;
+.trk-statline b{color:var(--ink);font-size:15px;font-weight:600;
   font-variant-numeric:tabular-nums}
 .trk-statline .sep{opacity:.45}
 .trk-statline .late{color:var(--trk-late);text-decoration:none}
 .trk-statline .late b{color:var(--trk-late)}
 .trk-statline .late:hover{text-decoration:underline}
-.trk-agestrip{display:flex;height:5px;border-radius:999px;overflow:hidden;background:#eef2f7;
+.trk-agestrip{display:flex;height:5px;border-radius:999px;overflow:hidden;background:var(--bg-top);
   margin:0 0 14px}
 .trk-agestrip span{display:block;height:100%}
 /* The register table carries the page on its own, so it needs a border to sit
    in but not a titled card wrapped around it. */
-.trk-table-plain{border:1px solid var(--trk-line);border-radius:11px;background:#fff;
+.trk-table-plain{border:1px solid var(--trk-line);border-radius:11px;background:var(--card);
   box-shadow:var(--trk-shadow);overflow-x:auto}
 /* The count each status chip carries — this is what the tile row used to be. */
-.trk-chip span b{font-weight:800;font-variant-numeric:tabular-nums;opacity:.62}
+.trk-chip span b{font-weight:600;font-variant-numeric:tabular-nums;opacity:.62}
 .trk-chip input:checked+span b{opacity:.85}
 
 /* ── Feed items ── */
@@ -99,23 +129,23 @@
 .trk-item{position:relative;display:grid;
   grid-template-columns:minmax(0,1fr) minmax(160px,auto) auto;
   gap:22px;align-items:center;padding:15px 17px 15px 20px;border:1px solid var(--trk-line);
-  border-radius:13px;background:#fff;box-shadow:var(--trk-shadow);transition:box-shadow .15s ease,
+  border-radius:13px;background:var(--card);box-shadow:var(--trk-shadow);transition:box-shadow .15s ease,
   border-color .15s ease}
-.trk-item:hover{border-color:#cbd5e1;box-shadow:0 10px 26px rgba(15,23,42,.08)}
+.trk-item:hover{border-color:var(--border);box-shadow:0 10px 26px var(--border-soft)}
 .trk-item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
   border-radius:13px 0 0 13px;background:var(--trk-in)}
 .trk-item.is-payment::before{background:var(--trk-out)}
 .trk-item-main{min-width:0}
 .trk-item-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
-.trk-flow{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
-  font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.trk-flow{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;
+  font-size:11px;font-weight:600}
 .trk-flow.in{background:var(--trk-in-soft);color:var(--trk-in)}
 .trk-flow.out{background:var(--trk-out-soft);color:var(--trk-out)}
 .trk-vtype{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;
-  background:#f1f5f9;color:#334155;font-size:10px;font-weight:800;letter-spacing:.04em}
-.trk-vno{color:var(--trk-accent-dark);font-size:12px;font-weight:800;text-decoration:none}
+  background:var(--bg-top);color:var(--accent);font-size:11px;font-weight:600}
+.trk-vno{color:var(--trk-accent-dark);font-size:12px;font-weight:600;text-decoration:none}
 .trk-vno:hover{text-decoration:underline}
-.trk-party{display:block;color:var(--ink);font-size:14.5px;font-weight:800;line-height:1.3;
+.trk-party{display:block;color:var(--ink);font-size:14.5px;font-weight:600;line-height:1.3;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trk-meta{margin-top:3px;color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap}
@@ -123,39 +153,38 @@
    type on the row allowed to be this large — everything else steps down from
    it rather than competing with it. */
 .trk-amount-col{text-align:right;min-width:0}
-.trk-amount{color:var(--ink);font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;
+.trk-amount{color:var(--ink);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;
   letter-spacing:-.02em;line-height:1.1}
-.trk-amount-sub{margin-top:1px;color:var(--muted);font-size:10.5px;font-weight:600;
-  letter-spacing:.05em;text-transform:uppercase}
-.trk-bar{height:6px;margin-top:9px;border-radius:999px;background:#eef2f7;overflow:hidden}
+.trk-amount-sub{margin-top:1px;color:var(--muted);font-size:11px;font-weight:600}
+.trk-bar{height:6px;margin-top:9px;border-radius:999px;background:var(--bg-top);overflow:hidden}
 .trk-bar i{display:block;height:100%;border-radius:999px;background:var(--trk-in);
   transition:width .3s ease}
 .trk-item.is-payment .trk-bar i{background:var(--trk-out)}
 .trk-progress-legend{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px 12px;margin-top:6px;
   color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
-.trk-progress-legend b{color:var(--ink);font-weight:700}
-.trk-state{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
-  font-size:10px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.trk-progress-legend b{color:var(--ink);font-weight:600}
+.trk-state{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;
+  font-size:11px;font-weight:600;white-space:nowrap}
 .trk-state::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
 .trk-state-unassigned{background:var(--trk-warn-soft);color:var(--trk-warn)}
-.trk-state-partial{background:#eff6ff;color:#1d4ed8}
+.trk-state-partial{background:var(--card);color:var(--accent)}
 .trk-state-assigned{background:var(--trk-in-soft);color:var(--trk-in)}
 /* Force-closed: settled, but by a person's decision rather than an invoice
    match — deliberately neutral so it never reads as a clean match. */
-.trk-state-forced{background:#f1f5f9;color:#475569;border:1px dashed #94a3b8}
+.trk-state-forced{background:var(--bg-top);color:var(--accent);border:1px dashed var(--light)}
 /* The voucher was edited after it was assigned — a contradiction, not a
    status, so it gets the loudest badge on the page. */
-.trk-state-review{background:#fef2f2;color:#b91c1c}
+.trk-state-review{background:var(--card);color:var(--danger)}
 
 /* Broken-assignment notice. Sits above the feed's own tiles because it is a
    data-integrity warning, not another thing to work through. */
-.trk-attention{border:1px solid #fecaca;border-left:4px solid var(--trk-late);
+.trk-attention{border:1px solid var(--danger-light);border-left:4px solid var(--trk-late);
   border-radius:12px;background:var(--trk-late-soft);overflow:hidden;margin:0 0 18px}
 .trk-attention-head{display:flex;align-items:flex-start;gap:16px;padding:14px 16px}
 .trk-attention-head h2{margin:0;font-size:14.5px;color:var(--trk-late);letter-spacing:-.01em}
-.trk-attention-head p{margin:5px 0 0;font-size:12px;line-height:1.55;color:#7f1d1d;max-width:78ch}
+.trk-attention-head p{margin:5px 0 0;font-size:12px;line-height:1.55;color:var(--danger);max-width:78ch}
 .trk-attention-head .btn{margin-left:auto;flex:none}
-.trk-attention .trk-table-wrap{background:#fff;border-top:1px solid #fecaca}
+.trk-attention .trk-table-wrap{background:var(--card);border-top:1px solid var(--danger-light)}
 .trk-attention .trk-table{min-width:760px}
 @media(max-width:720px){
   .trk-attention-head{flex-direction:column;gap:10px}
@@ -171,37 +200,37 @@
 /* ── Tables ── */
 .trk-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 .trk-table{width:100%;border-collapse:collapse;min-width:920px}
-.trk-table th{padding:11px 14px;background:#f8fafc;color:var(--muted);font-size:10px;font-weight:800;
-  letter-spacing:.07em;text-align:left;text-transform:uppercase;white-space:nowrap;
+.trk-table th{padding:11px 14px;background:var(--card);color:var(--muted);font-size:11px;font-weight:600;
+  text-align:left;white-space:nowrap;
   border-bottom:1px solid var(--trk-line)}
-.trk-table td{padding:12px 14px;border-top:1px solid #eef2f7;color:var(--ink);font-size:12.5px;
+.trk-table td{padding:12px 14px;border-top:1px solid var(--border-soft);color:var(--ink);font-size:12.5px;
   vertical-align:middle}
 .trk-table tbody tr{transition:background .12s ease}
-.trk-table tbody tr:hover{background:#f6fdfc}
+.trk-table tbody tr:hover{background:var(--card)}
 .trk-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.trk-table .strong{font-weight:800}
-.trk-doclink{color:var(--trk-accent-dark);font-weight:800;text-decoration:none;white-space:nowrap}
+.trk-table .strong{font-weight:600}
+.trk-doclink{color:var(--trk-accent-dark);font-weight:600;text-decoration:none;white-space:nowrap}
 .trk-doclink:hover{text-decoration:underline}
-.trk-pay{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
-  font-size:10px;font-weight:800;text-transform:uppercase;white-space:nowrap}
+.trk-pay{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;
+  font-size:11px;font-weight:600;white-space:nowrap}
 .trk-pay::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
 .trk-pay-unpaid{background:var(--trk-late-soft);color:var(--trk-late)}
-.trk-pay-partial{background:#eff6ff;color:#1d4ed8}
+.trk-pay-partial{background:var(--card);color:var(--accent)}
 .trk-pay-paid{background:var(--trk-in-soft);color:var(--trk-in)}
-.trk-age{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;background:#f1f5f9;
-  color:#475569;font-size:10.5px;font-weight:800;white-space:nowrap}
+.trk-age{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;background:var(--bg-top);
+  color:var(--accent);font-size:11px;font-weight:600;white-space:nowrap}
 .trk-age.hot{background:var(--trk-late-soft);color:var(--trk-late)}
 .trk-age.warm{background:var(--trk-warn-soft);color:var(--trk-warn)}
-.trk-minibar{width:76px;height:6px;border-radius:999px;background:#eef2f7;overflow:hidden}
+.trk-minibar{width:76px;height:6px;border-radius:999px;background:var(--bg-top);overflow:hidden}
 .trk-minibar i{display:block;height:100%;background:var(--trk-accent)}
 .trk-waiting{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:6px;
-  background:var(--trk-accent-soft);color:var(--trk-accent-dark);font-size:10.5px;font-weight:800;
+  background:var(--trk-accent-soft);color:var(--trk-accent-dark);font-size:11px;font-weight:600;
   text-decoration:none;white-space:nowrap}
 .trk-waiting:hover{text-decoration:underline}
 .trk-rowbtn{display:inline-flex;align-items:center;justify-content:center;min-height:29px;padding:5px 11px;
-  border:1px solid var(--line);border-radius:7px;color:var(--ink);font-size:11px;font-weight:800;
-  text-decoration:none;white-space:nowrap;background:#fff;cursor:pointer;font-family:inherit}
-.trk-rowbtn:hover{border-color:var(--trk-accent);color:var(--trk-accent-dark);background:#f0fdfa;
+  border:1px solid var(--line);border-radius:7px;color:var(--ink);font-size:11px;font-weight:600;
+  text-decoration:none;white-space:nowrap;background:var(--card);cursor:pointer;font-family:inherit}
+.trk-rowbtn:hover{border-color:var(--trk-accent);color:var(--trk-accent-dark);background:var(--card);
   text-decoration:none}
 .trk-rowbtn.danger:hover{border-color:var(--trk-late);color:var(--trk-late);background:var(--trk-late-soft)}
 
@@ -213,7 +242,7 @@
 .trk-empty strong{display:block;color:var(--ink);font-size:15px;margin-bottom:5px}
 .trk-empty p{margin:0 auto;max-width:46ch;font-size:12.5px}
 .trk-empty .btn{margin-top:14px}
-td.trk-empty{border-top:1px solid #eef2f7}
+td.trk-empty{border-top:1px solid var(--border-soft)}
 
 /* ── Assignment workspace / drawer ── */
 .trk-split{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:18px;align-items:start}
@@ -221,31 +250,30 @@ td.trk-empty{border-top:1px solid #eef2f7}
 .trk-sum{display:grid;gap:9px}
 .trk-sum-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
   font-size:12.5px;color:var(--muted)}
-.trk-sum-row b{color:var(--ink);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+.trk-sum-row b{color:var(--ink);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
 .trk-sum-row.total{padding-top:9px;border-top:1px dashed var(--trk-line)}
 .trk-sum-row.total b{font-size:20px}
 .trk-remaining{padding:13px 15px;border-radius:11px;background:var(--trk-in-soft);
-  border:1px solid #a7f3d0}
-.trk-remaining.over{background:var(--trk-late-soft);border-color:#fecaca}
-.trk-remaining .lbl{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.08em;
-  text-transform:uppercase}
-.trk-remaining .val{margin-top:3px;color:var(--trk-in);font-size:24px;font-weight:800;
+  border:1px solid var(--success)}
+.trk-remaining.over{background:var(--trk-late-soft);border-color:var(--danger)}
+.trk-remaining .lbl{color:var(--muted);font-size:11px;font-weight:600}
+.trk-remaining .val{margin-top:3px;color:var(--trk-in);font-size:24px;font-weight:600;
   font-variant-numeric:tabular-nums}
 .trk-remaining.over .val{color:var(--trk-late)}
 .trk-alloc-table{width:100%;border-collapse:collapse;min-width:620px}
-.trk-alloc-table th{padding:10px 12px;background:#f8fafc;color:var(--muted);font-size:10px;
-  font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;white-space:nowrap;
+.trk-alloc-table th{padding:10px 12px;background:var(--card);color:var(--muted);font-size:11px;
+  font-weight:600;text-align:left;white-space:nowrap;
   border-bottom:1px solid var(--trk-line)}
-.trk-alloc-table td{padding:11px 12px;border-top:1px solid #eef2f7;font-size:12.5px}
-.trk-alloc-table tr.picked{background:#f0fdfa}
+.trk-alloc-table td{padding:11px 12px;border-top:1px solid var(--border-soft);font-size:12.5px}
+.trk-alloc-table tr.picked{background:var(--card)}
 .trk-alloc-table input[type="number"]{width:118px;min-height:34px;padding:6px 9px;
   border:1px solid var(--line);border-radius:7px;font-family:inherit;font-size:12.5px;text-align:right;
   font-variant-numeric:tabular-nums}
 .trk-alloc-table input[type="number"]:focus{border-color:var(--trk-accent);outline:none;
-  box-shadow:0 0 0 3px rgba(13,148,136,.12)}
+  box-shadow:0 0 0 3px var(--accent-light)}
 .trk-alloc-table input[type="checkbox"]{width:17px;height:17px;accent-color:var(--trk-accent);cursor:pointer}
 .trk-err{display:none;margin:0 17px 15px;padding:11px 13px;border-radius:9px;
-  background:var(--trk-late-soft);border:1px solid #fecaca;color:var(--trk-late);font-size:12.5px;
+  background:var(--trk-late-soft);border:1px solid var(--danger-light);color:var(--trk-late);font-size:12.5px;
   font-weight:600}
 .trk-err.show{display:block}
 .trk-savebar{display:flex;gap:9px;flex-wrap:wrap}
@@ -254,24 +282,23 @@ td.trk-empty{border-top:1px solid #eef2f7}
 /* ── Timeline (invoice payment history) ── */
 .trk-timeline{position:relative;padding:4px 0 4px 30px}
 .trk-timeline::before{content:"";position:absolute;left:9px;top:12px;bottom:12px;width:2px;
-  background:linear-gradient(180deg,var(--trk-accent-soft),#eef2f7)}
+  background:linear-gradient(180deg,var(--trk-accent-soft),var(--border-soft))}
 .trk-ev{position:relative;padding:13px 15px;margin-bottom:11px;border:1px solid var(--trk-line);
-  border-radius:12px;background:#fff;box-shadow:0 3px 10px rgba(15,23,42,.04)}
+  border-radius:12px;background:var(--card);box-shadow:0 3px 10px rgba(15,23,42,.04)}
 .trk-ev:last-child{margin-bottom:0}
 .trk-ev::before{content:"";position:absolute;left:-26px;top:19px;width:11px;height:11px;
-  border-radius:50%;background:#fff;border:3px solid var(--trk-accent)}
+  border-radius:50%;background:var(--card);border:3px solid var(--trk-accent)}
 .trk-ev-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.trk-ev-amount{color:var(--trk-in);font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.trk-ev-amount{color:var(--trk-in);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
 .trk-ev-meta{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--muted);font-size:11.5px}
-.trk-ev-meta b{color:var(--ink);font-weight:700}
+.trk-ev-meta b{color:var(--ink);font-weight:600}
 .trk-ev-actions{display:flex;gap:7px;align-items:center}
 
 /* ── Progress ring (invoice history header) ── */
 .trk-ring{display:flex;align-items:center;gap:15px}
 .trk-ring-svg{flex:none}
-.trk-ring-copy .lbl{color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.08em;
-  text-transform:uppercase}
-.trk-ring-copy .val{color:var(--ink);font-size:25px;font-weight:800;font-variant-numeric:tabular-nums}
+.trk-ring-copy .lbl{color:var(--muted);font-size:11px;font-weight:600}
+.trk-ring-copy .val{color:var(--ink);font-size:25px;font-weight:600;font-variant-numeric:tabular-nums}
 .trk-ring-copy .sub{color:var(--muted);font-size:12px;margin-top:2px}
 
 /* ── Responsive ── */
@@ -306,12 +333,12 @@ td.trk-empty{border-top:1px solid #eef2f7}
   .trk-table{min-width:0}
   .trk-table thead{display:none}
   .trk-table,.trk-table tbody,.trk-table tr,.trk-table td{display:block;width:100%}
-  .trk-table tbody tr{padding:13px 14px;border-top:1px solid #eef2f7}
+  .trk-table tbody tr{padding:13px 14px;border-top:1px solid var(--border-soft)}
   .trk-table tbody tr:first-child{border-top:0}
   .trk-table td{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:5px 0;
     border:0;text-align:right}
-  .trk-table td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:800;
-    letter-spacing:.07em;text-align:left;text-transform:uppercase;flex:none}
+  .trk-table td::before{content:attr(data-label);color:var(--muted);font-size:11px;font-weight:600;
+    text-align:left;flex:none}
   .trk-table td:first-child{padding-top:0}
   .trk-table td:last-child{padding-bottom:0}
   .trk-table td.trk-empty{display:block;text-align:center;padding:34px 12px}
@@ -320,11 +347,10 @@ td.trk-empty{border-top:1px solid #eef2f7}
   .trk-alloc-table{min-width:0}
   .trk-alloc-table thead{display:none}
   .trk-alloc-table,.trk-alloc-table tbody,.trk-alloc-table tr,.trk-alloc-table td{display:block;width:100%}
-  .trk-alloc-table tr{padding:12px 14px;border-top:1px solid #eef2f7}
+  .trk-alloc-table tr{padding:12px 14px;border-top:1px solid var(--border-soft)}
   .trk-alloc-table td{display:flex;align-items:center;justify-content:space-between;gap:12px;
     padding:4px 0;border:0;text-align:right}
-  .trk-alloc-table td::before{content:attr(data-label);color:var(--muted);font-size:10px;font-weight:800;
-    letter-spacing:.07em;text-transform:uppercase}
+  .trk-alloc-table td::before{content:attr(data-label);color:var(--muted);font-size:11px;font-weight:600}
   .trk-alloc-table input[type="number"]{width:130px}
   .trk-timeline{padding-left:24px}
   .trk-ev::before{left:-21px}

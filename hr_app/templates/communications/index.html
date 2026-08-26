@@ -7,7 +7,7 @@
 <div class="card">
     <div class="card-header">Recent Notifications</div>
     {% for r in notifications %}
-    <div class="notif-row" style="padding:10px;border-bottom:1px solid #eee;{% if not r.is_read %}background:#e3f2fd;{% endif %}">
+    <div class="notif-row" style="padding:10px;border-bottom:1px solid var(--border-soft);{% if not r.is_read %}background:var(--accent-light);{% endif %}">
         <div style="font-weight:600;">{{ r.notification.title }}</div>
         <div style="font-size:13px;color:var(--ink);">{{ r.notification.message }}</div>
         <div style="font-size:11px;color:var(--muted);">{{ r.notification.created_at.strftime('%d-%b-%Y %H:%M') }}</div>

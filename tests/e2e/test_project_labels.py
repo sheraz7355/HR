@@ -812,7 +812,7 @@ def test_sales_invoice_party_label_on_ar_line_label_on_revenue(
 # These run against the harness server (tests/e2e/conftest.py), which seeds a
 # fresh DB per session, so labels are created through the Settings UI itself.
 
-BASE_URL = "http://localhost:" + os.environ.get("E2E_PORT", "5050")
+BASE_URL = "http://127.0.0.1:" + os.environ.get("E2E_PORT", "5050")
 
 
 def _super_admin_page(page, flask_server):

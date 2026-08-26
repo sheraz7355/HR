@@ -14,7 +14,7 @@ ACCOUNTIX_ERP = Path(__file__).resolve().parent.parent.parent
 # database, or a developer reading test data out of a server whose templates
 # are frozen (FLASK_ENV=testing turns debug, and so template reloading, off).
 PORT = int(os.environ.get("E2E_PORT", "5050"))
-BASE_URL = f"http://localhost:{PORT}"
+BASE_URL = f"http://127.0.0.1:{PORT}"
 
 
 def _assert_port_free():

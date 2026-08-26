@@ -36,8 +36,8 @@
                     <td>{{ g.title }}</td>
                     <td>{{ g.target_date or '-' }}</td>
                     <td>
-                        <div style="background:#e0e0e0;border-radius:10px;height:16px;width:100%;position:relative;">
-                            <div style="background:#1a237e;border-radius:10px;height:16px;width:{{ g.progress_pct }}%;"></div>
+                        <div style="background:var(--surface-variant);border-radius:10px;height:16px;width:100%;position:relative;">
+                            <div style="background:var(--primary);border-radius:10px;height:16px;width:{{ g.progress_pct }}%;"></div>
                             <span style="position:absolute;top:0;left:50%;font-size:10px;font-weight:600;">{{ g.progress_pct }}%</span>
                         </div>
                     </td>

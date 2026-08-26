@@ -4,7 +4,7 @@
 
   <form method="POST" action="{{ url_for('settings.save_inventory') }}">
 
-    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Stock Valuation</div>
+    <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;">Stock Valuation</div>
     <div class="fgroup">
       <label class="lbl">Costing Method</label>
       <div class="radio-row">
@@ -44,7 +44,7 @@
     </div>
 
     <div style="border-top:1px solid var(--line);margin:16px 0 14px;padding-top:14px;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Document Flow</div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;">Document Flow</div>
       <div class="fgroup">
         <label class="lbl">Purchasing</label>
         <div class="radio-row">
@@ -79,7 +79,7 @@
     </div>
 
     <div style="border-top:1px solid var(--line);margin:16px 0 14px;padding-top:14px;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Default Posting Accounts</div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;">Default Posting Accounts</div>
       <p class="help" style="margin-top:0;margin-bottom:10px;">Optional overrides. Left blank, postings resolve to the canonical level-5 account for each role in the fixed chart.</p>
       <div class="fgrid">
         {% for field, label in [('default_cogs_account_id', 'Cost of Goods Sold'),

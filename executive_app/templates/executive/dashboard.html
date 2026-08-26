@@ -3,70 +3,205 @@
 {% block page_title %}Executive Reports{% endblock %}
 {% block extra_css %}{% include "executive/_style.html" %}{% endblock %}
 {% block content %}
+{# Bands of three, not ten tiles in a row that wraps to an orphan, and read in
+   the order an executive asks: are we making money, what is our position, can
+   we pay our bills, and who is holding the cash up.
+
+   Four tiles that used to sit here — average collection and payment days,
+   oldest receivable and payable — are facts *about the aging profile*, so they
+   moved under that chart where they read as context for the bars instead of
+   competing with the headline. UI_V2_GUIDE.md §6: a legend carries values as
+   well as names. #}
 <div class="exr">
 
-  <div class="exr-head">
-    <a href="{{ url_for('executive.receivables') }}" class="exr-total in"
-       style="text-decoration:none;">
-      <span class="lbl">Total receivable</span>
-      <span class="val">{{ receivable.amount|amount_format(2) }}</span>
-      <span class="sub">{{ receivable.parties }} part{{ 'y' if receivable.parties == 1 else 'ies' }} owe us</span>
-    </a>
-    <a href="{{ url_for('executive.payables') }}" class="exr-total out"
-       style="text-decoration:none;">
-      <span class="lbl">Total payable</span>
-      <span class="val">{{ payable.amount|amount_format(2) }}</span>
-      <span class="sub">{{ payable.parties }} part{{ 'y' if payable.parties == 1 else 'ies' }} we owe</span>
-    </a>
-    <div class="exr-total">
-      <span class="lbl">Net position</span>
-      <span class="val">{{ (receivable.amount - payable.amount)|amount_format(2) }}</span>
-      <span class="sub">receivable less payable</span>
+  {# ── Profitability ──────────────────────────────────────────────────────
+     Ledger-derived, so these agree with the Profit & Loss statement line for
+     line. It sits above position and liquidity because "are we making money"
+     is the question an executive asks before "who owes us". It also renders
+     whether or not the receivable/payable scope has been configured — it does
+     not depend on that selection. #}
+  <div class="exr-band">
+    <h2 class="exr-band-title">Profitability · {{ profit.months[-1].full_label if profit.months else 'this month' }}</h2>
+    <div class="exr-kpis">
+      {% for tile in [
+           ('Revenue', profit.latest.revenue, profit.deltas.revenue, 'net of returns'),
+           ('Gross profit', profit.latest.gross, profit.deltas.gross, 'revenue less cost of sales'),
+           ('Net profit', profit.latest.net, profit.deltas.net, 'after every expense')] %}
+      <div class="exr-kpi">
+        <span class="exr-kpi-lbl">{{ tile[0] }}</span>
+        <span class="exr-kpi-val">{{ tile[1]|amount_format(0) }}</span>
+        {% if tile[2] is not none %}
+        {# Up is --v2-pos, down is --v2-warn, never --v2-neg: a softer month is
+           information, not an error (UI_V2_GUIDE.md §5). The arrow carries the
+           direction too, so the colour is not the only channel. #}
+        <span class="exr-kpi-sub">
+          <span class="exr-delta {{ 'is-up' if tile[2] >= 0 else 'is-down' }}">
+            {{ '↗' if tile[2] >= 0 else '↘' }} {{ tile[2]|abs|round|int }}%
+          </span>
+          <span class="exr-delta-base">vs {{ profit.months[-1].start.year - 1 if profit.months else '' }}</span>
+        </span>
+        {% else %}
+        <span class="exr-kpi-sub">{{ tile[3] }}</span>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
   </div>
 
-  <div class="exr-kpis">
-    <div class="exr-kpi">
-      <span class="exr-kpi-lbl">Net assets</span>
-      <span class="exr-kpi-val">{{ liq.net_assets|amount_format(0) if liq.net_assets is not none else '—' }}</span>
-      <span class="exr-kpi-sub">assets less liabilities</span>
+  {% if profit_geo %}
+  <section class="exr-chart exr-chart-wide" aria-label="Revenue and net profit, last 12 months">
+    <div class="exr-chart-head">
+      <h3 class="exr-chart-title">Last 12 months</h3>
+      <div class="exr-chart-legend">
+        {% for s in profit_geo.series %}
+        <span class="exr-legend-item">
+          <span class="exr-legend-line s-{{ s.var }}"></span>{{ s.label }}
+          <span class="exr-legend-val">{{ profit.totals[s.key]|amount_format(0) }}</span>
+        </span>
+        {% endfor %}
+        {% if profit.margin is not none %}
+        <span class="exr-legend-item"><span class="exr-legend-val">{{ profit.margin|round|int }}%</span> margin</span>
+        {% endif %}
+      </div>
     </div>
-    <div class="exr-kpi {{ 'is-good' if liq.current_ratio is not none and liq.current_ratio >= 1.5 else ('is-warn' if liq.current_ratio is not none and liq.current_ratio < 1 else '') }}">
-      <span class="exr-kpi-lbl">Current ratio</span>
-      <span class="exr-kpi-val">{{ '%.2f'|format(liq.current_ratio) if liq.current_ratio is not none else '—' }}</span>
-      <span class="exr-kpi-sub">current assets ÷ liabilities</span>
+
+    <div class="exr-plot">
+      <svg viewBox="0 0 {{ profit_geo.view_w }} {{ profit_geo.view_h }}"
+           preserveAspectRatio="none" role="img"
+           aria-label="Revenue and net profit by month for the last 12 months">
+        {# Gridlines and the zero rule are the quietest things on the chart. #}
+        {% for t in profit_geo.ticks %}
+        <line x1="{{ profit_geo.pad_l }}" x2="{{ profit_geo.plot_r }}"
+              y1="{{ t.y }}" y2="{{ t.y }}" class="exr-grid"/>
+        <text x="{{ profit_geo.pad_l - 8 }}" y="{{ t.y + 3.5 }}" text-anchor="end"
+              class="exr-axis">{{ t.v|amount_format(t.dp) }}</text>
+        {% endfor %}
+        <line x1="{{ profit_geo.pad_l }}" x2="{{ profit_geo.plot_r }}"
+              y1="{{ profit_geo.zero_y }}" y2="{{ profit_geo.zero_y }}" class="exr-zero"/>
+
+        {% for s in profit_geo.series %}
+        {% if s.key == 'net' %}
+        <polygon points="{{ s.area }}" class="exr-area s-{{ s.var }}"/>
+        {% endif %}
+        <polyline points="{{ s.points }}" class="exr-line s-{{ s.var }}"
+                  {% if s.dash %}stroke-dasharray="{{ s.dash }}"{% endif %}/>
+        {% endfor %}
+
+        {# Direct-label the endpoint only — never a number on every point. #}
+        {% for s in profit_geo.series %}
+        <circle cx="{{ s.last.x }}" cy="{{ s.last.y }}" r="3.5" class="exr-dot s-{{ s.var }}"/>
+        {% endfor %}
+
+        {% for c in profit_geo.cols %}
+        <text x="{{ c.x }}" y="{{ profit_geo.view_h - 8 }}" text-anchor="middle"
+              class="exr-axis">{{ c.label }}</text>
+        {% endfor %}
+
+        {# One hover band per month: a target the width of a column, so the
+           tooltip is reachable without hitting a 3px line (dataviz step 5). #}
+        {% for c in profit_geo.cols %}
+        <rect x="{{ c.x - profit_geo.band / 2 }}" y="{{ profit_geo.pad_t }}"
+              width="{{ profit_geo.band }}" height="{{ profit_geo.plot_h }}"
+              class="exr-hover-band"><title>{{ c.full_label }}</title></rect>
+        {% endfor %}
+      </svg>
     </div>
-    <div class="exr-kpi {{ 'is-good' if liq.quick_ratio is not none and liq.quick_ratio >= 1 else ('is-warn' if liq.quick_ratio is not none and liq.quick_ratio < 1 else '') }}">
-      <span class="exr-kpi-lbl">Quick ratio</span>
-      <span class="exr-kpi-val">{{ '%.2f'|format(liq.quick_ratio) if liq.quick_ratio is not none else '—' }}</span>
-      <span class="exr-kpi-sub">excludes inventory</span>
+
+    <details class="exr-table-view">
+      <summary>Table view</summary>
+      <table class="exr-mini">
+        <thead>
+          <tr><th>Month</th><th class="num">Revenue</th><th class="num">Cost of sales</th>
+              <th class="num">Gross profit</th><th class="num">Net profit</th></tr>
+        </thead>
+        <tbody>
+          {% for m in profit.months %}
+          <tr>
+            <td>{{ m.full_label }}</td>
+            <td class="num">{{ m.revenue|amount_format(2) }}</td>
+            <td class="num">{{ m.cogs|amount_format(2) }}</td>
+            <td class="num">{{ m.gross|amount_format(2) }}</td>
+            <td class="num">{{ m.net|amount_format(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </section>
+  {% else %}
+  {# profit_chart() returns None when every month is flat, so the section says
+     so instead of drawing a rule along zero that looks like a finding. #}
+  <section class="exr-chart exr-chart-wide">
+    <div class="exr-chart-head"><h3 class="exr-chart-title">Last 12 months</h3></div>
+    <div class="exr-pick-empty">No posted revenue or expenses in the last 12 months.</div>
+  </section>
+  {% endif %}
+
+  <div class="exr-band">
+    <h2 class="exr-band-title">Position</h2>
+    <div class="exr-head">
+      <a href="{{ url_for('executive.receivables') }}" class="exr-total">
+        <span class="lbl">Total receivable</span>
+        <span class="val">{{ receivable.amount|amount_format(2) }}</span>
+        <span class="sub">{{ receivable.parties }} part{{ 'y' if receivable.parties == 1 else 'ies' }} owe us</span>
+      </a>
+      <a href="{{ url_for('executive.payables') }}" class="exr-total">
+        <span class="lbl">Total payable</span>
+        <span class="val">{{ payable.amount|amount_format(2) }}</span>
+        <span class="sub">{{ payable.parties }} part{{ 'y' if payable.parties == 1 else 'ies' }} we owe</span>
+      </a>
+      <div class="exr-total">
+        <span class="lbl">Net position</span>
+        <span class="val">{{ (receivable.amount - payable.amount)|amount_format(2) }}</span>
+        <span class="sub">receivable less payable</span>
+      </div>
     </div>
-    <div class="exr-kpi in">
-      <span class="exr-kpi-lbl">Avg collection days</span>
-      <span class="exr-kpi-val">{{ recv_age.avg_days|round|int if recv_age.parties else '—' }}<small> days</small></span>
-      <span class="exr-kpi-sub">{{ 'weighted by balance' if recv_age.parties else 'no open receivables' }}</span>
-    </div>
-    <div class="exr-kpi out">
-      <span class="exr-kpi-lbl">Avg payment days</span>
-      <span class="exr-kpi-val">{{ pay_age.avg_days|round|int if pay_age.parties else '—' }}<small> days</small></span>
-      <span class="exr-kpi-sub">{{ 'weighted by balance' if pay_age.parties else 'no open payables' }}</span>
-    </div>
-    <div class="exr-kpi in">
-      <span class="exr-kpi-lbl">Oldest receivable</span>
-      <span class="exr-kpi-val">{{ recv_age.oldest_days if recv_age.oldest_name else '—' }}<small> days</small></span>
-      <span class="exr-kpi-sub">{{ recv_age.oldest_name if recv_age.oldest_name else 'nothing outstanding' }}</span>
-    </div>
-    <div class="exr-kpi out">
-      <span class="exr-kpi-lbl">Oldest payable</span>
-      <span class="exr-kpi-val">{{ pay_age.oldest_days if pay_age.oldest_name else '—' }}<small> days</small></span>
-      <span class="exr-kpi-sub">{{ pay_age.oldest_name if pay_age.oldest_name else 'nothing outstanding' }}</span>
+  </div>
+
+  <div class="exr-band">
+    <h2 class="exr-band-title">Liquidity</h2>
+    <div class="exr-kpis">
+      <div class="exr-kpi">
+        <span class="exr-kpi-lbl">Net assets</span>
+        {% if liq.net_assets is not none %}
+        <span class="exr-kpi-val">{{ liq.net_assets|amount_format(0) }}</span>
+        {% else %}<span class="exr-kpi-val is-empty">Not available</span>{% endif %}
+        <span class="exr-kpi-sub">assets less liabilities</span>
+      </div>
+      {# A ratio at or above its threshold gets no colour — being fine is not
+         news. The two states that need a decision get one, each with a word
+         beside it so colour is never the only channel (§8). #}
+      {% set cr = liq.current_ratio %}
+      <div class="exr-kpi {{ 'is-short' if cr is not none and cr < 1 else ('is-thin' if cr is not none and cr < 1.5 else '') }}">
+        <span class="exr-kpi-lbl">Current ratio</span>
+        {% if cr is not none %}<span class="exr-kpi-val">{{ '%.2f'|format(cr) }}</span>
+        {% else %}<span class="exr-kpi-val is-empty">Not available</span>{% endif %}
+        {% if cr is not none and cr < 1 %}
+        <span class="exr-kpi-flag">Below 1 — short-term cover</span>
+        {% elif cr is not none and cr < 1.5 %}
+        <span class="exr-kpi-flag">Thin — under 1.5</span>
+        {% else %}
+        <span class="exr-kpi-sub">current assets vs current liabilities</span>
+        {% endif %}
+      </div>
+      {% set qr = liq.quick_ratio %}
+      <div class="exr-kpi {{ 'is-thin' if qr is not none and qr < 1 else '' }}">
+        <span class="exr-kpi-lbl">Quick ratio</span>
+        {% if qr is not none %}<span class="exr-kpi-val">{{ '%.2f'|format(qr) }}</span>
+        {% else %}<span class="exr-kpi-val is-empty">Not available</span>{% endif %}
+        {% if qr is not none and qr < 1 %}
+        <span class="exr-kpi-flag">Below 1 without inventory</span>
+        {% else %}
+        <span class="exr-kpi-sub">excludes inventory</span>
+        {% endif %}
+      </div>
     </div>
   </div>
 
   {% if not configured %}
   <div class="exr-wrap">
     <div class="exr-empty">
-      <strong>No accounts selected yet</strong>
+      <strong>Receivables and payables need accounts selected</strong>
       <p>These reports read live ledger balances for the accounts you choose —
         trade debtors and creditors, other receivables and payables, loans. A
         party shows under Receivables while its balance is a debit and moves to
@@ -80,57 +215,149 @@
 
   <div class="exr-charts">
     <section class="exr-chart" aria-label="Aging profile">
-      <h3 class="exr-chart-title">Aging profile</h3>
+      <div class="exr-chart-head">
+        <h3 class="exr-chart-title">Aging profile</h3>
+        <div class="exr-chart-legend">
+          <span class="exr-legend-item">
+            <span class="exr-legend-key exr-mark-recv"></span>Receivable
+            <span class="exr-legend-val">{{ recv_age.total|amount_format(0) }}</span>
+          </span>
+          <span class="exr-legend-item">
+            <span class="exr-legend-key exr-mark-pay"></span>Payable
+            <span class="exr-legend-val">{{ pay_age.total|amount_format(0) }}</span>
+          </span>
+        </div>
+      </div>
+
+      {# Bar length comes from `width`, which is scaled against the largest
+         bucket on *either* side, so the two bars in a row can honestly be
+         compared. `share` is still printed — it is the per-side percentage,
+         which is what the tooltip says it is. See _scale_buckets(). #}
       {% for b in recv_age.buckets %}
       {% set pb = pay_age.buckets[loop.index0] %}
       <div class="exr-bar-group">
         <span class="exr-bar-label">{{ b.label }}</span>
-        <div class="exr-bar-row">
-          <span class="exr-bar-track in" title="Receivable"><span class="exr-bar-fill" style="width:{{ b.share }}%"></span></span>
+        <div class="exr-bar-row" tabindex="0">
+          <span class="exr-bar-track"><span class="exr-bar-fill exr-mark-recv" style="width:{{ b.width }}%"></span></span>
           <span class="exr-bar-amt">{{ b.amount|amount_format(0) }}</span>
+          <span class="exr-tip" role="tooltip">
+            Receivable · {{ b.label }}<br>
+            <b>{{ b.amount|amount_format(2) }}</b>
+            <span>— {{ b.share|round|int }}% of receivables</span>
+          </span>
         </div>
-        <div class="exr-bar-row">
-          <span class="exr-bar-track out" title="Payable"><span class="exr-bar-fill" style="width:{{ pb.share }}%"></span></span>
+        <div class="exr-bar-row" tabindex="0">
+          <span class="exr-bar-track"><span class="exr-bar-fill exr-mark-pay" style="width:{{ pb.width }}%"></span></span>
           <span class="exr-bar-amt">{{ pb.amount|amount_format(0) }}</span>
+          <span class="exr-tip" role="tooltip">
+            Payable · {{ pb.label }}<br>
+            <b>{{ pb.amount|amount_format(2) }}</b>
+            <span>— {{ pb.share|round|int }}% of payables</span>
+          </span>
         </div>
       </div>
       {% else %}
       <div class="exr-pick-empty">No open balances to age.</div>
       {% endfor %}
-      <div class="exr-chart-legend">
-        <span class="exr-legend-key in"></span> Receivable
-        <span class="exr-legend-key out"></span> Payable
+
+      <div class="exr-facts">
+        <span class="exr-fact">Collection
+          <b>{{ recv_age.avg_days|round|int if recv_age.parties else '—' }}</b> days avg</span>
+        <span class="exr-fact">Payment
+          <b>{{ pay_age.avg_days|round|int if pay_age.parties else '—' }}</b> days avg</span>
+        {% if recv_age.oldest_name %}
+        <span class="exr-fact">Oldest receivable <b>{{ recv_age.oldest_days }}</b> days · {{ recv_age.oldest_name }}</span>
+        {% endif %}
+        {% if pay_age.oldest_name %}
+        <span class="exr-fact">Oldest payable <b>{{ pay_age.oldest_days }}</b> days · {{ pay_age.oldest_name }}</span>
+        {% endif %}
       </div>
+
+      <details class="exr-table-view">
+        <summary>Table view</summary>
+        <table class="exr-mini">
+          <thead>
+            <tr><th>Bucket</th><th class="num">Receivable</th><th class="num">%</th>
+                <th class="num">Payable</th><th class="num">%</th></tr>
+          </thead>
+          <tbody>
+            {% for b in recv_age.buckets %}
+            {% set pb = pay_age.buckets[loop.index0] %}
+            <tr>
+              <td>{{ b.label }}</td>
+              <td class="num">{{ b.amount|amount_format(2) }}</td>
+              <td class="num">{{ b.share|round|int }}%</td>
+              <td class="num">{{ pb.amount|amount_format(2) }}</td>
+              <td class="num">{{ pb.share|round|int }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
     </section>
 
     <section class="exr-chart" aria-label="Largest exposures">
-      <h3 class="exr-chart-title">Largest exposures</h3>
+      <div class="exr-chart-head">
+        <h3 class="exr-chart-title">Largest exposures</h3>
+      </div>
       <div class="exr-top-cols">
         <div class="exr-top-col">
-          <h4>Receivables · top {{ recv_age.top|length }}</h4>
+          {# "top 0" was a label the empty state should have taken instead. #}
+          <h4>Receivables{% if recv_age.top %} · top {{ recv_age.top|length }}{% endif %}</h4>
           {% for t in recv_age.top %}
           <a class="exr-top-row" href="{{ url_for('executive.party', account_id=t.account_id) }}">
             <span class="exr-top-name">{{ t.name }}</span>
-            <span class="exr-top-track"><span class="exr-top-fill in" style="width:{{ t.share }}%"></span></span>
+            <span class="exr-top-track"><span class="exr-top-fill exr-mark-recv" style="width:{{ t.share }}%"></span></span>
             <span class="exr-top-amt">{{ t.amount|amount_format(0) }}<em>{{ t.share|round|int }}%</em></span>
+            <span class="exr-tip" role="tooltip">
+              {{ t.name }}<br><b>{{ t.amount|amount_format(2) }}</b>
+              <span>— {{ t.share|round|int }}% of receivables</span>
+            </span>
           </a>
           {% else %}
           <div class="exr-pick-empty">No open receivables.</div>
           {% endfor %}
         </div>
         <div class="exr-top-col">
-          <h4>Payables · top {{ pay_age.top|length }}</h4>
+          <h4>Payables{% if pay_age.top %} · top {{ pay_age.top|length }}{% endif %}</h4>
           {% for t in pay_age.top %}
           <a class="exr-top-row" href="{{ url_for('executive.party', account_id=t.account_id) }}">
             <span class="exr-top-name">{{ t.name }}</span>
-            <span class="exr-top-track"><span class="exr-top-fill out" style="width:{{ t.share }}%"></span></span>
+            <span class="exr-top-track"><span class="exr-top-fill exr-mark-pay" style="width:{{ t.share }}%"></span></span>
             <span class="exr-top-amt">{{ t.amount|amount_format(0) }}<em>{{ t.share|round|int }}%</em></span>
+            <span class="exr-tip" role="tooltip">
+              {{ t.name }}<br><b>{{ t.amount|amount_format(2) }}</b>
+              <span>— {{ t.share|round|int }}% of payables</span>
+            </span>
           </a>
           {% else %}
           <div class="exr-pick-empty">No open payables.</div>
           {% endfor %}
         </div>
       </div>
+
+      {% if recv_age.top or pay_age.top %}
+      <details class="exr-table-view">
+        <summary>Table view</summary>
+        <table class="exr-mini">
+          <thead>
+            <tr><th>Party</th><th>Side</th><th class="num">Amount</th><th class="num">Share</th></tr>
+          </thead>
+          <tbody>
+            {% for t in recv_age.top %}
+            <tr><td>{{ t.name }}</td><td>Receivable</td>
+                <td class="num">{{ t.amount|amount_format(2) }}</td>
+                <td class="num">{{ t.share|round|int }}%</td></tr>
+            {% endfor %}
+            {% for t in pay_age.top %}
+            <tr><td>{{ t.name }}</td><td>Payable</td>
+                <td class="num">{{ t.amount|amount_format(2) }}</td>
+                <td class="num">{{ t.share|round|int }}%</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
     </section>
   </div>
   {% endif %}

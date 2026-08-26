@@ -5,13 +5,13 @@
     <h1>HR Rights — {{ u.full_name }}</h1>
     <a href="{{ url_for('auth.user_list') }}" class="btn btn-outline">&larr; All Users</a>
 </div>
-<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;">
+<div style="background:var(--accent-light);border:1px solid var(--accent-light);color:var(--accent);padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;">
     &#9432; HR can set rights for <strong>HR sections only</strong>. Access to other modules
     (Inventory, Invoicing, Finance, Accounting) and their rights are assigned by the
     <strong>admin</strong> in ERP hub Settings.
 </div>
 {% if not is_configured %}
-<div style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;">
+<div style="background:var(--warning-light);border:1px solid var(--warning-light);color:var(--warning);padding:10px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;">
     No HR rights configured yet — this user currently has unrestricted access inside the HR module.
 </div>
 {% endif %}
@@ -19,7 +19,7 @@
   <div class="card">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
-        <tr style="text-align:left;color:#6b7280;">
+        <tr style="text-align:left;color:var(--muted);">
           <th style="padding:8px 18px;">HR Section</th>
           {% for a in actions %}<th style="padding:8px 10px;text-align:center;text-transform:capitalize;">{{ a }}</th>{% endfor %}
         </tr>
@@ -27,7 +27,7 @@
       <tbody>
         {% for resource, res_label in sections %}
         {% set p = perms.get(resource) %}
-        <tr style="border-top:1px solid #f3f4f6;">
+        <tr style="border-top:1px solid var(--border-soft);">
           <td style="padding:8px 18px;">{{ res_label }}</td>
           {% for a in actions %}
           <td style="padding:8px 10px;text-align:center;">

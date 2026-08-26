@@ -4,12 +4,12 @@
 {% block extra_css %}
 <style>
   .field-wrap{position:relative}
-  .field-err{font-size:11.5px;color:#dc2626;margin-top:3px;display:none}
+  .field-err{font-size:11.5px;color:var(--danger);margin-top:3px;display:none}
   .field-err.show{display:block}
-  .field-ok{font-size:11.5px;color:#16a34a;margin-top:3px;display:none}
+  .field-ok{font-size:11.5px;color:var(--success);margin-top:3px;display:none}
   .field-ok.show{display:block}
-  .field-wrap .form-control.err{border-color:#dc2626;background:#fef2f2}
-  .field-wrap .form-control.ok{border-color:#16a34a;background:#f0fdf4}
+  .field-wrap .form-control.err{border-color:var(--danger);background:var(--danger-light)}
+  .field-wrap .form-control.ok{border-color:var(--success);background:var(--success-light)}
 </style>
 {% endblock %}
 {% block content %}

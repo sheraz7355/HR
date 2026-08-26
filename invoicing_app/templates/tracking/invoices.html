@@ -3,7 +3,21 @@
 {% block page_title %}{{ doc_meta.title }}{% endblock %}
 {% block extra_css %}{% include "tracking/_style.html" %}{% endblock %}
 {% block content %}
-{% set bucket_colors = {'not_due':'#94a3b8','d1_30':'#0d9488','d31_60':'#b45309','d61_90':'#c2410c','d90_plus':'#b91c1c'} %}
+{# The ageing ramp is one of the few places colour carries meaning rather than
+   decoration, so it stays — but as a SEQUENTIAL ramp, not the rainbow it used
+   to be. Age buckets are ordered severity, and a grey-teal-amber-red ramp
+   encodes an ordered quantity in five unrelated hues: the reader has to learn
+   an arbitrary key instead of seeing "darker means worse". One hue, mixed
+   progressively into the surface, is monotone in lightness, so it reads in
+   greyscale and under colour-vision deficiency too.
+   "Not due" sits outside the ramp in neutral, because nothing is owed yet —
+   it is the absence of severity rather than the first step of it. #}
+{% set bucket_colors = {
+  'not_due':  'var(--v2-line-2)',
+  'd1_30':    'color-mix(in srgb, var(--v2-neg) 28%, var(--v2-surface))',
+  'd31_60':   'color-mix(in srgb, var(--v2-neg) 52%, var(--v2-surface))',
+  'd61_90':   'color-mix(in srgb, var(--v2-neg) 76%, var(--v2-surface))',
+  'd90_plus': 'var(--v2-neg)'} %}
 <div class="trk">
 
   {# No page title here: the top bar already names the page. #}

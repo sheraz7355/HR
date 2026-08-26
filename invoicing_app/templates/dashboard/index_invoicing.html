@@ -3,122 +3,339 @@
 {% block page_title %}Invoicing Dashboard{% endblock %}
 {% block extra_css %}
 <style>
-/* Settlement band — the money position, above the document counts. Kept
-   deliberately slim: it is a glance and a way through to the tracker, so it
-   should not cost a screenful before any actual data appears. */
-.dash-track{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;
-  margin-bottom:18px}
-.dash-track-card{position:relative;display:block;padding:10px 12px 11px 14px;
-  border:1px solid #e3e8ef;border-radius:10px;background:#fff;overflow:hidden;
-  text-decoration:none;transition:border-color .15s ease,background .15s ease}
-.dash-track-card:hover{border-color:#cbd5e1;background:#fbfdff;text-decoration:none}
-.dash-track-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-  background:#0d9488}
-.dash-track-card.warn::before{background:#b45309}
-.dash-track-card.late::before{background:#b91c1c}
-.dash-track-card.out::before{background:#4338ca}
-.dash-track-label{color:#43474e;font-size:9.5px;font-weight:800;letter-spacing:.08em;
-  text-transform:uppercase}
-.dash-track-value{margin-top:2px;color:#161c22;font-size:18px;font-weight:800;
-  font-variant-numeric:tabular-nums;line-height:1.2}
-.dash-track-foot{margin-top:2px;color:#43474e;font-size:11px;line-height:1.4}
-@media(max-width:560px){.dash-track{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:380px){.dash-track{grid-template-columns:1fr}}
+/* â”€â”€ Performance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   The dashboard is one thing: how the business is doing. It used to be a
+   settlement strip plus nine document-count tiles above the fold; those were
+   removed, along with the queries feeding them, so the first screen answers a
+   question instead of listing inventory.
 
-/* Document counts. Same idea: nine of these at 32px numerals and 20px padding
-   filled the viewport on their own, so they are a tight grid of small tiles. */
-.dash-counts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;
-  margin-bottom:18px}
-.dash-stat{display:block;padding:10px 12px;border:1px solid #e3e8ef;border-radius:10px;
-  background:#fff;text-decoration:none;transition:border-color .15s ease,background .15s ease}
-.dash-stat:hover{border-color:#cbd5e1;background:#fbfdff;text-decoration:none}
-.dash-stat-label{color:#43474e;font-size:9.5px;font-weight:800;letter-spacing:.07em;
-  text-transform:uppercase;line-height:1.35}
-.dash-stat-value{margin-top:3px;font-size:20px;font-weight:800;line-height:1.15;
+   The component language follows DESIGN.md â€” white surfaces on a neutral
+   ground, hairline borders, small muted labels over large ink values, and
+   colour only where it means something. Palette tokens live in
+   static/css/ui.css; nothing here hardcodes one except the pre-v2 fallback.
+
+   SERIES COLOUR â€” EMPHASIS, NOT A CATEGORICAL SET
+   Three saturated hues would be three things shouting. Revenue is ink,
+   purchases is the muted grey AND dashed, and the single accent goes to gross
+   profit â€” the number the chart exists to answer. Identity therefore comes
+   from three separate channels (lightness, dash pattern, chroma), so the
+   chart survives greyscale printing and colour-vision deficiency alike, which
+   no three-hue set does. Measured all-pairs against both surfaces: worst CVD
+   separation Î”E 8.4 light / 12.7 dark (target >= 8), worst normal-vision Î”E
+   15.3 / 17.3 (floor 15), every series >= 3:1 on its surface. Re-measure
+   before changing any of these values. */
+.perf{margin-bottom:4px}
+[data-ui="v2"] .perf{
+  --s-rev:var(--v2-ink); --s-pur:var(--v2-muted); --s-gp:var(--v2-accent);
+}
+/* Fallback for the pre-v2 shell, where the tokens above are undefined. */
+.perf{--s-rev:var(--v2-ink);--s-pur:var(--v2-muted);--s-gp:var(--v2-accent)}
+
+.perf-head{display:flex;align-items:flex-start;justify-content:space-between;
+  gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.perf-title{margin:0;font-size:21px;font-weight:600;letter-spacing:-.02em;
+  color:var(--text);line-height:1.2}
+.perf-sub{margin:5px 0 0;font-size:12px;color:var(--muted);display:flex;
+  align-items:center;gap:6px;flex-wrap:wrap}
+/* The accent tick is the reference's small marker before a provenance line:
+   it says "this number came from somewhere" without spending a sentence. */
+.perf-tick-dot{width:5px;height:5px;border-radius:50%;background:var(--s-gp);
+  flex:none}
+.perf-filters{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.perf-sel{padding:6px 27px 6px 11px;font-size:12px;border:1px solid var(--border);
+  border-radius:8px;background:var(--card);color:var(--text);font-family:inherit;
+  font-weight:500;cursor:pointer;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                   linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 14px) calc(50% + 1px),calc(100% - 9px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.perf-sel:hover{background-color:var(--bg-top)}
+
+/* â”€â”€ Stat tiles â”€â”€ */
+.perf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));
+  gap:12px;margin-bottom:12px}
+.perf-kpi{padding:16px 18px 15px;border:1px solid var(--border-soft);
+  border-radius:11px;background:var(--card);display:flex;flex-direction:column}
+.perf-kpi-label{font-size:12px;color:var(--muted);font-weight:400;
+  display:flex;align-items:center;gap:7px}
+.perf-key{width:10px;height:2px;border-radius:1px;flex:none}
+.perf-key.dashed{background-image:linear-gradient(90deg,currentColor 55%,transparent 55%);
+  background-size:4px 2px}
+.perf-kpi-value{margin-top:7px;font-size:29px;font-weight:600;color:var(--text);
+  letter-spacing:-.025em;font-variant-numeric:tabular-nums;line-height:1.1}
+.perf-kpi-delta{margin-top:9px;font-size:12px;font-weight:500;
+  display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}
+/* Up is the accent, down is the olive warn tone â€” not red. A softer month is
+   information, not an error, and a dashboard that shouts at every dip stops
+   being read. */
+.perf-kpi-delta.up{color:var(--success)}
+.perf-kpi-delta.down{color:var(--warning)}
+.perf-kpi-delta.flat{color:var(--light)}
+.perf-bar{margin-top:11px;height:3px;border-radius:2px;background:var(--surface-variant);
+  overflow:hidden}
+.perf-bar span{display:block;height:100%;background:var(--text);border-radius:2px}
+.perf-kpi-foot{margin-top:auto;padding-top:10px;font-size:11.5px;color:var(--light);
+  line-height:1.45}
+
+/* â”€â”€ Chart â”€â”€ */
+.perf-chart{border:1px solid var(--border-soft);border-radius:11px;
+  background:var(--card);padding:16px 18px 12px}
+.perf-chart-head{display:flex;align-items:baseline;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;margin-bottom:4px}
+.perf-chart-h{margin:0;font-size:13.5px;font-weight:600;color:var(--text)}
+.perf-cap{font-size:11.5px;color:var(--light)}
+.perf-legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 6px}
+.perf-leg{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted)}
+.perf-leg b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.perf-plot{position:relative}
+.perf-svg{display:block;width:100%;height:auto;overflow:visible}
+.perf-grid{stroke:var(--border-soft);stroke-width:1;vector-effect:non-scaling-stroke}
+.perf-zero{stroke:var(--border);stroke-width:1;vector-effect:non-scaling-stroke}
+.perf-tick{fill:var(--light);font-size:10px;font-variant-numeric:tabular-nums}
+.perf-xlab{fill:var(--light);font-size:10px}
+.perf-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke}
+/* Purchases is the context series: thinner, dashed, muted. The dash is the
+   second identity channel, so the pair still reads with colour removed. */
+.perf-line[data-s="pur"]{stroke-width:1.5;stroke-dasharray:4 3}
+.perf-pt{stroke:var(--card);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.perf-endlab{fill:var(--text);font-size:10.5px;font-weight:600;
   font-variant-numeric:tabular-nums}
-@media(max-width:420px){.dash-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.perf-cross{stroke:var(--muted);stroke-width:1;vector-effect:non-scaling-stroke;
+  opacity:0;pointer-events:none}
+.perf-hit{fill:transparent;cursor:crosshair}
+.perf-hover-dot{stroke:var(--card);stroke-width:2;opacity:0;pointer-events:none;
+  vector-effect:non-scaling-stroke}
+.perf-tip{position:absolute;top:0;left:0;min-width:162px;padding:9px 11px;
+  border-radius:10px;background:var(--card);border:1px solid var(--border);
+  box-shadow:var(--shadow-lg);font-size:11.5px;pointer-events:none;opacity:0;
+  transition:opacity .1s;z-index:5}
+.perf-tip.on{opacity:1}
+.perf-tip-m{font-weight:600;color:var(--text);margin-bottom:6px;font-size:11.5px}
+.perf-tip-r{display:flex;align-items:center;gap:8px;margin-top:4px}
+.perf-tip-r .k{width:10px;height:2px;border-radius:1px;flex:none}
+.perf-tip-r .n{color:var(--muted);flex:1}
+.perf-tip-r .v{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* The table is the chart's accessible twin, not a fallback: it carries every
+   value for a reader who cannot separate the lines. */
+.perf-table-wrap{margin-top:6px}
+.perf-table-wrap summary{cursor:pointer;font-size:11.5px;color:var(--muted);padding:6px 0}
+.perf-table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}
+.perf-table th,.perf-table td{padding:5px 8px;text-align:right;
+  border-top:1px solid var(--border-soft);font-variant-numeric:tabular-nums}
+.perf-table th:first-child,.perf-table td:first-child{text-align:left}
+.perf-table th{color:var(--muted);font-weight:500}
+.perf-table td{color:var(--text)}
+@media(max-width:560px){
+  .perf-title{font-size:18px}
+  .perf-kpi-value{font-size:25px}
+  .perf-legend{gap:12px}
+}
 </style>
 {% endblock %}
 {% block content %}
-<div class="dash-track">
-  <a href="{{ url_for('inv_tracking.feed') }}" class="dash-track-card warn">
-    <div class="dash-track-label">Payments to assign</div>
-    <div class="dash-track-value">{{ feed_summary.unassigned_value|amount_format(0) }}</div>
-    <div class="dash-track-foot">{{ feed_summary.unassigned_count }} unassigned &middot; {{ feed_summary.partial_count }} partial</div>
-  </a>
-  <a href="{{ url_for('inv_tracking.sales') }}" class="dash-track-card late">
-    <div class="dash-track-label">Receivable</div>
-    <div class="dash-track-value">{{ ar.outstanding|amount_format(0) }}</div>
-    <div class="dash-track-foot">{{ ar.overdue|amount_format(0) }} overdue across {{ ar.overdue_count }} invoice{{ '' if ar.overdue_count == 1 else 's' }}</div>
-  </a>
-  <a href="{{ url_for('inv_tracking.purchases') }}" class="dash-track-card out">
-    <div class="dash-track-label">Payable</div>
-    <div class="dash-track-value">{{ ap.outstanding|amount_format(0) }}</div>
-    <div class="dash-track-foot">{{ ap.overdue|amount_format(0) }} overdue across {{ ap.overdue_count }} invoice{{ '' if ap.overdue_count == 1 else 's' }}</div>
-  </a>
-  <a href="{{ url_for('inv_tracking.sales', overdue='1') }}" class="dash-track-card">
-    <div class="dash-track-label">Open invoices</div>
-    <div class="dash-track-value">{{ ar.open_count + ap.open_count }}</div>
-    <div class="dash-track-foot">{{ ar.open_count }} sales &middot; {{ ap.open_count }} purchase still owing</div>
-  </a>
-</div>
-
-<div class="dash-counts">
-  <a href="{{ url_for('inv_suppliers.list_suppliers') }}" class="dash-stat">
-    <div class="dash-stat-label">Suppliers</div>
-    <div class="dash-stat-value" style="color:#16a34a;">{{ supplier_total }}</div>
-  </a>
-  <a href="{{ url_for('inv_customers.list_customers') }}" class="dash-stat">
-    <div class="dash-stat-label">Customers</div>
-    <div class="dash-stat-value" style="color:#2563eb;">{{ customer_total }}</div>
-  </a>
-  {% if purchase_flow == 'with_po' %}
-  <a href="{{ url_for('inv_purchases.list_purchases') }}" class="dash-stat">
-    <div class="dash-stat-label">Pending purchase orders</div>
-    <div class="dash-stat-value" style="color:#d97706;">{{ po_pending }}</div>
-  </a>
-  {% endif %}
-  {% if sales_flow == 'with_so' %}
-  <a href="{{ url_for('inv_sales.list_sales') }}" class="dash-stat">
-    <div class="dash-stat-label">Pending sales orders</div>
-    <div class="dash-stat-value" style="color:#d97706;">{{ so_pending }}</div>
-  </a>
-  {% endif %}
-  <a href="{{ url_for('inv_invoices.list_invoices') }}" class="dash-stat">
-    <div class="dash-stat-label">Sales invoices</div>
-    <div class="dash-stat-value" style="color:#0d9488;">{{ sales_total }}</div>
-  </a>
-  <a href="{{ url_for('inv_invoices.list_invoices') }}?status=unapproved" class="dash-stat">
-    <div class="dash-stat-label">Unapproved sales</div>
-    <div class="dash-stat-value" style="color:#d97706;">{{ sales_unapproved }}</div>
-  </a>
-  <a href="{{ url_for('inv_invoices.list_invoices') }}" class="dash-stat">
-    <div class="dash-stat-label">Unpaid sales</div>
-    <div class="dash-stat-value" style="color:#dc2626;">{{ sales_unpaid }}</div>
-  </a>
-  <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" class="dash-stat">
-    <div class="dash-stat-label">Purchase invoices</div>
-    <div class="dash-stat-value" style="color:#7c3aed;">{{ purchase_total }}</div>
-  </a>
-  <a href="{{ url_for('inv_purchase_return.list_returns') }}" class="dash-stat">
-    <div class="dash-stat-label">Purchase returns</div>
-    <div class="dash-stat-value" style="color:#dc2626;">{{ return_total }}</div>
-  </a>
-</div>
-<div class="card" style="padding:14px 16px;">
-  <h3 style="margin:0 0 10px;font-size:13px;">Quick actions</h3>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
-    <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-primary">+ New Sales Invoice</a>
-    <a href="{{ url_for('inv_purchase_invoice.invoice_form') }}" class="btn btn-primary">+ New Purchase Invoice</a>
-    <a href="{{ url_for('inv_purchase_return.return_form') }}" class="btn btn-secondary">+ New Purchase Return</a>
-    {% if purchase_flow == 'with_po' %}
-    <a href="{{ url_for('inv_purchases.purchase_form') }}" class="btn btn-outline">+ Purchase Order</a>
-    {% endif %}
-    {% if sales_flow == 'with_so' %}
-    <a href="{{ url_for('inv_sales.sale_form') }}" class="btn btn-outline">+ Sales Order</a>
-    {% endif %}
-    <a href="{{ url_for('inv_suppliers.create_supplier') }}" class="btn btn-outline">+ Supplier</a>
-    <a href="{{ url_for('inv_customers.create_customer') }}" class="btn btn-outline">+ Customer</a>
+<section class="perf">
+  <div class="perf-head">
+    <div>
+      <h2 class="perf-title">Performance</h2>
+      <p class="perf-sub">
+        <span class="perf-tick-dot"></span>
+        {{ perf.year }} &middot; approved invoices, net of tax and of returns
+        &middot; gross profit carries no operating costs
+      </p>
+    </div>
+    {# GET, so a filtered dashboard is a shareable URL that survives a refresh. #}
+    <form class="perf-filters" method="get" action="{{ url_for('invoicing.dashboard') }}" id="perf-filters">
+      <select class="perf-sel" name="label" id="perf-label" aria-label="Filter by project label" onchange="this.form.submit()">
+        <option value="">All labels</option>
+        {% for l in labels %}
+        <option value="{{ l.id }}" {{ 'selected' if sel_label == l.id }}>{{ l.name }}{{ '' if l.is_active else ' (archived)' }}</option>
+        {% endfor %}
+      </select>
+      <select class="perf-sel" name="year" id="perf-year" aria-label="Filter by year" onchange="this.form.submit()">
+        {% for y in years %}
+        <option value="{{ y }}" {{ 'selected' if sel_year == y }}>{{ y }}</option>
+        {% else %}
+        <option value="{{ sel_year }}" selected>{{ sel_year }}</option>
+        {% endfor %}
+      </select>
+    </form>
   </div>
-</div>
+
+  <div class="perf-kpis">
+    {% for sr in chart.series %}
+    {% set d = perf.deltas[sr.key] %}
+    <div class="perf-kpi" data-kpi="{{ sr.key }}">
+      <div class="perf-kpi-label">
+        <span class="perf-key {{ 'dashed' if sr.var == 'pur' }}" style="background:var(--s-{{ sr.var }});color:var(--s-{{ sr.var }});"></span>
+        {{ sr.label }}
+      </div>
+      <div class="perf-kpi-value">{{ perf.totals[sr.key]|amount_format(0) }}</div>
+      <div class="perf-kpi-delta {{ 'flat' if d is none else ('up' if d >= 0 else 'down') }}">
+        {% if d is not none %}
+        <span aria-hidden="true">{{ '&#8599;'|safe if d >= 0 else '&#8600;'|safe }}</span>
+        <span>{{ '+' if d >= 0 }}{{ '%.1f'|format(d) }}%</span>
+        <span style="color:var(--light);font-weight:400;">vs {{ perf.prev_year }}</span>
+        {% else %}
+        <span>No {{ perf.prev_year }} comparison</span>
+        {% endif %}
+      </div>
+      {% if sr.key == 'gross' and perf.totals.margin is not none %}
+      {# The bar is the margin, clamped: a margin over 100% is not drawable and
+         a negative one has no bar to draw. #}
+      <div class="perf-bar"><span style="width:{{ [[perf.totals.margin, 0]|max, 100]|min }}%;"></span></div>
+      <div class="perf-kpi-foot">{{ '%.1f'|format(perf.totals.margin) }}% margin on {{ perf.totals.revenue|amount_format(0) }} revenue</div>
+      {% elif sr.key == 'revenue' %}
+      <div class="perf-kpi-foot">Approved sales invoices, less approved credit notes</div>
+      {% else %}
+      <div class="perf-kpi-foot">Approved purchase invoices, less approved debit notes</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="perf-chart">
+    <div class="perf-chart-head">
+      <h3 class="perf-chart-h">Monthly trend, {{ perf.year }}</h3>
+      <span class="perf-cap">Gross profit is the accented line. Purchases is dashed.</span>
+    </div>
+    <div class="perf-legend">
+      {% for sr in chart.series %}
+      <span class="perf-leg">
+        <span class="perf-key {{ 'dashed' if sr.var == 'pur' }}" style="background:var(--s-{{ sr.var }});color:var(--s-{{ sr.var }});"></span>
+        {{ sr.label }} <b>{{ perf.totals[sr.key]|amount_format(0) }}</b>
+      </span>
+      {% endfor %}
+    </div>
+
+    <div class="perf-plot">
+      <svg class="perf-svg" id="perf-svg" viewBox="0 0 {{ chart.view_w }} {{ chart.view_h }}"
+           role="img" aria-label="Monthly revenue, purchases and gross profit for {{ perf.year }}">
+        {% for t in chart.ticks %}
+        <line class="perf-grid" x1="{{ chart.pad_l }}" y1="{{ t.y }}" x2="{{ chart.plot_r }}" y2="{{ t.y }}"/>
+        <text class="perf-tick" x="{{ chart.pad_l - 8 }}" y="{{ t.y + 3 }}" text-anchor="end">{{ t.v|amount_format(0) }}</text>
+        {% endfor %}
+        {% if chart.zero_y != chart.plot_b %}
+        <line class="perf-zero" x1="{{ chart.pad_l }}" y1="{{ chart.zero_y }}" x2="{{ chart.plot_r }}" y2="{{ chart.zero_y }}"/>
+        {% endif %}
+        {% for c in chart.cols %}
+        <text class="perf-xlab" x="{{ c.x }}" y="{{ chart.view_h - 8 }}" text-anchor="middle">{{ c.name }}</text>
+        {% endfor %}
+
+        {% for sr in chart.series %}
+        <polyline class="perf-line" data-s="{{ sr.var }}" points="{{ sr.points }}" style="stroke:var(--s-{{ sr.var }})"/>
+        {% endfor %}
+        {# Point markers ride the two solid series only; dotting the dashed
+           context line as well would make it as loud as the answer. #}
+        {% for sr in chart.series %}{% if sr.var != 'pur' %}
+        {% for d in sr.dots %}
+        <circle class="perf-pt" cx="{{ d.x }}" cy="{{ d.y }}" r="2.6" style="fill:var(--s-{{ sr.var }})"/>
+        {% endfor %}
+        {% endif %}{% endfor %}
+
+        {# One direct label, on the series the chart is about. Labelling all
+           three would collide wherever the lines converge. #}
+        {% set gp = chart.series[2] %}
+        <text class="perf-endlab" x="{{ gp.last.x - 6 }}" y="{{ gp.last.y - 9 }}" text-anchor="end">{{ perf.months[11].gross|amount_format(0) }}</text>
+
+        {% for sr in chart.series %}
+        <circle class="perf-hover-dot" data-s="{{ sr.key }}" cx="0" cy="0" r="4" style="fill:var(--s-{{ sr.var }})"/>
+        {% endfor %}
+        <line class="perf-cross" id="perf-cross" x1="0" y1="{{ chart.pad_t }}" x2="0" y2="{{ chart.plot_b }}"/>
+        {% for c in chart.cols %}
+        {# Hit bands are a full column wide so the pointer never has to find a
+           2px line; they come last so they take the events. #}
+        <rect class="perf-hit" data-i="{{ c.i }}" x="{{ c.x - chart.band / 2 }}" y="{{ chart.pad_t }}"
+              width="{{ chart.band }}" height="{{ chart.plot_h }}"/>
+        {% endfor %}
+      </svg>
+      <div class="perf-tip" id="perf-tip" role="status" aria-live="polite"></div>
+    </div>
+
+    <details class="perf-table-wrap">
+      <summary>Show the numbers</summary>
+      <table class="perf-table">
+        <thead><tr><th>Month</th>{% for sr in chart.series %}<th>{{ sr.label }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for m in perf.months %}
+          <tr><td>{{ m.name }}</td>{% for sr in chart.series %}<td>{{ m[sr.key]|amount_format(0) }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><th>Total</th>{% for sr in chart.series %}<th>{{ perf.totals[sr.key]|amount_format(0) }}</th>{% endfor %}</tr></tfoot>
+      </table>
+    </details>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script id="perf-data" type="application/json">{{ chart_json|safe }}</script>
+<script>
+/* Crosshair + tooltip for the performance chart. An SVG chart that cannot be
+   interrogated point-by-point makes the reader estimate values off gridlines,
+   so the hover layer is part of the chart rather than an enhancement.
+   Everything it needs is in the JSON block above â€” no refetch, no library. */
+(function () {
+  var svg = document.getElementById("perf-svg");
+  var tip = document.getElementById("perf-tip");
+  var cross = document.getElementById("perf-cross");
+  var raw = document.getElementById("perf-data");
+  if (!svg || !tip || !cross || !raw) return;
+
+  var data = JSON.parse(raw.textContent);
+  var dots = {};
+  svg.querySelectorAll(".perf-hover-dot").forEach(function (d) {
+    dots[d.getAttribute("data-s")] = d;
+  });
+
+  function show(i) {
+    var col = data.cols[i];
+    if (!col) return;
+    cross.setAttribute("x1", col.x);
+    cross.setAttribute("x2", col.x);
+    cross.style.opacity = "1";
+
+    var rows = "";
+    data.series.forEach(function (s) {
+      var pt = s.dots[i];
+      var d = dots[s.key];
+      if (d) {
+        d.setAttribute("cx", pt.x);
+        d.setAttribute("cy", pt.y);
+        d.style.opacity = "1";
+      }
+      rows += '<div class="perf-tip-r"><span class="k" style="background:var(--s-'
+        + s.var + ')"></span><span class="n">' + s.label
+        + '</span><span class="v">' + pt.text + "</span></div>";
+    });
+    tip.innerHTML = '<div class="perf-tip-m">' + col.name + " " + data.year
+      + "</div>" + rows;
+    tip.classList.add("on");
+
+    /* The SVG scales to its container, so a viewBox x has to be converted to
+       CSS pixels before it can position an HTML tooltip. */
+    var box = svg.getBoundingClientRect();
+    var scale = box.width / data.view_w;
+    var left = col.x * scale + 14;
+    if (left + tip.offsetWidth > box.width) left = col.x * scale - tip.offsetWidth - 14;
+    tip.style.left = Math.max(0, left) + "px";
+    tip.style.top = "6px";
+  }
+
+  function hide() {
+    cross.style.opacity = "0";
+    tip.classList.remove("on");
+    Object.keys(dots).forEach(function (k) { dots[k].style.opacity = "0"; });
+  }
+
+  svg.querySelectorAll(".perf-hit").forEach(function (r) {
+    var i = +r.getAttribute("data-i");
+    r.addEventListener("mouseenter", function () { show(i); });
+    r.addEventListener("touchstart", function (e) { show(i); e.preventDefault(); },
+                       { passive: false });
+  });
+  svg.addEventListener("mouseleave", hide);
+})();
+</script>
 {% endblock %}

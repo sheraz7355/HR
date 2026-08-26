@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card" style="margin-bottom:16px;">
   <div class="card-body">
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;font-variant-numeric:tabular-nums;">
       <div><strong>Purchase Cost:</strong><br>{{ "{:,.0f}".format(asset.purchase_cost) }}</div>
       <div><strong>Accum. Depreciation:</strong><br>{{ "{:,.0f}".format(asset.posted_depreciation) }}</div>
       <div><strong>Book Value (now):</strong><br><span style="font-size:1.2em;font-weight:700;">{{ "{:,.0f}".format(asset.net_book_value) }}</span></div>
@@ -38,9 +38,9 @@
         <label class="form-label">Description</label>
         <textarea name="description" class="form-control" rows="2">{{ transfer.description if transfer else '' }}</textarea>
       </div>
-      <div class="card" style="background:#f8fafc;padding:12px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:16px;">
+      <div class="card" style="background:var(--bg-top);padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:16px;">
         <strong>Journal Entry (on approve):</strong>
-        <table class="table" style="margin:8px 0 0;font-size:13px;">
+        <table class="table" style="margin:8px 0 0;font-size:13px;font-variant-numeric:tabular-nums;">
           <thead><tr><th>Account</th><th>Debit</th><th>Credit</th></tr></thead>
           <tbody>
             <tr><td>Accumulated Depreciation</td><td>{{ "{:,.0f}".format(asset.posted_depreciation) }}</td><td>—</td></tr>
