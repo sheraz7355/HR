@@ -26,6 +26,6 @@ Microsoft/
 # Browser tooling artifacts
 .playwright-mcp/
 
-# Screenshots and design docs (not code)
+# Screenshots (not code). The design guide itself stays tracked: DESIGN.md
+# names it as the current standard and code comments cite it by section.
 shots/
-UI_V2_GUIDE.md

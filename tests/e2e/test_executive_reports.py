@@ -7,6 +7,7 @@ one register to the other by itself. The tests below are written against that
 promise rather than against any stored state.
 """
 import os
+import re
 import tempfile
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -497,10 +498,22 @@ def test_dashboard_leads_with_kpis_aging_and_exposures(client, scope):
     _post(scope["b"], credit=400)
     page = client.get("/executive/").get_data(as_text=True)
 
-    for label in ("Net assets", "Current ratio", "Quick ratio",
-                  "Avg collection days", "Avg payment days",
-                  "Oldest receivable", "Oldest payable"):
+    for label in ("Net assets", "Current ratio", "Quick ratio"):
         assert label in page
+
+    # The four aging facts — average collection and payment days, oldest
+    # receivable and payable — are no longer tiles of their own. They are facts
+    # *about* the aging profile, so they moved under that chart and are phrased
+    # for that position: "Collection 45 days avg", not "Avg collection days".
+    # Match the block rather than the bare words, or an unrelated "Payment"
+    # elsewhere on the page would satisfy this test on its own.
+    block = re.search(r'<div class="exr-facts">(.*?)</div>', page, re.S)
+    assert block, "the aging facts moved out from under the chart"
+    facts = block.group(1)
+    for fact in ("Collection", "Payment", "Oldest receivable", "Oldest payable"):
+        assert fact in facts
+    assert "days avg" in facts
+
     assert "Aging profile" in page
     assert "Largest exposures" in page
     assert "31\u201360 days" in page
