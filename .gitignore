@@ -25,3 +25,7 @@ Microsoft/
 
 # Browser tooling artifacts
 .playwright-mcp/
+
+# Screenshots and design docs (not code)
+shots/
+UI_V2_GUIDE.md
