@@ -28,6 +28,11 @@ def app():
     # that create_all() reads.
     import shared.models.base  # noqa: F401  (users/roles: FK targets)
     import shared.models.ledger  # noqa: F401  (chart_of_accounts: FK target)
+    # project_labels is an FK target for journal_lines, the voucher/invoice
+    # line tables and inventory_settings. Nothing here queries labels, but
+    # create_all() resolves every ForeignKey on the metadata before it
+    # emits any DDL, so leaving it unregistered fails the whole schema.
+    import shared.models.project_label  # noqa: F401
     import shared.models.stock_ledger  # noqa: F401
     import shared.models.stock_layer  # noqa: F401
     import shared.models.company_settings  # noqa: F401  (accounting_periods, fiscal_year_rule)
