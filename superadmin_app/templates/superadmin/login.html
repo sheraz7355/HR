@@ -1,39 +1,30 @@
+{# Super admin sign-in. Renders outside app_shell, so the UI v2 opt-in is
+   repeated through partials/_v2_head.html (UI_V2_GUIDE.md §2) — which also
+   carries the Inter link this page used to request on its own.
+
+   The private palette is gone, and with it the navy gradient body: a fixed
+   dark wash keeps its colour when the theme goes light and stops agreeing
+   with the card sitting on it (§7). Neutral ground, one card, sentence case.
+
+   The `login` and `password` element ids are a DOM contract — tests/e2e
+   drives console sign-in through them. Do not rename them. #}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui="v2">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Super Admin Console — Accountix ERP</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231d4ed8'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232B7263'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
 <meta name="robots" content="noindex">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+{% include "partials/_v2_head.html" %}
 <style>
-  :root {
-    --primary: #002045;
-    --primary-container: #1a365d;
-    --on-primary: #ffffff;
-    --bg: #f6f9ff;
-    --surface: #ffffff;
-    --surface-low: #eef4fc;
-    --surface-variant: #dde3eb;
-    --on-surface: #161c22;
-    --on-surface-variant: #43474e;
-    --outline: #74777f;
-    --outline-variant: #c4c6cf;
-    --error: #ba1a1a;
-    --error-container: #ffdad6;
-    --accent: #1d4ed8;
-    --shadow: 0 8px 30px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06);
-  }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
     font-family: Inter, "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
-    background: linear-gradient(145deg, #002045 0%, #0a2e5c 50%, #001a36 100%);
-    color: var(--on-surface);
-    font-size: 14px;
+    background: var(--v2-ground);
+    color: var(--v2-body);
+    font-size: 13px;
     line-height: 1.5;
     min-height: 100vh;
     display: grid;
@@ -41,7 +32,7 @@
     padding: 24px;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: inherit; text-decoration: none; }
+  a { text-decoration: none; }
 
   .shell { width: 100%; max-width: 420px; }
 
@@ -50,73 +41,75 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    margin-bottom: 28px;
+    gap: 10px;
+    margin-bottom: 24px;
   }
   .brand-mark {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    background: var(--v2-ink);
     display: grid;
     place-items: center;
-    font-size: 18px;
-    font-weight: 800;
-    color: var(--on-primary);
-    box-shadow: 0 4px 12px rgba(29,78,216,.4);
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--v2-ground);
   }
   .brand-name {
-    color: var(--on-primary);
-    font-size: 18px;
-    font-weight: 700;
+    color: var(--v2-ink);
+    font-size: 16px;
+    font-weight: 600;
     letter-spacing: -.02em;
   }
 
   /* ── Card ────────────────────────────────────────────────── */
-  .card {
-    background: var(--surface);
-    border-radius: 16px;
-    box-shadow: var(--shadow);
+  /* (0,2,0): ui.css styles .card at the same specificity, so a plain .card
+     here would lose its radius and padding to it (§2). */
+  .shell .card {
+    background: var(--v2-surface);
+    border: 1px solid var(--v2-line);
+    border-radius: 12px;
+    box-shadow: none;
     overflow: hidden;
+    padding: 0;
+    margin: 0;
   }
-  .card-head { padding: 28px 32px 0; }
+  .card-head { padding: 24px 28px 0; }
   .card-tag {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 12px;
-    border-radius: 9999px;
-    background: var(--accent);
-    color: var(--on-primary);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .05em;
-    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: var(--v2-accent-soft);
+    color: var(--v2-accent-ink);
+    font-size: 11.5px;
+    font-weight: 500;
   }
   .card-title {
-    margin-top: 14px;
-    font-size: 22px;
+    margin-top: 12px;
+    font-size: 21px;
     line-height: 1.3;
-    font-weight: 700;
-    color: var(--primary);
+    font-weight: 600;
+    color: var(--v2-ink);
     letter-spacing: -.02em;
   }
   .card-desc {
-    margin-top: 8px;
-    color: var(--on-surface-variant);
-    font-size: 13.5px;
-    line-height: 1.5;
+    margin-top: 6px;
+    color: var(--v2-muted);
+    font-size: 12.5px;
+    line-height: 1.55;
   }
 
   /* ── Flash ───────────────────────────────────────────────── */
   .flash {
-    margin: 0 32px 4px;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: var(--error-container);
-    color: var(--error);
-    font-size: 13px;
-    font-weight: 500;
+    margin: 0 28px 4px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--v2-neg-bg);
+    color: var(--v2-neg);
+    font-size: 12.5px;
+    font-weight: 400;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -128,62 +121,54 @@
   }
 
   /* ── Form ────────────────────────────────────────────────── */
-  form { padding: 24px 32px 32px; }
-  .field { margin-bottom: 18px; }
+  form { padding: 20px 28px 28px; }
+  .field { margin-bottom: 15px; }
   .field label {
     display: block;
-    margin-bottom: 7px;
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: .05em;
-    text-transform: uppercase;
-    color: var(--on-surface-variant);
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--v2-muted);
   }
   .field input {
     width: 100%;
-    padding: 11px 14px;
+    padding: 10px 12px;
     font: inherit;
-    font-size: 14px;
-    border: 1.5px solid var(--outline-variant);
-    border-radius: 10px;
-    background: var(--surface);
-    color: var(--on-surface);
+    font-size: 13px;
+    border: 1px solid var(--v2-line-2);
+    border-radius: 8px;
+    background: var(--v2-surface);
+    color: var(--v2-ink);
     outline: none;
-    transition: all .15s ease;
+    transition: border-color .15s ease;
   }
-  .field input::placeholder { color: var(--outline); }
-  .field input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(29,78,216,.1);
-  }
+  .field input::placeholder { color: var(--v2-faint); }
+  .field input:focus { border-color: var(--v2-accent); }
 
+  /* The one filled button on the page: the committing action (§5). */
   .submit-btn {
     width: 100%;
-    padding: 12px 20px;
-    border: 0;
-    border-radius: 10px;
-    background: var(--primary);
-    color: var(--on-primary);
+    padding: 11px 20px;
+    border: 1px solid var(--v2-ink);
+    border-radius: 8px;
+    background: var(--v2-ink);
+    color: var(--v2-ground);
     font: inherit;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13.5px;
+    font-weight: 500;
     cursor: pointer;
-    transition: all .15s ease;
+    transition: background .15s ease;
     margin-top: 4px;
   }
-  .submit-btn:hover {
-    background: var(--primary-container);
-    box-shadow: 0 4px 12px rgba(0,32,69,.3);
-  }
-  .submit-btn:active { transform: scale(.98); }
+  .submit-btn:hover { background: var(--v2-ink-2); }
 
   /* ── Footer ──────────────────────────────────────────────── */
   .foot {
-    padding: 16px 32px;
-    background: var(--surface-low);
-    border-top: 1px solid var(--outline-variant);
-    font-size: 13px;
-    color: var(--on-surface-variant);
+    padding: 14px 28px;
+    background: var(--v2-hover);
+    border-top: 1px solid var(--v2-line);
+    font-size: 12.5px;
+    color: var(--v2-muted);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -191,18 +176,17 @@
     flex-wrap: wrap;
   }
   .foot a {
-    font-weight: 600;
-    color: var(--primary);
-    transition: color .15s;
+    font-weight: 500;
+    color: var(--v2-accent);
   }
-  .foot a:hover { color: var(--accent); }
+  .foot a:hover { text-decoration: underline; }
 
   /* ── Responsive ──────────────────────────────────────────── */
   @media (max-width: 440px) {
     body { padding: 16px; }
     .card-head, form, .foot { padding-left: 20px; padding-right: 20px; }
     .flash { margin-left: 20px; margin-right: 20px; }
-    .brand-name { font-size: 16px; }
+    .brand-name { font-size: 15px; }
     .card-title { font-size: 18px; }
   }
 </style>
@@ -231,12 +215,12 @@
     <form method="post">
       <div class="field">
         <label for="login">User ID</label>
-        <input type="text" id="login" name="login" required autofocus autocomplete="username"
+        <input type="text" id="login" name="login" required autofocus
                autocomplete="username" placeholder="Your user ID (or email)">
       </div>
       <div class="field">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password"
+        <input type="password" id="password" name="password" required
                autocomplete="current-password" placeholder="Enter password">
       </div>
       <button type="submit" class="submit-btn">Enter console</button>

@@ -2,7 +2,9 @@
 
 The visual system this ERP runs on, and the procedure for bringing a page onto
 it. Every module the app shell serves — invoicing, inventory, HR, executive,
-FBR, fixed assets, settings, and now finance and accounting — is on it.
+FBR, fixed assets, settings, and now finance and accounting — is on it, and so
+are the pages that bypass the shell entirely: the landing page, both sign-in
+screens, the company portal, the module hub and the super admin console (§2).
 
 `DESIGN.md` documents the older standard and is kept for one reason: a module
 added later starts on v1 until someone converts its palette, and rolling a
@@ -49,13 +51,36 @@ Add a module key to opt it in; remove it to roll back. The shell then stamps
 `data-ui="v2"` on `<html>`, and every rule in `ui.css` is scoped to that
 attribute, so no other module's chrome moves.
 
-A page that renders **outside the shell** — a print or preview popup opened in
-its own window — does not inherit the stamp and must repeat it itself:
-`<html data-ui="v2">`, the two stylesheet links, and the `ax-theme` bootstrap
-script. `accounting/voucher_preview.html` and `inventory/vouchers/voucher_preview.html`
-are the two worked examples. Miss it and the page does not merely fall back to
+A page that renders **outside the shell** does not inherit the stamp and must
+repeat it itself: `<html data-ui="v2">`, the two stylesheet links, and the
+`ax-theme` bootstrap script. Miss it and the page does not merely fall back to
 v1 — every `--v2-*` name it uses becomes undefined, which invalidates the whole
 declaration and strips the styling (see §3).
+
+There are two kinds. **Print and preview popups** open in their own window and
+inline the opt-in by hand, because they deliberately load nothing else:
+`accounting/voucher_preview.html` and `inventory/vouchers/voucher_preview.html`
+are the worked examples. **Full pages that bypass the shell** — the landing
+page, both sign-in screens, the company portal, the module hub and the super
+admin console — include `partials/_v2_head.html` instead, which carries the
+theme bootstrap, Inter, `app.css` and `ui.css` in one line:
+
+```jinja
+<html lang="en" data-ui="v2">
+<head>
+  ...
+  {% include "partials/_v2_head.html" %}
+  <style> /* page-specific layout; colour comes from tokens */ </style>
+```
+
+Include it **before** the page's own `<style>`, so the page wins the
+equal-specificity tie against `ui.css`'s bridge blocks (both `(0,1,0)`; later
+wins). These pages sat on the navy `DESIGN.md` palette long after every module
+had moved, each with a private `:root` of hardcoded light values — nine copies
+of one light theme that no test could see. `tests/unit/test_standalone_page_v2.py`
+now discovers every template that opens its own `<html>` and fails if it lacks
+the stamp, never loads `ui.css`, or hardcodes a colour outside a `var()`
+fallback.
 
 Specificity: `[data-ui="v2"] .thing` is (0,2,0) and beats a plain `.thing`
 (0,1,0) from `app.css` regardless of source order. A template's own
@@ -311,7 +336,9 @@ on a gradient.
 
 ## 9. Bringing a page over — checklist
 
-1. Add the module key to `UI_V2_MODULES`.
+1. Add the module key to `UI_V2_MODULES` — or, for a page that renders outside
+   the shell, stamp `<html data-ui="v2">` and include `partials/_v2_head.html`
+   (§2).
 2. Delete the page's private palette; replace its `:root` with the bridge block
    (every name resolving to a v2 token, literals only as fallbacks).
 3. Grep the page for hex literals inside `<style>` **and** for Tailwind colour

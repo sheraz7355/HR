@@ -145,6 +145,37 @@
   --shadow-sm:none; --shadow:var(--v2-shadow); --shadow-lg:var(--v2-pop);
 }
 
+/* Bridge, third half: the vocabulary the pages OUTSIDE the shell speak.
+   The landing page, both sign-in screens, the company portal, the module hub
+   and the super admin console never render through app_shell.html, so they
+   never got `data-ui="v2"` and stayed on the navy DESIGN.md palette long after
+   every module had moved. They each declared that palette privately, as a
+   literal `:root` block — nine copies of one hardcoded light theme, which is
+   §7's trap at full size: a near-white card keeps its colour when the text on
+   it turns light.
+
+   Those blocks are now deleted and the names they declared resolve here, so
+   the pages follow the theme without repeating a palette that tests/unit/
+   test_ui_css_palette.py can only guard in this file. The names are Material's
+   role vocabulary (DESIGN.md §2), not app.css's, which is why they are a
+   separate block from the invoicing bridge above.
+
+   `--primary` is deliberately NOT re-pointed here: the block above already
+   maps it to --v2-ink, which is what these pages use it for — structure, the
+   one filled button, the brand mark. Its companions follow that reading. */
+[data-ui="v2"]{
+  --primary-container:var(--v2-ink-2);
+  /* The label on a --primary fill. Both are tokens that invert together, so
+     the pair stays legible in either theme; a literal #fff here would be
+     white-on-near-white the moment the ink token lightened (§5). */
+  --on-primary:var(--v2-ground);
+  --secondary:var(--v2-body);
+  --on-surface:var(--v2-ink); --on-surface-variant:var(--v2-body);
+  --outline:var(--v2-muted); --outline-variant:var(--v2-line);
+  --error:var(--v2-neg); --error-container:var(--v2-neg-bg);
+  --tertiary:var(--v2-pos); --tertiary-fixed:var(--v2-pos-bg);
+}
+
 [data-ui="v2"] body{background:var(--v2-ground);color:var(--v2-body);font-size:13px;}
 [data-ui="v2"] .content-area{font-size:13px;}
 [data-ui="v2"] a{color:var(--v2-accent);}

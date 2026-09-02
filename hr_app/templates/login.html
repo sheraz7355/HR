@@ -1,101 +1,102 @@
 {# Staff sign-in. Standalone rather than inside app_shell: the shell's chrome
    assumes an authenticated user, and this page shares its look with the public
-   landing page instead.
+   landing page instead. The v2 opt-in is therefore repeated through
+   partials/_v2_head.html (UI_V2_GUIDE.md §2), and the navy DESIGN.md palette
+   this page used to declare privately is gone — the names resolve through the
+   bridge in ui.css, so the screen follows the theme like every module does.
 
    The `login` and `password` element ids are a DOM contract — tests/e2e drives
    sign-in through them (DESIGN.md §4). Do not rename them. #}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui="v2">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in — Accountix ERP</title>
+{% include "partials/_v2_head.html" %}
 <style>
-  :root {
-    --primary: #002045;
-    --primary-container: #1a365d;
-    --on-primary: #ffffff;
-    --bg: #f6f9ff;
-    --surface: #ffffff;
-    --surface-low: #eef4fc;
-    --surface-variant: #dde3eb;
-    --on-surface: #161c22;
-    --on-surface-variant: #43474e;
-    --outline: #74777f;
-    --outline-variant: #c4c6cf;
-    --error: #ba1a1a;
-    --error-container: #ffdad6;
-    --tertiary: #003f25;
-    --tertiary-fixed: #9ff5c1;
-    --shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
-  }
   * { box-sizing: border-box; margin: 0; }
   body {
     font-family: Inter, "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
-    background: var(--bg); color: var(--on-surface);
-    font-size: 14px; line-height: 20px; min-height: 100vh;
+    background: var(--v2-ground); color: var(--v2-body);
+    font-size: 13px; line-height: 20px; min-height: 100vh;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: inherit; text-decoration: none; }
+  a { text-decoration: none; }
 
   .split { min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; }
 
-  /* Left: brand panel. The one large navy area in the product, and it carries
-     no data — so it frames rather than competes. */
+  /* Left: brand panel. The one large filled area in the product, and it carries
+     no data — so it frames rather than competes. It rides --v2-ink, which
+     inverts with the theme, so everything sitting on it rides --v2-ground
+     rather than a literal white (§7). */
   .panel {
-    background: var(--primary); color: var(--on-primary);
+    background: var(--v2-ink); color: var(--v2-ground);
     padding: 48px; display: flex; flex-direction: column; gap: 32px;
   }
-  .brand { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
-  .mark { width: 32px; height: 32px; border-radius: 8px; background: var(--surface); color: var(--primary); display: grid; place-items: center; font-size: 15px; font-weight: 700; flex: none; }
+  .panel .brand { display: flex; align-items: center; gap: 10px; font-size: 15px;
+                  font-weight: 600; letter-spacing: -.01em; color: var(--v2-ground); }
+  .mark { width: 32px; height: 32px; border-radius: 8px; background: var(--v2-ground);
+          color: var(--v2-ink); display: grid; place-items: center;
+          font-size: 15px; font-weight: 700; flex: none; }
   .panel-body { margin-top: auto; }
-  .panel-body h2 { font-size: 28px; line-height: 36px; font-weight: 700; letter-spacing: -.01em; max-width: 12em; }
-  .panel-body p { margin-top: 14px; color: #c9d6e6; font-size: 15px; line-height: 24px; max-width: 26em; }
+  .panel-body h2 { font-size: 27px; line-height: 35px; font-weight: 600;
+                   letter-spacing: -.02em; max-width: 12em; }
+  /* Secondary copy on an inverted fill: the same ground token at reduced
+     opacity, which blends toward the fill in whichever direction the theme
+     went. A fixed pale blue was legible on navy and invisible on light. */
+  .panel-body p { margin-top: 14px; opacity: .74; font-size: 14px; line-height: 23px; max-width: 26em; }
   .panel-list { margin-top: auto; padding-top: 32px; display: grid; gap: 12px; }
-  .panel-list div { display: flex; align-items: flex-start; gap: 10px; color: #c9d6e6; font-size: 13px; line-height: 20px; }
-  .tick { width: 18px; height: 18px; border-radius: 9999px; background: var(--tertiary-fixed); color: var(--tertiary); display: grid; place-items: center; font-size: 11px; font-weight: 700; flex: none; margin-top: 1px; }
+  .panel-list div { display: flex; align-items: flex-start; gap: 10px;
+                    opacity: .74; font-size: 12.5px; line-height: 20px; }
+  .tick { width: 18px; height: 18px; border-radius: 9999px; background: var(--v2-pos-bg);
+          color: var(--v2-pos); display: grid; place-items: center; font-size: 11px;
+          font-weight: 700; flex: none; margin-top: 1px; opacity: 1; }
 
   /* Right: the form. */
   .form-side { display: grid; place-items: center; padding: 32px 24px; }
-  .card { width: 100%; max-width: 380px; }
-  .card h1 { font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: -.01em; color: var(--primary); }
-  .card .sub { margin-top: 6px; color: var(--on-surface-variant); }
+  /* (0,2,0) on purpose: ui.css styles .card as a bordered surface at the
+     same specificity, and a plain .card here would lose to it. Matching it
+     and coming later in the document is the documented tie-break (§2). */
+  .form-side .card { width: 100%; max-width: 380px; background: none;
+                     border: 0; padding: 0; margin: 0; }
+  .card h1 { font-size: 21px; line-height: 29px; font-weight: 600;
+             letter-spacing: -.02em; color: var(--v2-ink); }
+  .card .sub { margin-top: 5px; color: var(--v2-muted); font-size: 12.5px; }
 
-  form { margin-top: 26px; }
-  .field { margin-bottom: 16px; }
-  label {
-    display: block; margin-bottom: 6px;
-    font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--on-surface-variant);
-  }
+  form { margin-top: 24px; }
+  .field { margin-bottom: 14px; }
+  label { display: block; margin-bottom: 5px; font-size: 12px; font-weight: 500;
+          color: var(--v2-muted); }
   input {
-    width: 100%; padding: 11px 12px; font: inherit; font-size: 14px;
-    border: 1px solid var(--outline-variant); border-radius: 8px;
-    background: var(--surface); color: var(--on-surface); outline: none;
+    width: 100%; padding: 10px 12px; font: inherit; font-size: 13px;
+    border: 1px solid var(--v2-line-2); border-radius: 8px;
+    background: var(--v2-surface); color: var(--v2-ink); outline: none;
     transition: border-color .15s;
   }
-  input::placeholder { color: var(--outline); }
-  input:focus { border-color: var(--primary); }
+  input::placeholder { color: var(--v2-faint); }
+  input:focus { border-color: var(--v2-accent); }
 
-  button {
-    width: 100%; margin-top: 4px; padding: 12px 20px; border: 0; border-radius: 8px;
-    background: var(--primary); color: var(--on-primary);
-    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  /* The one filled button on the screen (§5). */
+  .form-side button {
+    width: 100%; margin-top: 4px; padding: 11px 20px; border: 1px solid var(--v2-ink);
+    border-radius: 8px; background: var(--v2-ink); color: var(--v2-ground);
+    font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
     transition: background .15s;
   }
-  button:hover { background: var(--primary-container); }
+  .form-side button:hover { background: var(--v2-ink-2); }
 
-  .flash { padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
-  .flash-danger, .flash-error { background: var(--error-container); color: var(--error); }
-  .flash-success { background: var(--tertiary-fixed); color: var(--tertiary); }
-  .flash-info { background: var(--surface-low); color: var(--on-surface-variant); }
+  .flash { padding: 9px 12px; border-radius: 8px; margin-bottom: 14px; font-size: 12.5px; }
+  .flash-danger, .flash-error { background: var(--v2-neg-bg); color: var(--v2-neg); }
+  .flash-success { background: var(--v2-pos-bg); color: var(--v2-pos); }
+  .flash-info { background: var(--v2-accent-soft); color: var(--v2-accent-ink); }
 
   .card-foot {
-    margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--outline-variant);
+    margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--v2-line);
     display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-    font-size: 13px; color: var(--on-surface-variant);
+    font-size: 12.5px; color: var(--v2-muted);
   }
-  .card-foot a { font-weight: 600; color: var(--primary); }
+  .card-foot a { font-weight: 500; color: var(--v2-accent); }
   .card-foot a:hover { text-decoration: underline; }
 
   /* Responsive: the brand panel collapses to a slim header strip. */

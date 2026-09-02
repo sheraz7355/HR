@@ -1,0 +1,27 @@
+{#
+  UI v2 opt-in for pages that render OUTSIDE templates/layouts/app_shell.html.
+
+  The shell stamps `data-ui="v2"` on <html> and links these stylesheets for
+  every module in UI_V2_MODULES. A page with no shell — the landing page, the
+  sign-in screens, the company portal, the module hub, the super admin console
+  — inherits none of that and must repeat it (UI_V2_GUIDE.md §2). Missing it
+  does not fall the page back to v1: every `--v2-*` name it reaches for becomes
+  undefined, and an undefined custom property invalidates the whole declaration
+  rather than inheriting, so the page loses its colours outright (§3).
+
+  The caller still supplies `data-ui="v2"` on its own <html> element — that is
+  the attribute every rule in ui.css is scoped to, and it cannot be set from
+  inside <head>.
+
+  Include this BEFORE the page's own <style>, so the page's bridge block wins
+  the equal-specificity tie against ui.css's own (both (0,1,0), later wins).
+
+  The inline script re-applies a persisted theme before first paint, so a
+  choice made in the app never flashes the other theme out here.
+#}
+<script>(function(){try{var t=localStorage.getItem("ax-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">

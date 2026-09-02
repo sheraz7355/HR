@@ -23,7 +23,7 @@
 {% endif -%}
 {% endmacro %}
 {% for m in modules %}
-<a href="{{ url_for(m.endpoint) }}" class="mod-card" style="--brand:{{ m.brand }};--ink2:{{ m.badge_fg }};" aria-label="{{ m.title }}">
+<a href="{{ url_for(m.endpoint) }}" class="mod-card" aria-label="{{ m.title }}">
   <span class="mod-ico" aria-hidden="true">{{ icon(m.icon) }}</span>
   <span class="mod-body">
     <span class="mod-title">{{ m.title }}</span>
@@ -32,7 +32,7 @@
   </span>
 </a>
 {% endfor %}
-<a href="{{ url_for('settings.index') }}" class="mod-card" style="--brand:linear-gradient(135deg,#475569,#64748b);--ink2:#475569;" aria-label="Settings">
+<a href="{{ url_for('settings.index') }}" class="mod-card" aria-label="Settings">
   <span class="mod-ico" aria-hidden="true">{{ icon('gear') }}</span>
   <span class="mod-body">
     <span class="mod-title">Settings</span>

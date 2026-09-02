@@ -1,45 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-ui="v2">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Super Admin{% endblock %}</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231d4ed8'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232B7263'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+  {% include "partials/_v2_head.html" %}
   <style>
+    /* The console's own vocabulary, re-pointed at the v2 tokens rather than
+       declared as literals. This block used to be 22 hardcoded light values --
+       a slate/blue palette that kept its colour when the text on it turned
+       light (UI_V2_GUIDE.md section 7). ui.css is loaded above, so every
+       --v2-* name below resolves; an undefined one would take the whole
+       declaration down rather than fall back (section 3). */
     :root {
-      --primary: #002045;
-      --primary-container: #1a365d;
-      --primary-hover: #001a36;
-      --on-primary: #ffffff;
-      --accent: #1d4ed8;
-      --accent-light: #eff6ff;
-      --accent-border: #bfdbfe;
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --surface-hover: #f8fafc;
-      --surface-border: #e2e8f0;
-      --surface-border-light: #f1f5f9;
-      --text: #1e293b;
-      --text-secondary: #64748b;
-      --text-muted: #94a3b8;
-      --danger: #dc2626;
-      --danger-hover: #b91c1c;
-      --danger-light: #fef2f2;
-      --success: #16a34a;
-      --success-light: #f0fdf4;
-      --warning: #d97706;
-      --warning-light: #fffbeb;
+      --primary: var(--v2-ink);
+      --primary-container: var(--v2-ink-2);
+      --primary-hover: var(--v2-ink-2);
+      --on-primary: var(--v2-ground);
+      --accent: var(--v2-accent);
+      --accent-light: var(--v2-accent-soft);
+      --accent-border: var(--v2-accent);
+      --bg: var(--v2-ground);
+      --surface: var(--v2-surface);
+      --surface-hover: var(--v2-hover);
+      --surface-border: var(--v2-line);
+      --surface-border-light: var(--v2-line);
+      --text: var(--v2-ink);
+      --text-secondary: var(--v2-body);
+      --text-muted: var(--v2-muted);
+      --danger: var(--v2-neg);
+      --danger-hover: var(--v2-neg);
+      --danger-light: var(--v2-neg-bg);
+      --success: var(--v2-pos);
+      --success-light: var(--v2-pos-bg);
+      --warning: var(--v2-warn);
+      --warning-light: var(--v2-warn-bg);
       --radius-sm: 6px;
       --radius: 8px;
-      --radius-lg: 12px;
-      --radius-xl: 16px;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
-      --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04);
-      --shadow-md: 0 4px 6px -1px rgba(0,0,0,.07), 0 2px 4px -1px rgba(0,0,0,.04);
-      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,.08), 0 4px 6px -2px rgba(0,0,0,.04);
+      --radius-lg: 11px;
+      --radius-xl: 12px;
+      /* Separation is a hairline, not a shadow (section 5): cards drop theirs
+         and only the mobile nav drawer, which genuinely floats, keeps one. */
+      --shadow-sm: none;
+      --shadow: none;
+      --shadow-md: none;
+      --shadow-lg: var(--v2-pop);
       --transition: .15s ease;
     }
 
@@ -57,13 +63,15 @@
     }
 
     /* ── Top Bar ───────────────────────────────────────────── */
+    /* The rail is light, not a navy slab (section 1) -- so every
+       white-on-navy value that used to sit on it is now ink on surface. */
     .sa-header {
-      background: var(--primary);
-      color: var(--on-primary);
+      background: var(--v2-surface);
+      color: var(--v2-ink);
       position: sticky;
       top: 0;
       z-index: 100;
-      box-shadow: 0 1px 0 rgba(255,255,255,.08);
+      border-bottom: 1px solid var(--v2-line);
     }
     .sa-header-inner {
       max-width: 1200px;
@@ -78,9 +86,9 @@
       display: none;
       margin-left: auto;
       background: transparent;
-      border: 1px solid rgba(255,255,255,.25);
+      border: 1px solid var(--v2-line-2);
       border-radius: var(--radius);
-      color: var(--on-primary);
+      color: var(--v2-ink);
       font-size: 18px;
       line-height: 1;
       padding: 7px 11px;
@@ -88,16 +96,16 @@
       flex-shrink: 0;
     }
     .sa-menu-btn:hover {
-      background: rgba(255,255,255,.1);
-      border-color: rgba(255,255,255,.4);
+      background: var(--v2-hover);
+      border-color: var(--v2-line-2);
     }
     .sa-brand {
       display: flex;
       align-items: center;
       gap: 10px;
-      color: var(--on-primary);
+      color: var(--v2-ink);
       text-decoration: none;
-      font-weight: 800;
+      font-weight: 600;
       font-size: 15px;
       letter-spacing: -.01em;
       flex-shrink: 0;
@@ -106,12 +114,12 @@
       width: 28px;
       height: 28px;
       border-radius: var(--radius-sm);
-      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+      background: var(--v2-ink);
+      color: var(--v2-ground);
       display: grid;
       place-items: center;
       font-size: 13px;
-      font-weight: 800;
-      box-shadow: 0 2px 4px rgba(0,0,0,.2);
+      font-weight: 600;
     }
     .sa-nav {
       display: flex;
@@ -120,26 +128,26 @@
       flex-wrap: wrap;
     }
     .sa-nav a {
-      color: rgba(255,255,255,.75);
+      color: var(--v2-muted);
       text-decoration: none;
       font-size: 13px;
-      font-weight: 600;
+      font-weight: 500;
       padding: 7px 14px;
       border-radius: var(--radius);
       transition: all var(--transition);
       white-space: nowrap;
     }
     .sa-nav a:hover {
-      color: var(--on-primary);
-      background: rgba(255,255,255,.08);
+      color: var(--v2-ink);
+      background: var(--v2-hover);
     }
     .sa-nav a.active {
-      color: var(--primary);
-      background: var(--on-primary);
-      box-shadow: 0 1px 3px rgba(0,0,0,.15);
+      color: var(--v2-ink);
+      background: var(--v2-sunk);
+      font-weight: 600;
     }
     .sa-nav a.active:hover {
-      background: #f0f4ff;
+      background: var(--v2-sunk);
     }
     .sa-user-section {
       display: flex;
@@ -150,7 +158,7 @@
     .sa-user-name {
       font-size: 13px;
       font-weight: 500;
-      color: rgba(255,255,255,.85);
+      color: var(--v2-body);
       display: flex;
       align-items: center;
       gap: 6px;
@@ -160,22 +168,21 @@
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: #4ade80;
-      box-shadow: 0 0 6px rgba(74,222,128,.4);
+      background: var(--v2-pos);
     }
     .sa-logout-btn {
-      color: rgba(255,255,255,.9);
+      color: var(--v2-ink);
       text-decoration: none;
       font-size: 12.5px;
-      font-weight: 600;
+      font-weight: 500;
       padding: 6px 12px;
-      border: 1px solid rgba(255,255,255,.25);
+      border: 1px solid var(--v2-line-2);
       border-radius: var(--radius);
       transition: all var(--transition);
     }
     .sa-logout-btn:hover {
-      background: rgba(255,255,255,.1);
-      border-color: rgba(255,255,255,.4);
+      background: var(--v2-hover);
+      border-color: var(--v2-line-2);
     }
 
     /* ── Main Content ──────────────────────────────────────── */
@@ -249,7 +256,7 @@
       left: 0;
       right: 0;
       height: 3px;
-      background: linear-gradient(90deg, var(--accent), #60a5fa);
+      background: var(--v2-accent);
     }
     .sa-stat-icon {
       width: 36px;
@@ -315,15 +322,14 @@
       transition: all var(--transition);
     }
     .inp:hover, .sel:hover, textarea.inp:hover {
-      border-color: #cbd5e1;
+      border-color: var(--v2-line-2);
     }
     .inp:focus, .sel:focus, textarea.inp:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(29,78,216,.1);
+      border-color: var(--v2-accent);
     }
     .inp:disabled {
-      background: #f8fafc;
-      color: var(--text-muted);
+      background: var(--v2-hover);
+      color: var(--v2-muted);
       cursor: not-allowed;
     }
     textarea.inp {
@@ -338,7 +344,7 @@
     }
 
     /* ── Buttons ───────────────────────────────────────────── */
-    .btn {
+    .btn.btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -356,57 +362,54 @@
       line-height: 1.4;
       white-space: nowrap;
     }
-    .btn:hover {
+    .btn.btn:hover {
       background: var(--surface-hover);
-      border-color: #cbd5e1;
-      box-shadow: var(--shadow-sm);
+      border-color: var(--v2-line-2);
     }
-    .btn:active { transform: scale(.98); }
-    .btn-p {
+    .btn.btn:active { transform: scale(.98); }
+    .btn-p.btn-p {
       background: var(--accent);
       color: var(--on-primary);
       border-color: var(--accent);
     }
-    .btn-p:hover {
-      background: #1e40af;
-      border-color: #1e40af;
-      box-shadow: 0 2px 8px rgba(29,78,216,.25);
+    .btn-p.btn-p:hover {
+      background: var(--v2-accent-ink);
+      border-color: var(--v2-accent-ink);
     }
-    .btn-navy {
+    .btn-navy.btn-navy {
       background: var(--primary);
       color: var(--on-primary);
       border-color: var(--primary);
     }
-    .btn-navy:hover {
+    .btn-navy.btn-navy:hover {
       background: var(--primary-hover);
       border-color: var(--primary-hover);
     }
-    .btn-danger {
+    .btn-danger.btn-danger {
       background: var(--danger);
       color: var(--on-primary);
       border-color: var(--danger);
     }
-    .btn-danger:hover {
+    .btn-danger.btn-danger:hover {
       background: var(--danger-hover);
       border-color: var(--danger-hover);
-      box-shadow: 0 2px 8px rgba(220,38,38,.2);
     }
-    .btn-ghost {
+    .btn-ghost.btn-ghost {
       background: transparent;
       border-color: transparent;
       color: var(--text-secondary);
       padding: 7px 10px;
     }
-    .btn-ghost:hover {
+    .btn-ghost.btn-ghost:hover {
       background: var(--surface-hover);
       color: var(--text);
     }
-    .btn-sm {
+    .btn-sm.btn-sm {
       padding: 5px 12px;
       font-size: 12px;
       border-radius: var(--radius-sm);
     }
-    .btn-icon {
+    .btn-icon.btn-icon {
       padding: 7px;
       width: 32px;
       height: 32px;
@@ -437,13 +440,11 @@
     table.sa-tbl thead th {
       text-align: left;
       font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: .5px;
-      color: var(--text-secondary);
+      font-weight: 500;
+      color: var(--v2-muted);
       padding: 10px 12px;
-      border-bottom: 2px solid var(--surface-border);
-      background: #f8fafc;
+      border-bottom: 1px solid var(--v2-line);
+      background: var(--v2-surface);
       position: sticky;
       top: 0;
     }
@@ -493,12 +494,12 @@
       line-height: 1.4;
       white-space: nowrap;
     }
-    .pill-on { background: var(--success-light); color: #166534; }
-    .pill-off { background: #f1f5f9; color: var(--text-secondary); }
+    .pill-on { background: var(--v2-pos-bg); color: var(--v2-pos); }
+    .pill-off { background: var(--v2-sunk); color: var(--v2-body); }
     .pill-sa { background: var(--accent-light); color: var(--accent); }
     .pill-danger { background: var(--danger-light); color: var(--danger-hover); }
-    .pill-warning { background: var(--warning-light); color: #92400e; }
-    .pill-mine { background: #f0fdf4; color: #15803d; }
+    .pill-warning { background: var(--v2-warn-bg); color: var(--v2-warn); }
+    .pill-mine { background: var(--v2-pos-bg); color: var(--v2-pos); }
 
     /* ── Module Grid ───────────────────────────────────────── */
     .mod-grid {
@@ -552,7 +553,7 @@
     .sa-stog .sl {
       position: absolute;
       inset: 0;
-      background: #cbd5e1;
+      background: var(--v2-line-2);
       border-radius: 12px;
       cursor: pointer;
       transition: background var(--transition);
@@ -567,7 +568,6 @@
       background: var(--surface);
       border-radius: 50%;
       transition: transform var(--transition);
-      box-shadow: 0 1px 3px rgba(0,0,0,.15);
     }
     .sa-stog input:checked + .sl { background: var(--success); }
     .sa-stog input:checked + .sl:before { transform: translateX(18px); }
@@ -579,7 +579,7 @@
       border-radius: var(--radius);
       padding: 12px 14px;
       font-size: 12.5px;
-      color: #1e40af;
+      color: var(--v2-accent-ink);
       line-height: 1.5;
       display: flex;
       gap: 10px;
@@ -623,10 +623,10 @@
     code {
       font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
       font-size: 12px;
-      background: #f1f5f9;
+      background: var(--v2-sunk);
       padding: 2px 6px;
       border-radius: 4px;
-      color: #475569;
+      color: var(--v2-body);
     }
 
     /* ── Responsive ────────────────────────────────────────── */
@@ -642,16 +642,17 @@
         top: 56px;
         left: 0;
         right: 0;
-        background: var(--primary);
+        background: var(--v2-surface);
+        border-bottom: 1px solid var(--v2-line);
         flex-direction: column;
         align-items: stretch;
         padding: 8px 16px 14px;
-        box-shadow: 0 10px 20px rgba(0,0,0,.2);
+        box-shadow: var(--shadow-lg);
         gap: 2px;
       }
       .sa-nav.open { display: flex; }
       .sa-nav a { padding: 10px 12px; font-size: 13.5px; }
-      .sa-nav a.active { color: var(--primary); background: var(--on-primary); }
+      .sa-nav a.active { color: var(--v2-ink); background: var(--v2-sunk); }
       .sa-user-name { display: none; }
       .sa-card { padding: 18px 16px; }
       .sa-card-header { flex-direction: column; }
@@ -684,7 +685,7 @@
       <nav class="sa-nav" id="saNav">
         <a href="{{ url_for('superadmin.users') }}" class="{{ 'active' if request.endpoint in ['superadmin.users', 'superadmin.user_detail'] }}">Users</a>
         <a href="{{ url_for('superadmin.companies') }}" class="{{ 'active' if request.endpoint in ['superadmin.companies', 'superadmin.company_edit'] }}">Companies</a>
-        <a href="{{ url_for('superadmin.requests') }}" class="{{ 'active' if request.endpoint in ['superadmin.requests', 'superadmin.request_action'] }}">Requests{% if pending_count > 0 %} <span style="background:#fbbf24;color:#1e293b;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;">{{ pending_count }}</span>{% endif %}</a>
+        <a href="{{ url_for('superadmin.requests') }}" class="{{ 'active' if request.endpoint in ['superadmin.requests', 'superadmin.request_action'] }}">Requests{% if pending_count > 0 %} <span style="background:var(--v2-warn-bg);color:var(--v2-warn);font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;">{{ pending_count }}</span>{% endif %}</a>
         <a href="{{ url_for('superadmin.my_companies') }}" class="{{ 'active' if request.endpoint == 'superadmin.my_companies' }}">My Books</a>
         <a href="{{ url_for('superadmin.index') }}" class="{{ 'active' if request.endpoint == 'superadmin.index' }}">Platform</a>
       </nav>

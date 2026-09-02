@@ -1,75 +1,83 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+{# The module launcher. Renders outside app_shell (it is what you pick a module
+   *from*), so the UI v2 opt-in is repeated through partials/_v2_head.html —
+   UI_V2_GUIDE.md §2.
+
+   The tiles used to be painted from `--brand`/`--ink2`, a saturated gradient
+   per module piped in from shared/navigation.py. That is §1's "colour because
+   a tile needed one": nine gradients competing on one screen, none of them
+   telling you anything the title does not. The cards are neutral now and the
+   module's identity is carried by its icon and name; hub.html no longer emits
+   the two custom properties, because nothing reads them here any more. #}
+<html lang="en" data-ui="v2">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     {# The hub belongs to the company whose books it opens, so it is titled
        and branded with that company — not with the product. #}
     <title>{% block title %}{{ company.name if company else 'Select Module' }}{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231d4ed8'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232B7263'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+    {% include "partials/_v2_head.html" %}
     <style>
-      :root { --hub-bg: radial-gradient(1200px 500px at 85% -10%, #dbeafe 0%, transparent 55%),
-                      radial-gradient(900px 420px at -10% 110%, #e0f2f1 0%, transparent 55%); }
-      body { background: var(--hub-bg), #f6f9ff; margin: 0; min-height: 100vh; }
+      body { background: var(--v2-ground); margin: 0; min-height: 100vh;
+             font-family: Inter, "Segoe UI", system-ui, sans-serif; }
       .hub-wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 40px 20px 32px;
                   min-height: 100vh; display: flex; flex-direction: column; }
-      .hub-header { display: flex; align-items: center; gap: 16px; margin-bottom: 28px;
-                    background: rgba(255,255,255,.78); border: 1px solid var(--line);
-                    border-radius: 14px; padding: 18px 20px; backdrop-filter: blur(6px); }
-      .hub-brand { width: 48px; height: 48px; flex: none; border-radius: 12px;
-                   background: linear-gradient(135deg,#002045,#1a365d); color: #fff;
+      /* One hairline and real whitespace, not a bordered box inside a bordered
+         box (§1). The header was a blurred translucent card over a gradient. */
+      .hub-header { display: flex; align-items: center; gap: 14px; margin-bottom: 26px;
+                    padding-bottom: 18px; border-bottom: 1px solid var(--v2-line); }
+      .hub-brand { width: 44px; height: 44px; flex: none; border-radius: 11px;
+                   background: var(--v2-ink); color: var(--v2-ground);
                    display: flex; align-items: center; justify-content: center;
-                   font-size: 21px; font-weight: 800; box-shadow: 0 6px 16px rgba(0,32,69,.28); }
+                   font-size: 19px; font-weight: 600; }
       .hub-heading { min-width: 0; }
-      .hub-title { margin: 0; font-size: 18px; font-weight: 800; color: var(--ink);
-                   letter-spacing: -.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hub-subtitle { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
-      .hub-count { margin-left: auto; flex: none; padding: 5px 12px; border-radius: 999px;
-                   background: var(--ledger-dim); color: var(--ledger); font-size: 11.5px;
-                   font-weight: 700; letter-spacing: .03em; }
-      .hub-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-      .mod-card { position: relative; display: flex; flex-direction: column; gap: 14px;
-                  background: #fff; border-radius: 14px; padding: 22px 20px 18px;
-                  text-decoration: none; color: var(--ink); border: 1px solid var(--line);
-                  overflow: hidden; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
-      .mod-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px;
-                          background: var(--brand); opacity: .85; }
-      .mod-card:hover { transform: translateY(-3px); border-color: var(--ink2);
-                        box-shadow: 0 14px 30px rgba(16,42,67,.12); text-decoration: none; }
-      .mod-card:active { transform: translateY(-1px); }
-      .mod-card:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px;
-                                border-radius: 16px; }
-      .mod-ico { width: 46px; height: 46px; border-radius: 12px;
-                 background: var(--brand); color: #fff; display: flex; align-items: center;
-                 justify-content: center; box-shadow: 0 6px 14px rgba(16,42,67,.18); }
-      .mod-ico svg { width: 24px; height: 24px; }
-      .mod-body { display: flex; flex-direction: column; gap: 5px; }
-      .mod-title { font-size: 14.5px; font-weight: 700; color: var(--ink); letter-spacing: -.1px; }
-      .mod-desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
-      .mod-go { margin-top: 2px; font-size: 11.5px; font-weight: 700; color: var(--ink2);
-                letter-spacing: .02em; }
-      .hub-footer { display: flex; justify-content: center; margin-top: 28px; }
+      .hub-title { margin: 0; font-size: 21px; font-weight: 600; color: var(--v2-ink);
+                   letter-spacing: -.02em; white-space: nowrap; overflow: hidden;
+                   text-overflow: ellipsis; }
+      .hub-subtitle { margin: 2px 0 0; color: var(--v2-muted); font-size: 12px; }
+      .hub-count { margin-left: auto; flex: none; padding: 4px 10px; border-radius: 6px;
+                   background: var(--v2-sunk); color: var(--v2-body); font-size: 11.5px;
+                   font-weight: 500; font-variant-numeric: tabular-nums; }
+      .hub-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+      /* (0,2,0) so these answer ui.css's own component rules at equal
+         specificity and win on source order — the documented tie-break (§2). */
+      .hub-grid .mod-card { position: relative; display: flex; flex-direction: column; gap: 12px;
+                  background: var(--v2-surface); border-radius: 11px; padding: 18px 16px 16px;
+                  text-decoration: none; color: var(--v2-ink);
+                  border: 1px solid var(--v2-line); overflow: hidden;
+                  transition: border-color .15s ease, background .15s ease; }
+      .hub-grid .mod-card:hover { border-color: var(--v2-line-2); background: var(--v2-hover);
+                                  text-decoration: none; }
+      .hub-grid .mod-card:focus-visible { outline: 2px solid var(--v2-ink); outline-offset: 2px; }
+      .mod-ico { width: 40px; height: 40px; border-radius: 10px;
+                 background: var(--v2-sunk); color: var(--v2-ink); display: flex;
+                 align-items: center; justify-content: center; }
+      .mod-ico svg { width: 22px; height: 22px; }
+      .mod-body { display: flex; flex-direction: column; gap: 4px; }
+      .mod-title { font-size: 13.5px; font-weight: 600; color: var(--v2-ink); letter-spacing: -.01em; }
+      .mod-desc { font-size: 11.5px; color: var(--v2-muted); line-height: 1.5; }
+      .mod-go { margin-top: 2px; font-size: 11.5px; font-weight: 500; color: var(--v2-accent); }
+      .hub-footer { display: flex; justify-content: center; margin-top: 26px; }
       .hub-footer a { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
-                      color: var(--muted); text-decoration: none; padding: 8px 14px;
-                      border: 1px solid var(--line); border-radius: 999px; background: #fff;
+                      color: var(--v2-muted); text-decoration: none; padding: 7px 14px;
+                      border: 1px solid var(--v2-line); border-radius: 8px;
+                      background: var(--v2-surface);
                       transition: color .15s, border-color .15s; }
-      .hub-footer a:hover { color: var(--red); border-color: var(--red); text-decoration: none; }
+      .hub-footer a:hover { color: var(--v2-ink); border-color: var(--v2-line-2); }
       @media (max-width: 900px) { .hub-grid { grid-template-columns: repeat(2, 1fr); } }
       @media (max-width: 560px) {
         .hub-wrap { padding: 20px 14px 24px; }
-        .hub-header { padding: 14px 16px; gap: 12px; border-radius: 12px; }
-        .hub-brand { width: 42px; height: 42px; font-size: 18px; border-radius: 10px; }
-        .hub-title { font-size: 16px; }
+        .hub-header { padding-bottom: 14px; gap: 12px; }
+        .hub-brand { width: 40px; height: 40px; font-size: 17px; border-radius: 10px; }
+        .hub-title { font-size: 18px; }
         .hub-count { display: none; }
-        .hub-grid { grid-template-columns: 1fr; gap: 12px; }
-        .mod-card { flex-direction: row; align-items: center; gap: 14px; padding: 16px; }
-        .mod-card::before { inset: auto 0 0 0; height: 3px; }
+        .hub-grid { grid-template-columns: 1fr; gap: 10px; }
+        .hub-grid .mod-card { flex-direction: row; align-items: center; gap: 14px; padding: 14px; }
         .mod-go { display: none; }
         .mod-desc { -webkit-line-clamp: 2; } }
       @media (prefers-reduced-motion: reduce) {
-        .mod-card { transition: none; }
-        .mod-card:hover { transform: none; } }
+        .hub-grid .mod-card { transition: none; } }
     </style>
 </head>
 <body>

@@ -1,157 +1,186 @@
+{# Public landing page. Renders outside app_shell, so the UI v2 opt-in is
+   repeated through partials/_v2_head.html (UI_V2_GUIDE.md §2) and the navy
+   DESIGN.md palette this page declared privately is gone — the names resolve
+   through the bridge in ui.css, so the page follows the theme like the product
+   behind it does.
+
+   Table and button rules are scoped one level deeper (`.figure thead th`,
+   `.cta .btn`) on purpose: ui.css styles bare `th`/`td` at (0,1,1) and `.btn`
+   at (0,2,0), which a bare `thead th` (0,0,2) or `.btn` (0,1,0) loses to.
+   Matching the specificity and coming later is the documented tie-break (§2). #}
 <!doctype html>
-<html lang="en">
+<html lang="en" data-ui="v2">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Accountix ERP — one system for stock, books and payroll</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231d4ed8'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232B7263'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
 <meta name="description" content="Accountix ERP runs inventory, invoicing, accounting, payroll, fixed assets and FBR digital invoicing on one shared ledger, across as many companies as you need.">
+{% include "partials/_v2_head.html" %}
 <style>
-  /* Tokens per DESIGN.md — navy structure on a near-white page. Colour is
-     never decoration here: navy carries the brand and the one primary action,
-     everything else is neutral. */
-  :root {
-    --primary: #002045;
-    --primary-container: #1a365d;
-    --on-primary: #ffffff;
-    --secondary: #545f72;
-    --bg: #f6f9ff;
-    --surface: #ffffff;
-    --surface-low: #eef4fc;
-    --surface-variant: #dde3eb;
-    --on-surface: #161c22;
-    --on-surface-variant: #43474e;
-    --outline: #74777f;
-    --outline-variant: #c4c6cf;
-    --tertiary: #003f25;
-    --tertiary-fixed: #9ff5c1;
-    --shadow: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
-  }
   * { box-sizing: border-box; margin: 0; }
   html { scroll-behavior: smooth; }
   body {
     font-family: Inter, "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
-    background: var(--bg); color: var(--on-surface);
-    font-size: 14px; line-height: 20px; -webkit-font-smoothing: antialiased;
+    background: var(--v2-ground); color: var(--v2-body);
+    font-size: 13px; line-height: 20px; -webkit-font-smoothing: antialiased;
   }
-  a { color: inherit; text-decoration: none; }
+  a { text-decoration: none; }
   .wrap { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
 
   /* ── Buttons ─────────────────────────────────────────────────────────── */
-  .btn {
+  .cta .btn, .nav-actions .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 11px 20px; border-radius: 8px; border: 1px solid transparent;
-    font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    padding: 10px 18px; border-radius: 8px; border: 1px solid transparent;
+    font-size: 13.5px; font-weight: 500; cursor: pointer; white-space: nowrap;
     transition: background .15s, border-color .15s, color .15s;
   }
-  .btn-primary { background: var(--primary); color: var(--on-primary); }
-  .btn-primary:hover { background: var(--primary-container); }
-  .btn-secondary { background: var(--surface); color: var(--on-surface); border-color: var(--outline-variant); }
-  .btn-secondary:hover { background: var(--surface-low); }
-  .btn-ghost { color: var(--on-surface-variant); }
-  .btn-ghost:hover { color: var(--primary); }
-  .btn-sm { padding: 8px 14px; font-size: 13px; }
+  .btn-primary { background: var(--v2-ink); color: var(--v2-ground); border-color: var(--v2-ink); }
+  .btn-primary:hover { background: var(--v2-ink-2); }
+  .btn-secondary { background: var(--v2-surface); color: var(--v2-ink); border-color: var(--v2-line-2); }
+  .btn-secondary:hover { background: var(--v2-hover); }
+  .btn-ghost { color: var(--v2-muted); }
+  .btn-ghost:hover { color: var(--v2-ink); }
+  .nav-actions .btn-sm { padding: 7px 13px; font-size: 12.5px; }
 
   /* ── Header ──────────────────────────────────────────────────────────── */
   header {
-    background: var(--surface); border-bottom: 1px solid var(--outline-variant);
+    background: var(--v2-surface); border-bottom: 1px solid var(--v2-line);
     position: sticky; top: 0; z-index: 20;
   }
-  .nav { display: flex; align-items: center; gap: 16px; height: 64px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: var(--primary); letter-spacing: -.01em; }
+  .nav { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px;
+           color: var(--v2-ink); letter-spacing: -.01em; }
   .mark {
-    width: 30px; height: 30px; border-radius: 8px; background: var(--primary);
-    color: var(--on-primary); display: grid; place-items: center;
-    font-size: 14px; font-weight: 700; flex: none;
+    width: 28px; height: 28px; border-radius: 7px; background: var(--v2-ink);
+    color: var(--v2-ground); display: grid; place-items: center;
+    font-size: 13px; font-weight: 600; flex: none;
   }
   .nav-links { display: flex; align-items: center; gap: 4px; margin-left: 24px; }
-  .nav-links a { padding: 8px 12px; border-radius: 8px; color: var(--on-surface-variant); font-weight: 500; }
-  .nav-links a:hover { background: var(--surface-low); color: var(--primary); }
+  .nav-links a { padding: 7px 11px; border-radius: 8px; color: var(--v2-muted);
+                 font-weight: 500; font-size: 12.5px; }
+  .nav-links a:hover { background: var(--v2-hover); color: var(--v2-ink); }
   .nav-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
   /* ── Hero ────────────────────────────────────────────────────────────── */
-  .hero { padding: 72px 0 56px; }
+  .hero { padding: 68px 0 52px; }
   .hero-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center; }
   .eyebrow {
-    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px;
-    padding: 5px 12px; border-radius: 9999px; background: var(--surface-variant);
-    color: var(--on-surface-variant);
-    font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+    padding: 4px 10px; border-radius: 6px; background: var(--v2-sunk);
+    color: var(--v2-body); font-size: 11.5px; font-weight: 500;
   }
-  h1 { font-size: 44px; line-height: 52px; font-weight: 700; letter-spacing: -.02em; color: var(--primary); }
-  .lede { margin-top: 18px; font-size: 16px; line-height: 26px; color: var(--on-surface-variant); max-width: 34em; }
-  .cta { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; }
-  .cta-note { margin-top: 14px; font-size: 13px; color: var(--outline); }
+  h1 { font-size: 42px; line-height: 50px; font-weight: 600; letter-spacing: -.025em;
+       color: var(--v2-ink); }
+  .lede { margin-top: 16px; font-size: 15px; line-height: 25px; color: var(--v2-body); max-width: 34em; }
+  .cta { margin-top: 26px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .cta-note { margin-top: 13px; font-size: 12px; color: var(--v2-faint); }
 
   /* Hero figure: a miniature of the card-wrapped-table signature pattern. */
-  .figure { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
-  .figure-bar { background: var(--surface-low); border-bottom: 1px solid var(--outline-variant); padding: 12px 16px; display: flex; align-items: center; gap: 8px; }
-  .figure-bar .chip { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 9999px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--on-surface-variant); }
-  .figure-bar .lbl { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--on-surface-variant); }
-  table { width: 100%; border-collapse: collapse; }
-  thead th {
-    background: var(--surface-low); text-align: left; padding: 10px 16px;
-    font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-    color: var(--on-surface-variant); border-bottom: 1px solid var(--outline-variant);
+  .figure { background: var(--v2-surface); border: 1px solid var(--v2-line);
+            border-radius: 12px; overflow: hidden; }
+  .figure-bar { background: var(--v2-hover); border-bottom: 1px solid var(--v2-line);
+                padding: 10px 14px; display: flex; align-items: center; gap: 8px; }
+  .figure-bar .chip { background: var(--v2-surface); border: 1px solid var(--v2-line);
+                      border-radius: 6px; padding: 2px 8px; font-size: 11.5px;
+                      font-weight: 500; color: var(--v2-body);
+                      font-variant-numeric: tabular-nums; }
+  .figure-bar .lbl { font-size: 11.5px; font-weight: 500; color: var(--v2-muted); }
+  /* Wide content scrolls inside its own container rather than pushing the
+     page sideways at 320px (§8). .figure itself keeps overflow:hidden so the
+     first row squares off against the radius, which is why the scroll box has
+     to be a separate element inside it. */
+  .figure-scroll { overflow-x: auto; }
+  .figure table { width: 100%; min-width: 300px; border-collapse: collapse;
+                  background: var(--v2-surface); }
+  .figure thead th {
+    background: var(--v2-surface); text-align: left; padding: 9px 14px;
+    font-size: 11.5px; font-weight: 500; letter-spacing: 0;
+    color: var(--v2-muted); border-bottom: 1px solid var(--v2-line);
   }
-  tbody td { padding: 10px 16px; border-bottom: 1px solid var(--surface-variant); }
-  tbody tr:nth-child(even) td { background: var(--surface-low); }
-  .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
-  .doc { color: var(--primary); font-weight: 600; }
-  .pill { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-  .pill-ok { background: var(--tertiary-fixed); color: var(--tertiary); }
-  .pill-draft { background: var(--surface-variant); color: var(--on-surface-variant); }
-  .figure-foot { padding: 14px 16px; display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--primary); }
-  .figure-foot span:first-child { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--on-surface-variant); }
-  .figure-foot .total { font-size: 20px; line-height: 28px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+  /* Hairline rows, no zebra striping (§5). */
+  .figure tbody td { padding: 9px 14px; border-top: 1px solid var(--v2-line);
+                     border-bottom: 0; color: var(--v2-body); font-size: 12.5px;
+                     background: var(--v2-surface); }
+  .figure .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
+  .figure .doc { color: var(--v2-ink); font-weight: 500; }
+  .pill { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11.5px;
+          font-weight: 500; }
+  .pill-ok { background: var(--v2-pos-bg); color: var(--v2-pos); }
+  .pill-draft { background: var(--v2-sunk); color: var(--v2-body); }
+  .figure-foot { padding: 13px 14px; display: flex; justify-content: space-between;
+                 align-items: baseline; border-top: 1px solid var(--v2-ink); }
+  .figure-foot span:first-child { font-size: 11.5px; font-weight: 500; color: var(--v2-muted); }
+  .figure-foot .total { font-size: 20px; line-height: 28px; font-weight: 600;
+                        color: var(--v2-ink); font-variant-numeric: tabular-nums;
+                        letter-spacing: -.025em; }
 
   /* ── Section furniture ───────────────────────────────────────────────── */
-  section.band { padding: 64px 0; border-top: 1px solid var(--outline-variant); }
-  section.band.tint { background: var(--surface-low); }
-  .sec-head { max-width: 42em; margin-bottom: 36px; }
-  .sec-head h2 { font-size: 28px; line-height: 36px; font-weight: 700; letter-spacing: -.01em; color: var(--primary); }
-  .sec-head p { margin-top: 10px; font-size: 15px; line-height: 24px; color: var(--on-surface-variant); }
+  section.band { padding: 60px 0; border-top: 1px solid var(--v2-line); }
+  section.band.tint { background: var(--v2-hover); }
+  .sec-head { max-width: 42em; margin-bottom: 32px; }
+  .sec-head h2 { font-size: 26px; line-height: 34px; font-weight: 600;
+                 letter-spacing: -.02em; color: var(--v2-ink); }
+  .sec-head p { margin-top: 8px; font-size: 14px; line-height: 23px; color: var(--v2-body); }
 
   /* ── Modules ─────────────────────────────────────────────────────────── */
-  .modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-  .module { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 16px; padding: 20px; }
-  .module .ico { width: 34px; height: 34px; border-radius: 8px; background: var(--surface-low); color: var(--primary); display: grid; place-items: center; font-size: 16px; margin-bottom: 14px; }
-  .module h3 { font-size: 15px; font-weight: 600; color: var(--primary); }
-  .module p { margin-top: 6px; color: var(--on-surface-variant); }
+  .modules { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .module { background: var(--v2-surface); border: 1px solid var(--v2-line);
+            border-radius: 11px; padding: 18px; }
+  .module .ico { width: 32px; height: 32px; border-radius: 8px; background: var(--v2-sunk);
+                 color: var(--v2-ink); display: grid; place-items: center;
+                 font-size: 15px; margin-bottom: 12px; }
+  .module h3 { font-size: 13.5px; font-weight: 600; color: var(--v2-ink); letter-spacing: -.01em; }
+  .module p { margin-top: 5px; color: var(--v2-muted); font-size: 12.5px; line-height: 19px; }
 
   /* ── Steps ───────────────────────────────────────────────────────────── */
-  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: step; }
-  .step { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: 16px; padding: 24px; }
-  .step .n { width: 28px; height: 28px; border-radius: 9999px; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; font-size: 13px; font-weight: 700; margin-bottom: 14px; }
-  .step h3 { font-size: 15px; font-weight: 600; color: var(--primary); }
-  .step p { margin-top: 6px; color: var(--on-surface-variant); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .step { background: var(--v2-surface); border: 1px solid var(--v2-line);
+          border-radius: 11px; padding: 20px; }
+  .step .n { width: 26px; height: 26px; border-radius: 9999px; background: var(--v2-ink);
+             color: var(--v2-ground); display: grid; place-items: center;
+             font-size: 12px; font-weight: 600; margin-bottom: 12px;
+             font-variant-numeric: tabular-nums; }
+  .step h3 { font-size: 13.5px; font-weight: 600; color: var(--v2-ink); letter-spacing: -.01em; }
+  .step p { margin-top: 5px; color: var(--v2-muted); font-size: 12.5px; line-height: 19px; }
 
   /* ── Trust points ────────────────────────────────────────────────────── */
-  .points { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 32px; }
-  .point h3 { font-size: 15px; font-weight: 600; color: var(--primary); padding-bottom: 10px; border-bottom: 1px solid var(--outline-variant); }
-  .point p { margin-top: 12px; color: var(--on-surface-variant); }
+  .points { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 28px; }
+  .point h3 { font-size: 13.5px; font-weight: 600; color: var(--v2-ink);
+              letter-spacing: -.01em; padding-bottom: 9px;
+              border-bottom: 1px solid var(--v2-line); }
+  .point p { margin-top: 11px; color: var(--v2-body); font-size: 12.5px; line-height: 20px; }
 
   /* ── Closing call to action ──────────────────────────────────────────── */
-  .close-cta { background: var(--primary); color: var(--on-primary); border-radius: 16px; padding: 44px 40px; text-align: center; }
-  .close-cta h2 { font-size: 26px; line-height: 34px; font-weight: 700; letter-spacing: -.01em; }
-  .close-cta p { margin: 12px auto 0; max-width: 40em; color: #c9d6e6; font-size: 15px; line-height: 24px; }
+  /* An ink slab, not a navy one: --v2-ink inverts with the theme, so every
+     label on it rides --v2-ground rather than a literal white (§7). */
+  .close-cta { background: var(--v2-ink); color: var(--v2-ground); border-radius: 12px;
+               padding: 40px; text-align: center; }
+  .close-cta h2 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.02em; }
+  .close-cta p { margin: 10px auto 0; max-width: 40em; opacity: .74;
+                 font-size: 14px; line-height: 23px; }
   .close-cta .cta { justify-content: center; }
-  .close-cta .btn-primary { background: var(--surface); color: var(--primary); }
-  .close-cta .btn-primary:hover { background: var(--surface-low); }
-  .close-cta .btn-secondary { background: transparent; color: var(--on-primary); border-color: rgba(255,255,255,.35); }
-  .close-cta .btn-secondary:hover { background: rgba(255,255,255,.1); }
+  .close-cta .btn-primary { background: var(--v2-ground); color: var(--v2-ink);
+                            border-color: var(--v2-ground); }
+  .close-cta .btn-primary:hover { background: var(--v2-hover); }
+  .close-cta .btn-secondary { background: transparent; color: var(--v2-ground);
+                              border-color: var(--v2-muted); }
+  .close-cta .btn-secondary:hover { background: transparent; border-color: var(--v2-ground); }
 
   /* ── Footer ──────────────────────────────────────────────────────────── */
-  footer { border-top: 1px solid var(--outline-variant); background: var(--surface); padding: 28px 0; margin-top: 64px; }
-  .foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; color: var(--on-surface-variant); font-size: 13px; }
+  footer { border-top: 1px solid var(--v2-line); background: var(--v2-surface);
+           padding: 24px 0; margin-top: 60px; }
+  .foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+          color: var(--v2-muted); font-size: 12.5px; }
   .foot .sep { margin-left: auto; display: flex; gap: 16px; }
-  .foot a:hover { color: var(--primary); }
+  .foot a { color: var(--v2-accent); }
+  .foot a:hover { text-decoration: underline; }
 
   /* ── Responsive: 320px is the floor (AGENTS.md §3) ───────────────────── */
   @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; gap: 36px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 32px; }
     .steps { grid-template-columns: 1fr; }
-    h1 { font-size: 32px; line-height: 40px; }
+    h1 { font-size: 31px; line-height: 39px; }
     .nav-links { display: none; }
   }
   @media (max-width: 560px) {
@@ -161,11 +190,11 @@
        it is not the door most visitors want. */
     .nav { gap: 8px; }
     .nav-actions .btn-ghost { display: none; }
-    .brand { font-size: 15px; }
-    .hero { padding: 44px 0 36px; }
-    section.band { padding: 44px 0; }
-    h1 { font-size: 26px; line-height: 34px; }
-    .close-cta { padding: 32px 20px; }
+    .brand { font-size: 14px; }
+    .hero { padding: 40px 0 32px; }
+    section.band { padding: 40px 0; }
+    h1 { font-size: 25px; line-height: 33px; }
+    .close-cta { padding: 28px 20px; }
     .cta .btn { flex: 1 1 100%; }
     .foot .sep { margin-left: 0; }
   }
@@ -184,7 +213,7 @@
       <a href="#why">Why Accountix</a>
     </nav>
     <div class="nav-actions">
-      <a class="btn btn-secondary btn-sm" href="{{ url_for('signup') }}">Get Started</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('signup') }}">Get started</a>
       <a class="btn btn-primary btn-sm" href="{{ url_for('auth.login') }}">Sign in</a>
     </div>
   </div>
@@ -203,7 +232,7 @@
           receivable, the tax and the stock layer move together.
         </p>
         <div class="cta">
-          <a class="btn btn-primary" href="{{ url_for('signup') }}">Request Access</a>
+          <a class="btn btn-primary" href="{{ url_for('signup') }}">Request access</a>
           <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">Sign in</a>
         </div>
         <p class="cta-note">Run as many companies as your plan allows — each with its own chart of accounts, periods and numbering.</p>
@@ -215,6 +244,7 @@
           <span class="chip">SI-000418</span>
           <span class="chip">FY 2026</span>
         </div>
+        <div class="figure-scroll">
         <table>
           <thead>
             <tr><th>Item</th><th class="num">Qty</th><th class="num">Amount</th></tr>
@@ -226,7 +256,8 @@
             <tr><td>Sales tax @ 18%</td><td class="num">—</td><td class="num">1,182,600</td></tr>
           </tbody>
         </table>
-        <div class="figure-bar" style="border-top:1px solid var(--outline-variant);border-bottom:0;">
+        </div>
+        <div class="figure-bar" style="border-top:1px solid var(--v2-line);border-bottom:0;">
           <span class="pill pill-ok">Posted</span>
           <span class="pill pill-draft">Synced to FBR</span>
         </div>
@@ -337,12 +368,12 @@
     </div>
   </section>
 
-  <div class="wrap" style="padding-top:64px;">
+  <div class="wrap" style="padding-top:60px;">
       <div class="close-cta">
         <h2>Ready to get started?</h2>
         <p>Request platform access and an operator will review your request.</p>
         <div class="cta">
-          <a class="btn btn-primary" href="{{ url_for('signup') }}">Request Access</a>
+          <a class="btn btn-primary" href="{{ url_for('signup') }}">Request access</a>
           <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">Sign in</a>
         </div>
       </div>
@@ -351,7 +382,7 @@
 
 <footer>
   <div class="wrap foot">
-    <span class="brand" style="font-size:14px;"><span class="mark" style="width:24px;height:24px;font-size:12px;">S</span> Accountix ERP</span>
+    <span class="brand" style="font-size:13px;"><span class="mark" style="width:22px;height:22px;font-size:11px;">A</span> Accountix ERP</span>
     <span class="sep">
       <a href="{{ url_for('auth.login') }}">Sign in</a>
     </span>
