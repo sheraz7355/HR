@@ -593,6 +593,11 @@ def _migrate_schema(db):
         ("inventory_settings", "per_line_labeling_invoice", "BOOLEAN DEFAULT 0"),
         ("inventory_settings", "default_voucher_label_id", "INTEGER"),
         ("inventory_settings", "default_invoice_label_id", "INTEGER"),
+        # Cost layers carry their remaining value instead of deriving it from
+        # qty x unit_cost, which drifts from the ledger by a rounding error on
+        # every re-average and every issue. DEFAULT 0 lands every existing row
+        # at zero, so backfill_layer_values() below seeds them.
+        ("stock_layers", "value_remaining", "NUMERIC(18,4) DEFAULT 0"),
     ]
 
     inspector = inspect(engine)
@@ -1471,11 +1476,15 @@ def _seed_all_data(app):
         # stored HTML, so bring the design-built ones up to the current sheet.
         InvoiceTemplate.refresh_designs()
 
-        from shared.costing import ensure_opening_balances, backfill_layers
+        from shared.costing import (ensure_opening_balances, backfill_layers,
+                                    backfill_layer_values)
         ensure_opening_balances(created_by=1)
         # Stock tracked before cost layers existed gets one layer at current
         # book value, so layer value == ledger running_cost from here on.
         backfill_layers(created_by=1)
+        # Layers that pre-date the carried value column come back from the
+        # ALTER TABLE holding 0; give them what they are worth.
+        backfill_layer_values()
 
         # Second idempotent pass: fresh databases seed their users AFTER the
         # early bootstrap, so memberships for those users are created here.

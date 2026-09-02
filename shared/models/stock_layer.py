@@ -24,9 +24,26 @@ class StockLayer(db.Model):
 
     This keeps the invariant that makes a method switch safe:
 
-        sum(qty_remaining * unit_cost) == StockLedger.running_cost
+        sum(value_remaining) == StockLedger.running_cost
 
     which ``assert_invariant`` checks and the costing tests enforce.
+
+    VALUE IS CARRIED, NOT DERIVED. The invariant used to read
+    ``sum(qty_remaining * unit_cost)``, and that product cannot hold: the
+    ledger accumulates the 2dp totals actually posted to the general ledger,
+    while ``unit_cost`` is a 4dp column, so a weighted-average pool re-averaged
+    to 4dp is off by up to ``qty * 0.00005`` every time it is re-averaged, and
+    an issue posting a 2dp cost is off by up to 0.005 every time it is issued.
+    Both accumulate. A pool of 2,834 units in a real database had drifted
+    0.13 from its ledger -- thirteen times the tolerance
+    ``costing.assert_invariant`` allows -- which is the inventory control
+    account quietly untying from COGS.
+
+    So ``value_remaining`` is now the authority and moves only in the same
+    posted amounts the ledger moves in, which makes the invariant exact by
+    construction rather than approximately true. ``unit_cost`` stays as the
+    cost BASIS a unit is issued at; ``unit_cost_effective`` below divides
+    carried value by quantity when the engine needs the unrounded figure.
     """
 
     __tablename__ = "stock_layers"
@@ -40,6 +57,9 @@ class StockLayer(db.Model):
     unit_cost = db.Column(db.Numeric(16, 4), nullable=False)
     qty_original = db.Column(db.Numeric(16, 4), nullable=False)
     qty_remaining = db.Column(db.Numeric(16, 4), nullable=False, index=True)
+    # What the remaining units are worth. Carried rather than computed --
+    # see the class docstring. Moves only in amounts the ledger also moves in.
+    value_remaining = db.Column(db.Numeric(18, 4), nullable=False, default=0)
     # Which method opened it — audit only; consumption never reads this.
     method = db.Column(db.String(20), nullable=False, default="weighted_average")
     is_revaluation = db.Column(db.Boolean, default=False)
@@ -47,9 +67,17 @@ class StockLayer(db.Model):
     notes = db.Column(db.Text)
 
     @property
-    def value_remaining(self):
+    def unit_cost_effective(self):
+        """Carried value over remaining quantity, unrounded.
+
+        What a unit in this layer actually costs. ``unit_cost`` is the 4dp
+        rounding of this, and rounding it is what used to make the pool drift.
+        """
         from decimal import Decimal
-        return Decimal(str(self.qty_remaining)) * Decimal(str(self.unit_cost))
+        qty = Decimal(str(self.qty_remaining or 0))
+        if qty <= 0:
+            return Decimal(str(self.unit_cost or 0))
+        return Decimal(str(self.value_remaining or 0)) / qty
 
 
 class LayerConsumption(db.Model):

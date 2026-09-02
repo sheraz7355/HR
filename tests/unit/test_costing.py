@@ -618,3 +618,150 @@ def test_reversal_names_the_vouchers_that_consumed_the_stock(settings, product):
     assert "CONS-00001" in str(exc.value)
     assert "SCRAP-00002" in str(exc.value)
     assert len(exc.value.dependents) == 2
+
+
+# ─────────────────────────────────────────────
+# Rounding drift: layers must not merely round to the ledger
+# ─────────────────────────────────────────────
+
+def derived_value():
+    """What the layers are worth under the OLD derivation, qty x unit_cost."""
+    return sum((Decimal(str(l.qty_remaining)) * Decimal(str(l.unit_cost))
+                for l in StockLayer.query.filter(StockLayer.qty_remaining > 0)),
+               Decimal("0"))
+
+
+def test_reaveraging_the_pool_does_not_drift_from_the_ledger(settings, product):
+    """The defect ``value_remaining`` exists for.
+
+    A weighted-average pool re-averages on every receipt, and ``unit_cost`` is
+    a 4dp column, so the old ``qty_remaining * unit_cost`` reading of the pool
+    was off by up to ``qty * 0.00005`` each time — in one direction as often as
+    the other, but never cancelling, because each re-average rounds the result
+    of the last one. Forty receipts at prices that do not divide evenly is
+    enough to push it past the 0.01 the invariant tolerates.
+    """
+    for n in range(1, 41):
+        buy(7, Decimal("10.33") + Decimal(n) / 100, n=n)
+        issue(3, n=n)
+
+    _ok, layer_value, running_cost = costing.assert_invariant(1)
+    assert layer_value == running_cost, (
+        f"the pool carries {layer_value} against a ledger of {running_cost}: "
+        f"value must move only in the amounts the ledger moves in")
+
+    stale = derived_value()
+    assert stale != running_cost, (
+        "qty x unit_cost happened to land exactly on the ledger, so this test "
+        "is no longer exercising the drift it was written for — change the "
+        "prices until it does not")
+
+
+def test_fifo_issues_spanning_layers_do_not_drift(settings, product):
+    """Same arithmetic under FIFO, where the rounding is in the issue instead.
+
+    Nothing re-averages here; each issue posts a 2dp cost drawn from layers
+    held at 4dp, and the difference used to stay behind on the layer.
+    """
+    settings.valuation_method = "fifo"
+    db.session.commit()
+
+    for n in range(1, 31):
+        buy(Decimal("2.5"), Decimal("7.77") + Decimal(n) / 300, n=n)
+    for n in range(1, 21):
+        issue(Decimal("3.5"), n=n)
+
+    _ok, layer_value, running_cost = costing.assert_invariant(1)
+    assert layer_value == running_cost, (
+        f"FIFO layers carry {layer_value} against a ledger of {running_cost}")
+
+
+def test_reversing_an_issue_restores_the_layer_value_exactly(settings, product):
+    """A consumption gives back precisely what it took, not a re-derivation.
+
+    The give-back reads ``LayerConsumption.total_cost``, which records the
+    value that actually left the layer — so an issue and its reversal are a
+    round trip that leaves no residue, however awkward the cost.
+    """
+    buy(3, Decimal("10.0001"), n=1)
+    buy(4, Decimal("13.3333"), n=2)
+    before = costing.stock_value(1)
+
+    issue(Decimal("2.5"), n=9)
+    costing.reverse_voucher_stock("SI", 9)
+    db.session.flush()
+
+    assert costing.stock_value(1) == before, \
+        "issuing and reversing must leave the layers exactly where they were"
+    assert_ties("after an issue was reversed")
+
+
+def _pretend_column_is_new():
+    """Put the layers back the way the ALTER TABLE hands them over: value 0."""
+    for l in StockLayer.query.all():
+        l.value_remaining = Decimal("0")
+    db.session.flush()
+
+
+def test_backfill_seeds_layers_that_predate_the_carried_column(settings, product):
+    """A database migrated into the column starts with every layer at zero.
+
+    Unseeded, that reads as a warehouse of free stock: stock_value would be 0
+    against a ledger holding the real money. The backfill reconstructs each
+    layer from qty x unit_cost — the only figure a pre-migration row has —
+    and then settles the rounding it inherits against the ledger.
+    """
+    for n in range(1, 16):
+        buy(7, Decimal("10.33") + Decimal(n) / 100, n=n)
+        issue(3, n=n)
+    running_cost = book_value()
+    assert running_cost > 0
+
+    _pretend_column_is_new()
+    assert costing.stock_value(1) == 0, "the fixture should start from zero"
+
+    costing.backfill_layer_values()
+
+    assert costing.stock_value(1) == running_cost, \
+        "a migrated database must tie to its ledger, not to qty x unit_cost"
+    assert_ties("after backfilling a pre-migration database")
+
+
+def test_backfill_leaves_a_gap_too_large_to_be_rounding(settings, product):
+    """A migration closes a rounding residue; it must not paper over a break.
+
+    Silently pulling the layers onto the ledger whatever the distance would
+    destroy the evidence of the very thing assert_invariant exists to report.
+    """
+    buy(10, 10, n=1)
+    layer = StockLayer.query.filter(StockLayer.qty_remaining > 0).one()
+    _pretend_column_is_new()
+    layer.unit_cost = Decimal("4")          # 60 adrift, not a rounding error
+    db.session.flush()
+
+    costing.backfill_layer_values()
+
+    assert costing.stock_value(1) == Decimal("40.0000"), \
+        "the reconstruction must stand so the break stays visible"
+    ok, _layer_value, _running = costing.assert_invariant(1)
+    assert not ok, "a 60 gap must still fail the invariant after backfill"
+
+
+def test_backfill_does_not_quietly_close_a_gap_that_opened_later(settings, product):
+    """The backfill runs on every boot, so it must only touch what it seeded.
+
+    A product already carrying its value is out of scope even when it is a
+    few cents adrift: that gap opened after the migration, which makes it a
+    leak, and closing it on each restart is how a leak stays invisible.
+    """
+    buy(10, 10, n=1)
+    layer = StockLayer.query.filter(StockLayer.qty_remaining > 0).one()
+    layer.value_remaining = Decimal("99.60")      # 0.40 adrift, within settling range
+    db.session.flush()
+
+    costing.backfill_layer_values()
+
+    assert costing.stock_value(1) == Decimal("99.60"), \
+        "a seeded layer must keep its value so the drift stays reportable"
+    ok, _layer_value, _running = costing.assert_invariant(1)
+    assert not ok, "the gap must still fail the invariant, not be absorbed"

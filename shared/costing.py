@@ -30,7 +30,11 @@ cost IS the running average.
 Because issues decrement real layers rather than assuming a consumption
 order, this invariant always holds:
 
-    sum(layer.qty_remaining * layer.unit_cost) == ledger running_cost
+    sum(layer.value_remaining) == ledger running_cost
+
+Layer value is CARRIED, not recomputed from qty x unit_cost: every movement
+of it is one of the same 2dp amounts the ledger moves in, so the two sides
+cannot drift apart by rounding. StockLayer's docstring has the arithmetic.
 
 WHY THAT MATTERS
 ----------------
@@ -128,8 +132,13 @@ fifo_layers_remaining = layers_remaining
 
 
 def stock_value(product_id):
-    """Value of stock on hand per the layers."""
-    return sum((_d(l.qty_remaining) * _d(l.unit_cost) for l in _open_layers(product_id)), ZERO)
+    """Value of stock on hand per the layers.
+
+    The carried figure, not qty x unit_cost: the product of a 4dp cost and a
+    quantity is only ever approximately what was posted, and that is the
+    approximation the invariant used to be checked against.
+    """
+    return sum((_d(l.value_remaining) for l in _open_layers(product_id)), ZERO)
 
 
 def current_unit_cost(product_id):
@@ -143,15 +152,20 @@ def current_unit_cost(product_id):
                 .filter_by(product_id=product_id)
                 .order_by(StockLayer.id.desc()).first())
         return _d(last.unit_cost) if last else ZERO
-    total_value = sum((_d(l.qty_remaining) * _d(l.unit_cost) for l in layers), ZERO)
+    total_value = sum((_d(l.value_remaining) for l in layers), ZERO)
     return _q(total_value / total_qty)
 
 
 def _plan_consumption(product_id, qty):
     """(plan, uncovered) for issuing ``qty`` — oldest layers first.
 
-    ``plan`` is [(layer, take_qty, unit_cost)]; ``uncovered`` is what no
+    ``plan`` is [(layer, take_qty, effective_cost)]; ``uncovered`` is what no
     layer could cover. Pure: decrements nothing.
+
+    The cost is the layer's EFFECTIVE cost — carried value over remaining
+    quantity, unrounded — so that consuming a layer whole draws exactly the
+    value it carries. ``unit_cost`` is the 4dp rounding of it, and rounding is
+    what used to leave a residue behind on every issue.
     """
     remaining = qty
     plan = []
@@ -161,9 +175,53 @@ def _plan_consumption(product_id, qty):
         take = min(_d(layer.qty_remaining), remaining)
         if take <= 0:
             continue
-        plan.append((layer, take, _d(layer.unit_cost)))
+        plan.append((layer, take, layer.unit_cost_effective))
         remaining -= take
     return plan, remaining
+
+
+def _withdraw_value(plan, posted_total):
+    """Take exactly ``posted_total`` of value out of the layers in ``plan``,
+    decrement their quantity, and return what each one gave up.
+
+    Exactly, because ``posted_total`` is the amount the ledger row moves by.
+    Matching it here is what makes ``sum(value_remaining) == running_cost``
+    true by construction rather than true to within a rounding error that
+    accumulates (StockLayer). Quantity and value move together, so a layer's
+    units and its worth never come apart.
+
+    Within that total: a layer drained of quantity gives up everything it
+    carries. ``_open_layers`` only sees ``qty_remaining > 0``, so a fraction of
+    a cent stranded on an emptied layer is value ``stock_value`` can no longer
+    count, and it would read as a loss. A partial take gives up ``take`` times
+    the layer's effective cost, which leaves the units still on the layer
+    costing exactly what they did before.
+
+    Whatever those raw figures miss the posted 2dp amount by settles on the
+    last layer still holding stock — the only place it can sit and still be
+    counted. A plan that drains every layer it touches has nowhere to put it
+    and leaves it; that needs an issue to empty whole layers to the unit, and
+    it is half a cent against the 0.01 ``assert_invariant`` allows.
+    """
+    values = []
+    for layer, take, _cost in plan:
+        if take >= _d(layer.qty_remaining):
+            values.append(_d(layer.value_remaining))
+        else:
+            values.append(_q(take * layer.unit_cost_effective))
+
+    residual = posted_total - sum(values, ZERO)
+    if residual:
+        for i in range(len(plan) - 1, -1, -1):
+            layer, take, _cost = plan[i]
+            if _d(layer.qty_remaining) - take > 0:
+                values[i] += residual
+                break
+
+    for (layer, take, _cost), value in zip(plan, values):
+        layer.qty_remaining = _d(layer.qty_remaining) - take
+        layer.value_remaining = _d(layer.value_remaining) - value
+    return values
 
 
 def cost_of_issue(product_id, qty):
@@ -261,6 +319,9 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
         db.session.add(StockLayer(
             product_id=product_id, source_ledger_id=row.id,
             unit_cost=unit_cost, qty_original=qty, qty_remaining=qty,
+            # The 2dp figure this receipt posted, not qty x the 4dp cost:
+            # the layer must move in the same amount the ledger moved in.
+            value_remaining=total_cost,
             method=settings.valuation_method, notes=notes,
         ))
     else:
@@ -268,14 +329,20 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
         # layers (left by a FIFO period before the switch) are folded in too,
         # so the pool collapses back to one.
         total_qty = sum((_d(l.qty_remaining) for l in open_layers), ZERO) + qty
-        total_value = sum((_d(l.qty_remaining) * _d(l.unit_cost)
+        total_value = sum((_d(l.value_remaining)
                            for l in open_layers), ZERO) + total_cost
         keep, rest = open_layers[0], open_layers[1:]
         keep.qty_remaining = total_qty
+        keep.value_remaining = total_value
+        # Still the 4dp BASIS an issue is charged at. Re-averaging it no longer
+        # moves the pool's value, which is what used to drift the pool away
+        # from the ledger a little on every single receipt.
         keep.unit_cost = _q(total_value / total_qty) if total_qty > 0 else ZERO
         keep.qty_original = _d(keep.qty_original) + qty
         for l in rest:
+            # Folded into keep above — leaving value here would double-count it.
             l.qty_remaining = ZERO
+            l.value_remaining = ZERO
     db.session.flush()
     _sync_product_stock(product_id)
     return row
@@ -318,14 +385,16 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
 
     # Draw the quantity down against real layers and record what was taken
     # from where, so every posted cost can be traced to its purchases.
-    for layer, take, layer_cost in plan:
-        layer.qty_remaining = _d(layer.qty_remaining) - take
+    withdrawn = _withdraw_value(plan, total)
+    for (layer, take, layer_cost), value in zip(plan, withdrawn):
         # An explicit basis (purchase return) posts its own cost; the
-        # consumption row records the basis actually charged.
+        # consumption row records the basis actually charged, and the value
+        # actually taken off the layer — which is what a reversal gives back,
+        # so the round trip is exact.
         charged = unit if unit_cost is not None else layer_cost
         db.session.add(LayerConsumption(
             layer_id=layer.id, out_ledger_id=row.id, product_id=product_id,
-            qty=take, unit_cost=charged, total_cost=_q(take * charged, 2),
+            qty=take, unit_cost=_q(charged), total_cost=value,
         ))
     db.session.flush()
     _sync_product_stock(product_id)
@@ -362,10 +431,11 @@ def revalue_for_method_change(new_method, created_by=1):
             # distinct and correctly costed. Nothing to do.
             continue
         total_qty = sum((_d(l.qty_remaining) for l in layers), ZERO)
-        total_value = sum((_d(l.qty_remaining) * _d(l.unit_cost) for l in layers), ZERO)
+        total_value = sum((_d(l.value_remaining) for l in layers), ZERO)
         keep, rest = layers[0], layers[1:]
         keep.qty_remaining = total_qty
         keep.qty_original = total_qty
+        keep.value_remaining = total_value
         keep.unit_cost = _q(total_value / total_qty) if total_qty > 0 else ZERO
         keep.method = new_method
         keep.is_revaluation = True
@@ -373,6 +443,7 @@ def revalue_for_method_change(new_method, created_by=1):
                       f"to {new_method} at book value {_q(total_value, 2)}")
         for l in rest:
             l.qty_remaining = ZERO
+            l.value_remaining = ZERO
     db.session.flush()
 
 
@@ -382,6 +453,11 @@ def assert_invariant(product_id):
     Any drift means a cost was posted that the layers cannot back, which is
     exactly how an inventory control account silently stops tying to COGS.
     Used by the costing tests.
+
+    Both sides now move in the same posted 2dp amounts, so this is normally
+    equal outright rather than equal within the tolerance. The tolerance stays
+    for the one case that cannot reach it: an issue that empties whole layers
+    to the unit leaves the half-cent it rounded by (``_withdraw_value``).
     """
     _qty, running_cost, _avg = StockLedger.get_running_balance(product_id)
     layer_value = stock_value(product_id)
@@ -437,10 +513,15 @@ def _resync_pool(product_id):
     keep, rest = layers[0], layers[1:]
     for l in rest:
         l.qty_remaining = ZERO
+        l.value_remaining = ZERO
     if qty <= 0:
         keep.qty_remaining = ZERO
+        keep.value_remaining = ZERO
     else:
         keep.qty_remaining = qty
+        # The ledger's own running_cost, so the pool does not merely round to
+        # the ledger here — it IS the ledger.
+        keep.value_remaining = cost
         keep.unit_cost = _q(cost / qty)
     db.session.flush()
 
@@ -510,6 +591,15 @@ def _reconcile_to_variance(product_id, voucher_number, created_by=1):
             if surplus <= 0:
                 break
             take = min(_d(layer.qty_remaining), surplus)
+            # Value follows the units off the layer — read the effective cost
+            # before the decrement. What the surplus was worth is precisely
+            # the value with no purchase left to back it, which is what
+            # _unaccounted_value is about to surface as the variance.
+            if take >= _d(layer.qty_remaining):
+                layer.value_remaining = ZERO
+            else:
+                layer.value_remaining = (_d(layer.value_remaining)
+                                         - _q(take * layer.unit_cost_effective))
             layer.qty_remaining = _d(layer.qty_remaining) - take
             surplus -= take
         db.session.flush()
@@ -624,6 +714,10 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
         layer = scoped_get(StockLayer, c.layer_id)
         if layer is not None:
             layer.qty_remaining = _d(layer.qty_remaining) + _d(c.qty)
+            # total_cost is the value this consumption actually withdrew, so
+            # the layer comes back to where it was rather than to a re-derived
+            # approximation of where it was.
+            layer.value_remaining = _d(layer.value_remaining) + _d(c.total_cost)
         db.session.delete(c)
     db.session.flush()
 
@@ -700,7 +794,55 @@ def backfill_layers(created_by=1):
         db.session.add(StockLayer(
             product_id=pid, source_ledger_id=None,
             unit_cost=_q(cost / qty), qty_original=qty, qty_remaining=qty,
-            method=_settings().valuation_method, is_revaluation=True,
+            value_remaining=cost, method=_settings().valuation_method,
+            is_revaluation=True,
             notes="Opening layer at book value (pre-layer-engine stock)",
         ))
+    db.session.flush()
+
+
+def backfill_layer_values():
+    """Seed ``value_remaining`` on layers that pre-date the carried column.
+
+    Those rows come back from the ALTER TABLE holding 0, which would read as
+    a warehouse full of free stock. The only reconstruction available is the
+    old derivation, ``qty_remaining * unit_cost`` — the very product whose
+    rounding the carried column exists to stop accumulating, so the result is
+    a few cents out per product rather than exact.
+
+    So the per-product total is then settled against the ledger's own
+    running_cost, which closes the drift already on the books at the moment
+    the column arrives. Only a small gap is settled: a rounding residue is
+    what this is for, while a large one is a real break that a migration must
+    not paper over — that is left standing for ``assert_invariant`` to report.
+
+    Runs on every boot, so it settles ONLY products it just seeded. A product
+    whose layers already carry their value is left alone even if it is a few
+    cents out: that gap arrived after the migration, which makes it a leak,
+    and quietly closing it on every restart is how a leak stays invisible.
+    """
+    layers = (StockLayer.query
+              .filter(StockLayer.qty_remaining > 0)
+              .order_by(StockLayer.product_id.asc(), StockLayer.id.asc())
+              .all())
+    by_product = {}
+    seeded = set()
+    for layer in layers:
+        if _d(layer.value_remaining) == ZERO:
+            layer.value_remaining = _q(_d(layer.qty_remaining) * _d(layer.unit_cost))
+            seeded.add(layer.product_id)
+        by_product.setdefault(layer.product_id, []).append(layer)
+
+    for product_id in seeded:
+        product_layers = by_product[product_id]
+        _qty, running_cost, _avg = StockLedger.get_running_balance(product_id)
+        gap = _d(running_cost) - sum((_d(l.value_remaining) for l in product_layers), ZERO)
+        if gap == ZERO:
+            continue
+        if abs(gap) > Decimal("1.00"):
+            print(f"MIGRATION stock_layers.value_remaining: product {product_id} "
+                  f"is {gap} off its ledger — too large to be rounding, left "
+                  f"as reconstructed for assert_invariant to report")
+            continue
+        product_layers[-1].value_remaining = _d(product_layers[-1].value_remaining) + gap
     db.session.flush()
