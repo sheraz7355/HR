@@ -1,0 +1,49 @@
+{# One full voucher document — the same markup the single-voucher preview
+   prints. Used by voucher_preview.html and by the bulk register's
+   print-all page so one voucher always looks the same everywhere.
+   Context: voucher, lines, total_debit, total_credit, labels. #}
+<div class="pa">
+  <div class="co">
+    <div class="co-name">{{ company.company_name if company else 'My Company' }}</div>
+    <div class="co-addr">
+      {%- if company %}{{ company.address or '' }}{% if company.city %}, {{ company.city }}{% endif %}
+      {% if company.phone %} &bull; Tel: {{ company.phone }}{% endif %}{% if company.email %} &bull; {{ company.email }}{% endif %}
+      {% if company.tax_id %} &bull; NTN: {{ company.tax_id }}{% endif %}{% endif -%}
+    </div>
+  </div>
+  <div class="hdr">
+    <h1>{{ labels[voucher.voucher_type] }}</h1>
+    <div class="no">{{ voucher.voucher_number }}</div>
+  </div>
+  <div class="meta">
+    <div><span class="l">Date:</span> <span class="v">{{ voucher.voucher_date.strftime('%d-%b-%Y') }}</span></div>
+    <div><span class="l">Time:</span> <span class="v">{{ voucher.voucher_date.strftime('%H:%M') }}</span></div>
+    <div><span class="l">Status:</span> <span class="v"><span class="sb sb-{{ 'a' if voucher.status == 'approved' else 'u' }}">{{ voucher.status|title }}</span></span></div>
+    {% if voucher.voucher_type in ('CPV','CRV','BPV','BRV') and voucher.cash_bank_account %}
+    <div><span class="l">Cash/Bank A/c:</span> <span class="v">{{ voucher.cash_bank_account.name }} [{{ voucher.cash_bank_account.code }}]</span></div>
+    {% endif %}
+    <div><span class="l">Created by:</span> <span class="v">{{ voucher.creator.full_name if voucher.creator else '' }}</span></div>
+  </div>
+  <table>
+    <thead><tr><th style="width:28px">#</th><th>A/c Code</th><th>Account Name</th><th>Description</th><th class="nu">Debit</th><th class="nu">Credit</th></tr></thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td style="font-family:monospace">{{ line.account.code if line.account else '' }}</td>
+        <td>{{ line.account.name if line.account else '' }}</td>
+        <td>{{ line.description }}</td>
+        <td class="nu">{{ line.debit|amount_format if line.debit > 0 else '' }}</td>
+        <td class="nu">{{ line.credit|amount_format if line.credit > 0 else '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot><tr><td colspan="4" style="text-align:right;">Total:</td><td class="nu">{{ total_debit|amount_format }}</td><td class="nu">{{ total_credit|amount_format }}</td></tr></tfoot>
+  </table>
+  {% if voucher.notes %}
+  <div class="notes"><strong>Notes:</strong> {{ voucher.notes }}</div>
+  {% endif %}
+  {% if voucher.approved_by %}
+  <div class="app">Approved by: {{ voucher.approver.full_name if voucher.approver else '' }} on {{ voucher.approved_at.strftime('%d-%b-%Y %H:%M') }}</div>
+  {% endif %}
+</div>

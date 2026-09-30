@@ -12,6 +12,7 @@ from shared.ledger_utils import (post_journal_entry, reverse_journal_entry,
 from shared import costing
 from ..models.asset import FixedAsset, AssetCategory
 from .depreciation import post_asset_depreciation, due_depreciation
+from shared.forms import form_float
 
 
 def _capitalise_from_stock(transfer, product, qty, created_by):
@@ -165,7 +166,7 @@ def capitalise_from_stock():
                 "useful_life", type=int) or category.default_useful_life),
             depreciation_method=request.form.get(
                 "depreciation_method", category.default_depreciation_method),
-            salvage_value=float(request.form.get("salvage_value", 0) or 0),
+            salvage_value=form_float("salvage_value", 0),
             current_book_value=0, status="active",
             location=request.form.get("location", ""),
             notes=request.form.get("description", ""),

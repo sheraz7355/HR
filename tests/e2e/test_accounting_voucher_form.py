@@ -131,3 +131,42 @@ def test_approve_action_is_the_only_path_to_the_ledger(client):
     entry = _journal_for(voucher)
     assert entry is not None and entry.is_posted
     assert entry.entry_date.date() == datetime.utcnow().date()
+
+
+def test_refused_approval_keeps_the_draft(client):
+    """Approving into a closed period is refused — and the voucher the user
+    typed must survive as an unapproved draft. The refusal used to render
+    the form without a commit, so teardown rolled the whole voucher away."""
+    from datetime import date
+    from shared.models.company_settings import AccountingPeriod
+    with _company_ctx():
+        db.session.add(AccountingPeriod(
+            fiscal_year="2001", period_name="FY 2001 (closed)",
+            start_date=date(2001, 1, 1), end_date=date(2001, 12, 31),
+            is_open=False, is_closed=True, closed_at=datetime(2002, 1, 15)))
+        db.session.commit()
+    debtor, cash = _line_accounts()
+    resp = client.post(
+        "/accounting/vouchers",
+        data={
+            "voucher_type": "JV",
+            "voucher_date": "2001-06-01T10:00",
+            "notes": "closed period draft",
+            "account_id[]": [str(debtor.id), str(cash.id)],
+            "description[]": ["receivable leg", "cash leg"],
+            "debit[]": ["700", "0"],
+            "credit[]": ["0", "700"],
+            "action": "approve",
+        },
+        follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"could not approve" in resp.data
+    voucher = _latest_voucher()
+    assert voucher.notes == "closed period draft", "the draft was lost"
+    assert voucher.status == "unapproved"
+    assert voucher.approved_by is None
+    assert _journal_for(voucher) is None
+    from shared.models.accounting_voucher import AccountingVoucherLine
+    with _company_ctx():
+        assert AccountingVoucherLine.query.filter_by(
+            voucher_id=voucher.id).count() == 2

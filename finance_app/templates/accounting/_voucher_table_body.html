@@ -1,0 +1,15 @@
+{# Voucher register rows — data rows only (no tbody/tfoot wrapper, so the
+   partial nests safely inside the page's own tbody and parses cleanly from
+   JS). Used by the no-JS view and the chunked data endpoint alike. #}
+{% for r in rows %}
+<tr>
+  <td>{{ r.date.strftime('%d %b %Y') if r.date else '-' }}</td>
+  <td><a class="vnum" href="{{ url_for('accounting.voucher_preview', id=r.id) }}" target="_blank" title="Open full voucher (print, PDF, Excel)">{{ r.number }}</a></td>
+  <td>{{ r.description }}</td>
+  <td class="num">{{ r.debit|amount_format(0) }}</td>
+  <td class="num">{{ r.credit|amount_format(0) }}</td>
+  <td class="row-view no-print"><a href="{{ url_for('accounting.voucher_preview', id=r.id) }}" target="_blank" class="btn btn-sm btn-outline">View</a></td>
+</tr>
+{% else %}
+<tr><td colspan="6" style="text-align:center;color:var(--muted)">No vouchers found for this filter</td></tr>
+{% endfor %}

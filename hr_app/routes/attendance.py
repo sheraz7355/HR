@@ -208,13 +208,20 @@ def admin_view():
 def correct():
     if not current_user.is_admin() and not current_user.is_manager():
         return jsonify({"error": "Access denied"}), 403
+    # Correctable business fields only — never ids, ownership or dates.
+    CORRECTABLE_FIELDS = {"clock_in", "clock_out", "status"}
     att_id = request.form.get("attendance_id", type=int)
     field = request.form.get("field")
     new_value = request.form.get("new_value")
     reason = request.form.get("reason", "").strip()
     if not att_id or not field or not new_value or not reason:
         return jsonify({"error": "All fields required"}), 400
+    if field not in CORRECTABLE_FIELDS:
+        return jsonify({"error": "That field cannot be corrected here"}), 400
     att = scoped_get_404(Attendance, att_id)
+    if not current_user.is_admin() and att.user_id not in {
+            u.id for u in current_user.reports_of()}:
+        return jsonify({"error": "Access denied"}), 403
     old_value = str(getattr(att, field, ""))
     setattr(att, field, new_value)
     db.session.add(AttendanceCorrection(

@@ -2,8 +2,13 @@
 {% block title %}General Ledger{% endblock %}
 {% block heading %}General Ledger{% endblock %}
 {% block actions %}
-<a href="{{ request.full_path|safe }}&amp;format=excel" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
-<a href="{{ request.full_path|safe }}&amp;format=pdf" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+{# Strip any existing format= so re-clicking from an exported URL cannot stack
+   a second format param (Flask reads the first, so the button looked dead). #}
+{% set _args = request.args.to_dict() %}
+{% set _ = _args.pop('format', None) %}
+{% set _base = request.path ~ '?' ~ _args|urlencode %}
+<a href="{{ (_base ~ '&format=excel')|safe }}" class="btn btn-outline btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
+<a href="{{ (_base ~ '&format=pdf')|safe }}" class="btn btn-outline btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
 <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
 {% endblock %}
 {% block content %}

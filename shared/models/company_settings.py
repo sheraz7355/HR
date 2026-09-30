@@ -175,7 +175,13 @@ class FiscalYearRule(db.Model):
         """
         from shared.models.ledger import JournalEntry
 
-        AccountingPeriod.query.delete()
+        # Scoped delete: only this company's periods. (The tenancy hook also
+        # confines bulk deletes, but an unfiltered delete() here once wiped
+        # every tenant's periods — including during new-company provisioning
+        # — so the filter stays explicit.)
+        from shared.tenancy import current_company_id
+        cid = self.company_id or current_company_id()
+        AccountingPeriod.query.filter_by(company_id=cid).delete()
         today = date.today()
 
         if from_year is not None and to_year is not None:

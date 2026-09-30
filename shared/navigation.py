@@ -243,6 +243,9 @@ NAV = {
             # Settlement lives in its own group: it reads both sides of the
             # ledger and belongs to neither Procurement nor Sales.
             ("Invoice Tracking", "&#9878;", [
+                {"endpoint": "inv_registers.index", "icon": "&#9632;",
+                  "label": "Invoice Register",
+                  "active": {"prefix": "inv_registers"}},
                 {"endpoint": "inv_tracking.feed", "icon": "&#9632;",
                  "label": "Payment Feed",
                  "active": {"exact": ["inv_tracking.feed",
@@ -292,6 +295,8 @@ NAV = {
             {"endpoint": "accounting.dashboard", "icon": "&#9679;", "label": "Dashboard"},
             {"endpoint": "accounting.voucher_form", "icon": "&#10133;", "label": "Create Voucher"},
             {"endpoint": "accounting.voucher_list", "icon": "&#128196;", "label": "View Vouchers"},
+            {"endpoint": "accounting.voucher_register", "icon": "&#128212;", "label": "Voucher Register",
+             "active": {"prefix": "accounting.voucher_register"}},
             {"endpoint": "coa.list_accounts", "icon": "&#128202;", "label": "Chart of Accounts (COA)",
              "active": {"prefix": "coa."}},
         ],

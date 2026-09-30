@@ -130,6 +130,10 @@ def request_loan():
 @login_required
 def compliance_check(lid):
     loan = scoped_get_404(PFLoanRequest, lid)
+    if (loan.user_id != current_user.id
+            and not current_user.is_admin()
+            and not current_user.is_manager()):
+        return jsonify({"error": "Access denied"}), 403
     balance = db.session.query(func.sum(PFLedger.credit) - func.sum(PFLedger.debit)).filter(
         PFLedger.user_id == loan.user_id).scalar() or 0
     config = ProvidentFundConfig.query.first()

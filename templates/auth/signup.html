@@ -140,11 +140,7 @@
       <p class="card-desc">Submit your details and a platform operator will review your request. You'll be able to sign in once approved.</p>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}
-        <div class="flash {{ cat }}" style="margin-top:16px;">{{ msg }}</div>
-      {% endfor %}
-    {% endwith %}
+    {% include '_flash.html' %}
 
     {% if submitted %}
     <div class="success-state">

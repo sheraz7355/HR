@@ -1,39 +1,48 @@
-{# Shared flash renderer — consistent styled toasts for server-side messages
-   (create / save / approve / post / unapprove / delete confirmations & errors).
-   Self-contained styles + auto-dismiss so it works inside any base layout. #}
+{# Shared flash renderer — short auto-dismissing toasts for every
+   server-side message (save / approve / post / delete confirmations &
+   errors). Self-contained styles + script so it works inside any base
+   layout, including the standalone pages that bypass the app shell.
+
+   Dismiss time scales with message length so short confirmations vanish
+   fast (~2.2s) while longer errors stay readable (capped at ~4.5s). #}
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
-<div class="app-flash-wrap" id="appFlashWrap">
+<div class="app-flash-wrap" id="appFlashWrap" aria-live="polite">
   {% for category, message in messages %}
-  <div class="app-flash app-flash-{{ 'error' if category in ['error','danger'] else ('success' if category == 'success' else ('warning' if category in ['warning','warn'] else 'info')) }}">
+  <div class="app-flash app-flash-{{ 'error' if category in ['error','danger'] else ('success' if category == 'success' else ('warning' if category in ['warning','warn'] else 'info')) }}" role="status">
     <span class="app-flash-ico">
       {%- if category == 'success' %}&#10003;{% elif category in ['error','danger'] %}&#10005;{% elif category in ['warning','warn'] %}&#9888;{% else %}&#8505;{% endif -%}
     </span>
     <span class="app-flash-msg">{{ message }}</span>
-    <button type="button" class="app-flash-x" onclick="this.parentElement.remove()">&times;</button>
+    <button type="button" class="app-flash-x" aria-label="Dismiss" onclick="this.parentElement.remove()">&times;</button>
   </div>
   {% endfor %}
 </div>
 <style>
 .app-flash-wrap{position:fixed;top:16px;right:16px;z-index:4000;display:flex;flex-direction:column;gap:8px;max-width:min(92vw,380px)}
 .app-flash{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:8px;font-size:13.5px;font-weight:500;
-  color:var(--card);box-shadow:var(--shadow-lg);animation:appFlashIn .22s ease}
+  color:#fff;box-shadow:0 10px 28px rgba(15,23,42,.22);animation:appFlashIn .22s ease}
 .app-flash-ico{font-size:14px;line-height:1;flex:none}
 .app-flash-msg{flex:1;line-height:1.35}
 .app-flash-x{background:none;border:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;opacity:.8;padding:0;flex:none}
 .app-flash-x:hover{opacity:1}
-.app-flash-success{background:var(--success)}
-.app-flash-error{background:var(--danger)}
-.app-flash-warning{background:var(--warning)}
-.app-flash-info{background:var(--accent)}
+.app-flash-success{background:var(--success,#15803d)}
+.app-flash-error{background:var(--danger,#b91c1c)}
+.app-flash-warning{background:var(--warning,#b45309)}
+.app-flash-info{background:var(--accent,#2B7263)}
 @keyframes appFlashIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 @media print{.app-flash-wrap{display:none!important}}
+@media (max-width:480px){.app-flash-wrap{top:auto;bottom:12px;left:12px;right:12px;max-width:none}}
 </style>
 <script>
 (function(){var w=document.getElementById('appFlashWrap');if(!w)return;
-setTimeout(function(){Array.prototype.forEach.call(w.children,function(el){
-  el.style.transition='opacity .3s,transform .3s';el.style.opacity='0';el.style.transform='translateX(16px)';
-  setTimeout(function(){el.remove()},300);});},4500);})();
+Array.prototype.forEach.call(w.children,function(el){
+  var msg=el.querySelector('.app-flash-msg');
+  var len=msg?msg.textContent.length:40;
+  var ms=Math.min(4500,Math.max(2200,1400+len*22));
+  setTimeout(function(){el.style.transition='opacity .3s,transform .3s';
+    el.style.opacity='0';el.style.transform='translateX(16px)';
+    setTimeout(function(){el.remove()},300);},ms);});})();
 </script>
 {% endif %}
 {% endwith %}

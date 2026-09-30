@@ -1,0 +1,16 @@
+{# Invoice register rows — data rows only (no tbody/tfoot wrapper, so the
+   partial nests safely inside the page's own tbody and parses cleanly from
+   JS). Used by the no-JS view and the chunked data endpoint alike. #}
+{% for r in rows %}
+<tr>
+  <td>{{ r.date.strftime('%d %b %Y') if r.date else '-' }}</td>
+  <td><strong>{{ r.invoice_number }}</strong></td>
+  <td>{{ r.voucher_number }}</td>
+  <td>{{ r.party }}</td>
+  {% for v in r.vals %}<td class="num">{{ v|amount_format(0) }}</td>{% endfor %}
+  <td><span class="badge badge-{{ r.status_class }}">{{ r.status }}</span></td>
+  <td class="no-print"><a href="{{ url_for(view_endpoint, id=r.id) }}" class="btn btn-sm btn-outline" title="Open full invoice (print from there)">View</a></td>
+</tr>
+{% else %}
+<tr><td colspan="{{ columns|length + 1 }}" class="empty">No invoices found for this filter</td></tr>
+{% endfor %}

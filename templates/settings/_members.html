@@ -71,11 +71,11 @@
             <td data-label="Actions">
               <div class="m-acts">
                 {% if m.status == 'removed' %}
-                <form method="POST" action="{{ url_for('settings.member_restore', membership_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Discard the removed membership of {{ u.full_name }}? This cannot be undone.');">
+                <form method="POST" action="{{ url_for('settings.member_restore', membership_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Discard the removed membership of ' + {{ (u.full_name)|tojson|forceescape }} + '? This cannot be undone.');">
                   <button type="submit" class="btn btn-sm btn-danger">Discard</button>
                 </form>
                 {% elif m.user_id != created_by_user_id and not (m.role_id == admin_role_id and active_admins <= 1) %}
-                <form method="POST" action="{{ url_for('settings.member_remove', membership_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Remove {{ u.full_name }} from {{ company.name }}?');">
+                <form method="POST" action="{{ url_for('settings.member_remove', membership_id=m.id) }}" style="display:inline;" onsubmit="return confirm('Remove ' + {{ (u.full_name)|tojson|forceescape }} + ' from ' + {{ (company.name)|tojson|forceescape }} + '?');">
                   <button type="submit" class="btn btn-sm btn-danger">Remove</button>
                 </form>
                 {% endif %}
@@ -110,11 +110,11 @@
               {% else %}<span class="pill pill-off">Revoked</span>{% endif %}
             </td>
             <td data-label="Sent">{{ inv.created_at.strftime('%Y-%m-%d') if inv.created_at else '&mdash;'|safe }}</td>
-            <td data-label="Invited By">{{ inviter_names.get(inv.invited_by, '&mdash;')|safe }}</td>
+            <td data-label="Invited By">{{ inviter_names.get(inv.invited_by) or '&mdash;'|safe }}</td>
             <td data-label="Actions">
               {% if inv.status == 'sent' %}
               <div class="m-acts">
-                <form method="POST" action="{{ url_for('settings.revoke_invite', invitation_id=inv.id) }}" style="display:inline;" onsubmit="return confirm('Revoke the invitation to {{ inv.email }}?');">
+                <form method="POST" action="{{ url_for('settings.revoke_invite', invitation_id=inv.id) }}" style="display:inline;" onsubmit="return confirm('Revoke the invitation to ' + {{ (inv.email)|tojson|forceescape }} + '?');">
                   <button type="submit" class="btn btn-sm btn-outline">Revoke</button>
                 </form>
               </div>

@@ -91,7 +91,7 @@
   </style>
   {% block extra_css %}{% endblock %}
   {% block extra_head %}{% endblock %}
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231d4ed8'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232B7263'/><text x='16' y='22' font-size='18' font-family='Arial' font-weight='bold' text-anchor='middle' fill='white'>A</text></svg>">
 </head>
 <body>
   {% if current_user.is_authenticated %}
@@ -261,8 +261,8 @@
   {% endif %}
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   <script>
-    window.__numberFormat = '{{ company.number_format if company else "en" }}';
-    window.__currencySymbol = '{{ company.currency_symbol if company else "Rs." }}';
+    window.__numberFormat = {{ ((company.number_format if company else None) or "en")|tojson }};
+    window.__currencySymbol = {{ ((company.currency_symbol if company else None) or "Rs.")|tojson }};
     window.formatAmount = function(v, dp) {
       if (dp === undefined) dp = 2;
       var n = parseFloat(v) || 0;

@@ -107,11 +107,7 @@
 </div>
 
 <div class="wrap">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for cat, msg in messages %}
-      <div class="flash {{ cat }}">{{ msg }}</div>
-    {% endfor %}
-  {% endwith %}
+  {% include '_flash.html' %}
 
   <h1>My companies</h1>
   <p class="sub">Choose a company to open its books, or create a new one. Invitations from other users appear below.</p>

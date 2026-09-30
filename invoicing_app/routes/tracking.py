@@ -172,8 +172,7 @@ def assign_workspace(line_id):
         return redirect(url_for("invoicing.dashboard"))
     row = pt.feed_row(line_id)
     if row is None:
-        flash("That payment is not an approved customer receipt or supplier "
-              "payment, so it cannot be assigned.", "error")
+        flash("Only approved receipts and payments can be assigned.", "error")
         return redirect(url_for("inv_tracking.feed"))
     return render_template(
         "tracking/assign.html",

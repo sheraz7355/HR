@@ -80,9 +80,11 @@ def edit_customer(id):
     return render_template("customers/form_inv.html", customer=c)
 
 
-@inv_cust_bp.route("/delete/<int:id>")
+@inv_cust_bp.route("/delete/<int:id>", methods=["POST"])
 @login_required
 def delete_customer(id):
+    if deny_page("customers", "delete"):
+        return redirect(url_for("inv_customers.list_customers"))
     c = scoped_get_404(InvCustomer, id)
     if c.sales_orders.count() > 0 or c.invoices.count() > 0:
         flash("Cannot delete customer with sales history", "error")
@@ -110,7 +112,11 @@ def check_duplicate():
 @inv_cust_bp.route("/template")
 @login_required
 def download_template():
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        flash("Excel support is not installed on the server.", "error")
+        return redirect(url_for("inv_customers.list_customers"))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Customers"

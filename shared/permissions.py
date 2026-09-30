@@ -104,6 +104,5 @@ def deny_page(resource, action):
     from flask_login import current_user
     if current_user.can(resource, action):
         return None
-    flash(f"You don't have '{action}' rights for this section. "
-          f"Ask an administrator to grant access in Settings.", "error")
+    flash(f"No '{action}' rights here. Ask an admin in Settings.", "error")
     return True

@@ -241,6 +241,117 @@ def test_negative_stock_allowed_when_configured(settings, product):
     unit, total = issue(10)
     assert unit == Decimal("10.0000"), "uncovered units fall back to last cost"
     assert costing.on_hand(1) == -5
+    assert_ties("after an over-issue with negative stock allowed")
+
+
+def test_over_issue_carries_its_cost_as_a_short_layer(settings, product):
+    """The uncovered value used to be dropped: the ledger kept the 30 of cost
+    posted for stock that was never bought, while the pool lost it — every
+    later receipt then built on a diverged base."""
+    settings.allow_negative_stock = True
+    db.session.commit()
+    buy(5, 10, n=1)
+    issue(8, n=1)                     # 5 covered + 3 @ 10 uncovered
+    assert_ties("after an over-issue")
+
+    costing.reverse_voucher_stock("SI", 1)
+    db.session.commit()
+    assert costing.on_hand(1) == 5
+    assert_ties("after reversing the over-issue")
+
+
+@pytest.mark.parametrize("method", ["weighted_average", "fifo"])
+def test_receipt_covers_an_open_short_before_opening_stock(settings, product, method):
+    """A receipt after an over-issue must first fill the short. Otherwise the
+    positive layers hold more units than the ledger has on hand: a later issue
+    is costed against phantom stock, the negative-stock guard stops seeing the
+    deficit, and emptying the ledger strands the short's value on the layers.
+    """
+    settings.valuation_method = method
+    settings.allow_negative_stock = True
+    db.session.commit()
+    buy(5, 10, n=1)
+    issue(8, n=1)                     # 3 short @ 10 -> ledger -3 / -30
+    buy(10, 12, n=2)                  # ledger 7 / 90
+    assert_ties("after a receipt over a short")
+    assert sum(q for _c, q in costing.layers_remaining(1)) == costing.on_hand(1) == 7
+
+    settings.allow_negative_stock = False
+    db.session.commit()
+    with pytest.raises(NegativeStockError):
+        issue(8, n=2)                 # only 7 on hand, guard must still hold
+
+    issue(7, n=3)                     # empty the ledger exactly
+    assert costing.on_hand(1) == 0
+    assert_ties("after emptying stock that once covered a short")
+
+
+@pytest.mark.parametrize("method", ["weighted_average", "fifo"])
+def test_reversing_a_receipt_that_covered_a_short_reopens_it(settings, product, method):
+    """Three of the ten received units filled an issue already posted, so a
+    plain reversal is refused like any consumed receipt; forced through with
+    a variance, the short reopens and the pool still ties."""
+    settings.valuation_method = method
+    settings.allow_negative_stock = True
+    db.session.commit()
+    buy(2, 10, n=1)
+    issue(5, n=1)                     # 3 short @ 10
+    buy(10, 12, n=2)
+    with pytest.raises(costing.ConsumedLayerError):
+        costing.reverse_voucher_stock("PI", 2)
+
+    costing.reverse_voucher_stock("PI", 2, allow_variance=True)
+    db.session.commit()
+    assert costing.on_hand(1) == -3
+    assert sum(q for _c, q in costing.layers_remaining(1)) == 0
+    assert_ties("after reversing the covering receipt")
+
+    buy(4, 10, n=3)                   # the reopened short is covered again
+    assert costing.on_hand(1) == 1
+    assert sum(q for _c, q in costing.layers_remaining(1)) == 1
+    assert_ties("after re-covering the short")
+
+
+def test_reversing_an_over_issue_after_its_short_was_covered(settings, product):
+    settings.valuation_method = "fifo"
+    settings.allow_negative_stock = True
+    db.session.commit()
+    buy(2, 10, n=1)
+    issue(5, n=1)                     # 3 short @ 10
+    buy(10, 12, n=2)                  # covers 3, 7 reach the shelf
+    costing.reverse_voucher_stock("SI", 1)
+    db.session.commit()
+    assert costing.on_hand(1) == 12
+    assert sum(q for _c, q in costing.layers_remaining(1)) == 12
+    assert_ties("after reversing the issue that opened the short")
+    # No layer may point at the deleted issue row.
+    assert StockLayer.query.filter(StockLayer.source_ledger_id.notin_(
+        [r.id for r in StockLedger.query.all()])).count() == 0
+
+
+def test_record_in_refuses_non_positive_quantities(settings, product):
+    with pytest.raises(ValueError, match="must be positive"):
+        costing.record_in(1, "PI", 1, "PI-00001", qty=0, unit_cost=10)
+    with pytest.raises(ValueError, match="must be positive"):
+        costing.record_in(1, "PI", 1, "PI-00001", qty=-5, unit_cost=10)
+    assert_ties("after refused receipts")
+
+
+def test_wa_receipt_reversal_refuses_stranded_posted_value(settings, product):
+    """Weighted average, default method: buy 10 @ 10 and 10 @ 20, sell 10 at
+    the 15 average, then delete the 10 @ 20 purchase. Enough units remain, so
+    the quantity guard passes — but 150 of posted COGS would be left backed
+    by only 100 of surviving purchases. Refuse; allow_variance stays the way
+    out."""
+    buy(10, 10, n=1)
+    buy(10, 20, n=2)
+    issue(10, n=1)                    # COGS 150
+
+    with pytest.raises(costing.ConsumedLayerError, match="already been issued"):
+        costing.reverse_voucher_stock("PI", 2)
+
+    assert costing.on_hand(1) == 10, "the refused reversal must not move stock"
+    assert_ties("after refused WA reversal")
 
 
 # ─────────────────────────────────────────────

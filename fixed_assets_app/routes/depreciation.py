@@ -171,6 +171,8 @@ def post_depreciation():
     if posted:
         db.session.commit()
         flash(f"Depreciation posted for {posted} asset(s).", "success")
+    elif not errors:
+        flash("Nothing posted. Select at least one active asset.", "warning")
     if errors:
         for e in errors:
             flash(e, "error")

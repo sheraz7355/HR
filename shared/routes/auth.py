@@ -17,6 +17,7 @@ def login():
         user = User.query.filter_by(email=email).first()
         if user and user.is_active and user.check_password(password):
             login_user(user)
+            flash(f"Welcome back, {user.full_name or user.email}.", "success")
             from shared.security import safe_local_url
             next_page = safe_local_url(request.args.get("next"))
             return redirect(next_page or url_for("dashboard.hub"))

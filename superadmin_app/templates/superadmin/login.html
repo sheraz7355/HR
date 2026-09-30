@@ -206,11 +206,7 @@
       <p class="card-desc">Manage companies, users and global limits across the whole platform.</p>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for _cat, msg in messages %}
-        <div class="flash">{{ msg }}</div>
-      {% endfor %}
-    {% endwith %}
+    {% include '_flash.html' %}
 
     <form method="post">
       <div class="field">

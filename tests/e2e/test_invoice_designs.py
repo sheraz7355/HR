@@ -7,6 +7,8 @@ a design, untick a field, save.
 
 import os
 
+from playwright.sync_api import expect
+
 # Same port the harness starts the server on (tests/e2e/conftest.py).
 BASE_URL = "http://127.0.0.1:" + os.environ.get("E2E_PORT", "5050")
 NEW_SALES = f"{BASE_URL}/settings/templates/create?type=sales"
@@ -72,9 +74,10 @@ class TestDesignEditorReacts:
         frame = admin_page.frame_locator("#tfPreview")
         assert frame.locator("text=Authorised Signatory").count() > 0
         admin_page.uncheck('input[name="show_signature"]')
-        admin_page.wait_for_timeout(1100)
-        assert admin_page.frame_locator("#tfPreview").locator(
-            "text=Authorised Signatory").count() == 0
+        # The preview re-renders on a debounce; wait for it rather than for a
+        # fixed 1.1s, which a loaded full-suite run regularly outlasted.
+        expect(admin_page.frame_locator("#tfPreview").locator(
+            "text=Authorised Signatory")).to_have_count(0, timeout=10000)
 
     def test_switching_to_custom_html_reveals_the_editor(self, admin_page):
         _open(admin_page, NEW_SALES)

@@ -47,7 +47,7 @@
           <td class="actions">
             <a href="{{ url_for('settings.edit_template', id=t.id) }}" class="btn btn-sm btn-outline">Edit</a>
             <a href="{{ url_for('settings.delete_template', id=t.id) }}" class="btn btn-sm btn-danger"
-               onclick="return confirm('Delete the design &quot;{{ t.name }}&quot;? Invoices already printed are not affected.')">Delete</a>
+               onclick="return confirm('Delete the design &quot;' + {{ (t.name)|tojson|forceescape }} + '&quot;? Invoices already printed are not affected.')">Delete</a>
           </td>
         </tr>
         {% endfor %}

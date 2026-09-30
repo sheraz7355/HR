@@ -69,11 +69,7 @@
 <div class="login-card">
   <h1>Accountix ERP</h1>
   <p class="subtitle">Sign in to your account</p>
-  {% with messages = get_flashed_messages(with_categories=true) %}
-  {% for cat, msg in messages %}
-  <div class="flash {{ cat }}">{{ msg }}</div>
-  {% endfor %}
-  {% endwith %}
+  {% include '_flash.html' %}
   <form method="POST">
     <div class="form-group">
       <label for="email">Email</label>
@@ -88,12 +84,17 @@
   <div class="or"><span>or</span></div>
   <a href="{{ url_for('signup') }}" class="btn-line">Request platform access</a>
   <p class="signup-link">Don't have an account? <a href="{{ url_for('signup') }}">Submit a request</a></p>
+  {# Demo credentials are deliberately NOT shown here: this is a public page
+     and the seed accounts are real logins. Show them only on local dev runs
+     (SHOW_DEMO_CREDS=1), never in a deployed environment. #}
+  {% if show_demo_creds %}
   <div class="demo-info">
     <strong>Demo credentials:</strong><br>
     <code>admin@solarkon.com</code> / <code>admin123</code> (full access)<br>
     <code>mgr@solarkon.com</code> / <code>mgr123</code> (HR + inventory)<br>
     <code>emp@solarkon.com</code> / <code>emp123</code> (HR only)
   </div>
+  {% endif %}
 </div>
 </body>
 </html>

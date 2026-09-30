@@ -142,6 +142,8 @@ def retry_submission(record_id):
 @fbr_dashboard_bp.route("/record/<int:record_id>")
 @login_required
 def view_record(record_id):
+    if not current_user.is_admin() and not current_user.has_fbr_access:
+        return jsonify({"ok": False, "error": "Access denied"}), 403
     record = scoped_get_404(FBRInvoiceRecord, record_id)
     return jsonify({
         "id": record.id,
@@ -162,6 +164,8 @@ def view_record(record_id):
 @fbr_dashboard_bp.route("/status/<int:invoice_id>")
 @login_required
 def check_status(invoice_id):
+    if not current_user.is_admin() and not current_user.has_fbr_access:
+        return jsonify({"ok": False, "error": "Access denied"}), 403
     record = FBRInvoiceRecord.latest_for_invoice(invoice_id)
     if not record:
         return jsonify({"ok": False, "error": "No FBR record found"}), 404

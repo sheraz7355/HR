@@ -58,7 +58,7 @@
             </form>
             {% else %}
             <form method="POST" action="{{ url_for('settings.close_period', id=p.id) }}" style="display:inline;"
-                  onsubmit="return confirm('Close {{ p.period_name }}?');">
+                  onsubmit="return confirm('Close ' + {{ (p.period_name)|tojson|forceescape }} + '?');">
               <button type="submit" class="btn btn-sm btn-danger">Close</button>
             </form>
             {% endif %}

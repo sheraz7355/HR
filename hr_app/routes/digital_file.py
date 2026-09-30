@@ -102,7 +102,8 @@ def download(fid):
     path = _resolve_path(f)
     if not os.path.exists(path):
         abort(404)
-    return send_file(path, download_name=f.original_name)
+    return send_file(path, download_name=f.original_name,
+                     mimetype=f.mime_type or None, as_attachment=True)
 
 
 @df_bp.route("/delete/<int:fid>", methods=["POST"])

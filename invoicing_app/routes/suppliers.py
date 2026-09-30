@@ -78,7 +78,7 @@ def edit_supplier(id):
     return render_template("suppliers/form_inv.html", supplier=s)
 
 
-@inv_sup_bp.route("/delete/<int:id>")
+@inv_sup_bp.route("/delete/<int:id>", methods=["POST"])
 @login_required
 def delete_supplier(id):
     if deny_page("suppliers", "delete"):
@@ -110,7 +110,11 @@ def check_duplicate():
 @inv_sup_bp.route("/template")
 @login_required
 def download_template():
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        flash("Excel support is not installed on the server.", "error")
+        return redirect(url_for("inv_suppliers.list_suppliers"))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Suppliers"

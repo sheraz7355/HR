@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.tenancy import scoped_get_404
 from ..models.asset import AssetCategory
+from shared.forms import form_float, form_int
 
 fa_categories_bp = Blueprint("fa_categories", __name__, url_prefix="/fixed-assets/categories")
 
@@ -33,9 +34,9 @@ def create_category():
         category = AssetCategory(
             name=name,
             description=request.form.get("description", ""),
-            default_useful_life=int(request.form.get("default_useful_life", 5)),
+            default_useful_life=form_int("default_useful_life", 5),
             default_depreciation_method=request.form.get("default_depreciation_method", "straight_line"),
-            default_salvage_value_pct=float(request.form.get("default_salvage_value_pct", 0)),
+            default_salvage_value_pct=form_float("default_salvage_value_pct", 0),
         )
         db.session.add(category)
         db.session.commit()
@@ -61,9 +62,9 @@ def edit_category(category_id):
             return render_template("fixed_assets/categories/form.html", category=category)
         category.name = name
         category.description = request.form.get("description", "")
-        category.default_useful_life = int(request.form.get("default_useful_life", 5))
+        category.default_useful_life = form_int("default_useful_life", 5)
         category.default_depreciation_method = request.form.get("default_depreciation_method", "straight_line")
-        category.default_salvage_value_pct = float(request.form.get("default_salvage_value_pct", 0))
+        category.default_salvage_value_pct = form_float("default_salvage_value_pct", 0)
         category.is_active = request.form.get("is_active") == "1"
         db.session.commit()
         flash("Category updated.", "success")

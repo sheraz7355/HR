@@ -1,0 +1,7 @@
+{# Invoice register totals row — full-set totals, refreshed per chunk. #}
+<tr data-total="1">
+  <td colspan="4"><strong>TOTAL</strong></td>
+  {% for v in totals %}<td class="num"><strong>{{ v|amount_format(0) }}</strong></td>{% endfor %}
+  <td></td>
+  <td class="no-print"></td>
+</tr>

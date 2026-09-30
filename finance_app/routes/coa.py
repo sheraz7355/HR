@@ -127,8 +127,7 @@ def delete_account(id):
         # Never delete history — deactivate instead, as the COA guide requires.
         acct.is_active = False
         db.session.commit()
-        flash(f"\"{acct.name}\" carries journal entries, so it was deactivated "
-              f"instead of deleted (history is preserved).", "warning")
+        flash(f"\"{acct.name}\" has entries, so it was deactivated.", "warning")
         return redirect(url_for("coa.list_accounts"))
     db.session.delete(acct)
     db.session.commit()

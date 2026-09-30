@@ -144,7 +144,11 @@ def check_duplicate():
 @inv_prod_bp.route("/template")
 @login_required
 def download_template():
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        flash("Excel support is not installed on the server.", "error")
+        return redirect(url_for("inv_products.list_products"))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Products"

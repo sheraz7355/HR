@@ -34,6 +34,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import re
 
 from shared.extensions import db
+from shared.tenancy import scoped_get
 from shared.models.accounting_voucher import AccountingVoucher, AccountingVoucherLine
 from shared.models.ledger import ChartOfAccount
 from shared.models.payment_allocation import PaymentAllocation
@@ -777,7 +778,7 @@ def feed_row(line_id):
     forced = forced_by_line([line.id]).get(int(line_id), Decimal("0"))
     reason = forced_note_by_line([line.id]).get(int(line_id), "")
     return _feed_dict(line, voucher, party, assigned, forced, reason,
-                      ChartOfAccount.query.get(line.account_id))
+                      scoped_get(ChartOfAccount, line.account_id))
 
 
 def feed_summary(rows=None):

@@ -8,6 +8,7 @@ from shared.ledger_utils import (post_journal_entry, reverse_journal_entry,
                                  posting_account, create_fixed_asset_accounts)
 from ..models.asset import FixedAsset, AssetCategory, AssetDepreciation
 from .depreciation import post_asset_depreciation
+from shared.forms import form_date, form_float, form_int
 
 
 def post_acquisition(asset, created_by, credit_account_id=None):
@@ -87,11 +88,11 @@ def create_asset():
         if not name:
             flash("Asset name is required.", "error")
             return render_template("fixed_assets/assets/form.html", asset=None, categories=categories, accounts=accounts)
-        category_id = int(request.form.get("category_id", 0))
+        category_id = form_int("category_id", 0)
         category = scoped_get(AssetCategory, category_id)
-        purchase_cost = float(request.form.get("purchase_cost", 0))
-        useful_life = int(request.form.get("useful_life", category.default_useful_life if category else 5))
-        salvage_value = float(request.form.get("salvage_value", 0))
+        purchase_cost = form_float("purchase_cost", 0)
+        useful_life = form_int("useful_life", category.default_useful_life if category else 5)
+        salvage_value = form_float("salvage_value", 0)
         last_asset = FixedAsset.query.order_by(FixedAsset.id.desc()).first()
         next_id = (last_asset.id + 1) if last_asset else 1
         fa_acct_id = request.form.get("fixed_asset_account_id", type=int) or posting_account("fixed_assets").id
@@ -100,7 +101,7 @@ def create_asset():
             name=name,
             description=request.form.get("description", ""),
             category_id=category_id,
-            purchase_date=datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date(),
+            purchase_date=form_date("purchase_date"),
             purchase_cost=purchase_cost,
             useful_life=useful_life,
             depreciation_method=request.form.get("depreciation_method", "straight_line"),
@@ -172,12 +173,12 @@ def edit_asset(asset_id):
         prior_credit = asset.acquisition_credit_account_id
         asset.name = request.form.get("name", "").strip()
         asset.description = request.form.get("description", "")
-        asset.category_id = int(request.form.get("category_id", 0))
-        asset.purchase_date = datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date()
-        asset.purchase_cost = float(request.form.get("purchase_cost", 0))
-        asset.useful_life = int(request.form.get("useful_life", 5))
+        asset.category_id = form_int("category_id", 0)
+        asset.purchase_date = form_date("purchase_date")
+        asset.purchase_cost = form_float("purchase_cost", 0)
+        asset.useful_life = form_int("useful_life", 5)
         asset.depreciation_method = request.form.get("depreciation_method", "straight_line")
-        asset.salvage_value = float(request.form.get("salvage_value", 0))
+        asset.salvage_value = form_float("salvage_value", 0)
         asset.status = request.form.get("status", "active")
         asset.fixed_asset_account_id = request.form.get("fixed_asset_account_id", type=int) or None
         asset.accum_dep_account_id = request.form.get("accum_dep_account_id", type=int) or None
@@ -214,8 +215,8 @@ def record_depreciation(asset_id):
     if not current_user.module_access("fixed_assets"):
         return jsonify({"ok": False, "error": "Access denied"}), 403
     asset = scoped_get_404(FixedAsset, asset_id)
-    entry_date = datetime.strptime(request.form["entry_date"], "%Y-%m-%d").date()
-    amount = float(request.form.get("amount", 0))
+    entry_date = form_date("entry_date")
+    amount = form_float("amount", 0)
     if amount <= 0:
         flash("Depreciation amount must be positive.", "error")
         return redirect(url_for("fa_assets.view_asset", asset_id=asset.id))
@@ -265,7 +266,7 @@ def dispose_asset(asset_id):
     accum_dep = asset.posted_depreciation
     net_book = purchase_cost - accum_dep
 
-    proceeds = float(request.form.get("proceeds", 0) or 0)
+    proceeds = form_float("proceeds", 0)
     if proceeds < 0:
         flash("Proceeds cannot be negative.", "error")
         return redirect(url_for("fa_assets.view_asset", asset_id=asset.id))

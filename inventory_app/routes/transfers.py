@@ -9,6 +9,7 @@ from shared.models.asset_transfer import AssetTransfer
 from shared.ledger_utils import (post_journal_entry, reverse_journal_entry,
                                  posting_account, create_fixed_asset_accounts,
                                  create_entity_account)
+from shared.forms import form_date, form_float, form_int
 
 inv_transfers_bp = Blueprint("inv_transfers", __name__, url_prefix="/inventory/transfer-to-fa")
 
@@ -60,20 +61,20 @@ def create_transfer():
             flash(f"Product error: {e}", "error")
             return render_template("transfers/form.html", products=products, categories=categories)
         name = request.form.get("name", "").strip() or prod.name
-        purchase_cost = float(request.form.get("purchase_cost", 0) or (prod.cost_price or prod.unit_price or 0))
-        category_id = int(request.form.get("category_id", 0))
+        purchase_cost = form_float("purchase_cost", (prod.cost_price or prod.unit_price or 0))
+        category_id = form_int("category_id", 0)
         FixedAsset, AssetCategory = _assets()
         category = scoped_get(AssetCategory, category_id)
-        useful_life = int(request.form.get("useful_life", category.default_useful_life if category else 5))
+        useful_life = form_int("useful_life", category.default_useful_life if category else 5)
         voucher_number = VoucherNumber.next("INV-FA")
         asset = FixedAsset(
             asset_code=f"FA-{FixedAsset.query.count() + 1:04d}",
             name=name, description=request.form.get("description", ""),
             category_id=category_id,
-            purchase_date=datetime.strptime(request.form["purchase_date"], "%Y-%m-%d").date(),
+            purchase_date=form_date("purchase_date"),
             purchase_cost=purchase_cost, useful_life=useful_life,
             depreciation_method=request.form.get("depreciation_method", "straight_line"),
-            salvage_value=float(request.form.get("salvage_value", 0)),
+            salvage_value=form_float("salvage_value", 0),
             current_book_value=purchase_cost, status="active",
             location=request.form.get("location", ""),
             assigned_to=request.form.get("assigned_to", ""),

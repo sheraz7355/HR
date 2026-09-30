@@ -7,5 +7,11 @@ __pycache__
 README.md
 seed_all_data.py
 server_trace.log
+user_password.txt
+instance/
+uploads/
+debug.log
+stdout.txt
+stderr.txt
 
 seed_inventory.py

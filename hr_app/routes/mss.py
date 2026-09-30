@@ -246,6 +246,8 @@ def evaluate(uid):
                 emp.payroll_profile.basic_salary = new_basic
             flash("Evaluation submitted.", "success")
             db.session.commit()
+        else:
+            flash("Enter a new basic salary to submit.", "error")
         return redirect(url_for("mss.index"))
     reviews = emp.performance_reviews
     return render_template("mss/evaluate.html", employee=emp, reviews=reviews)

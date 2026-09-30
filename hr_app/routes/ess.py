@@ -191,7 +191,10 @@ def avatar(filename):
     for path in _avatar_candidates(filename):
         if os.path.isfile(path):
             try:
-                return send_file(path)
+                import mimetypes
+                return send_file(
+                    path,
+                    mimetype=mimetypes.guess_type(path)[0] or "image/png")
             except Exception:
                 return "", 404
     return "", 404

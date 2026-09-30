@@ -18,8 +18,36 @@ from ..models.tax import IncomeTaxSlab
 from ..models.loan import LoanAdvanceRequest, LoanRepayment
 from shared.formatting import format_amount as _m
 from ..config import Config
+from shared.forms import REQUIRED, form_date, form_float, form_int
 
 comp_bp = Blueprint("compensation", __name__, url_prefix="/compensation")
+
+
+def _member_user_by_code(code):
+    """Resolve an employee code/email to a user IN the active company.
+
+    Employee codes are per-company (EMP100 can exist in two companies) and
+    the users table is global, so a bare ``User.filter_by(employee_code)``
+    can resolve to another tenant's person — and apply their payroll
+    adjustments to the wrong employee. Membership first, always.
+    """
+    from shared.models.company import CompanyMembership
+    cid = current_company_id()
+    if not code or cid is None:
+        return None
+    m = CompanyMembership.query.filter_by(
+        company_id=cid, employee_code=code,
+        status=CompanyMembership.ACTIVE).first()
+    if m is not None:
+        return User.query.get(m.user_id)
+    user = User.query.filter_by(email=code).first()
+    if user is None or not user.is_active:
+        return None
+    if not CompanyMembership.query.filter_by(
+            company_id=cid, user_id=user.id,
+            status=CompanyMembership.ACTIVE).first():
+        return None
+    return user
 
 
 @comp_bp.route("/")
@@ -47,15 +75,15 @@ def tax_settings():
         action = request.form.get("action")
         if action == "add":
             slab = IncomeTaxSlab(
-                min_income=float(request.form["min_income"]),
-                max_income=float(request.form["max_income"]),
-                rate_pct=float(request.form["rate_pct"]),
-                fixed_amount=float(request.form.get("fixed_amount", 0)),
+                min_income=form_float("min_income", REQUIRED),
+                max_income=form_float("max_income", REQUIRED),
+                rate_pct=form_float("rate_pct", REQUIRED),
+                fixed_amount=form_float("fixed_amount", 0),
             )
             db.session.add(slab)
             flash("Tax slab added.", "success")
         elif action == "delete":
-            slab = scoped_get_404(IncomeTaxSlab, int(request.form["slab_id"]))
+            slab = scoped_get_404(IncomeTaxSlab, form_int("slab_id", REQUIRED))
             db.session.delete(slab)
             flash("Tax slab deleted.", "success")
         elif action == "seed_defaults":
@@ -129,8 +157,8 @@ def edit_profile(uid):
             profile = PayrollProfile(user_id=uid, basic_salary=0, effective_from=date.today())
             db.session.add(profile)
             db.session.flush()
-        profile.basic_salary = float(request.form["basic_salary"])
-        profile.effective_from = datetime.strptime(request.form["effective_from"], "%Y-%m-%d").date()
+        profile.basic_salary = form_float("basic_salary", REQUIRED)
+        profile.effective_from = form_date("effective_from")
         submitted = json.loads(request.form.get("components_json", "[]"))
         for old in profile.components.all():
             db.session.delete(old)
@@ -258,8 +286,8 @@ def run_payroll():
     pf_config = ProvidentFundConfig.query.first()
 
     if request.method == "POST":
-        month = int(request.form["month"])
-        year = int(request.form["year"])
+        month = form_int("month", REQUIRED)
+        year = form_int("year", REQUIRED)
         replace_all = request.form.get("replace_all") == "1"
         replace_ids_str = request.form.get("replace_ids", "[]")
         import json
@@ -449,8 +477,8 @@ def payroll_preview_json():
     """Return computed preview as JSON for AJAX recalculation."""
     if not current_user.is_admin():
         return jsonify({"error": "Access denied"}), 403
-    month = int(request.form.get("month", 7))
-    year = int(request.form.get("year", 2026))
+    month = form_int("month", date.today().month)
+    year = form_int("year", date.today().year)
     adjustments = json.loads(request.form.get("adjustments", "{}"))
     pf_config = ProvidentFundConfig.query.first()
     results = []
@@ -514,6 +542,10 @@ def upload_bulk_data():
         if not f or f.filename == "":
             return jsonify({"error": "No file uploaded"}), 400
         ext = os.path.splitext(f.filename)[1].lower()
+        # openpyxl reads .xlsx only — legacy .xls (and anything else) would
+        # fail at parse time after the file was already stored.
+        if ext not in (".csv", ".xlsx"):
+            return jsonify({"error": "Upload a .csv or .xlsx file."}), 400
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         cid = current_company_id()
         if cid is None:
@@ -529,7 +561,7 @@ def upload_bulk_data():
                 with open(path, newline="", encoding="utf-8-sig") as fh:
                     reader = csv.DictReader(fh)
                     rows = [r for r in reader]
-            elif ext in (".xlsx", ".xls"):
+            elif ext == ".xlsx":
                 import openpyxl
                 wb = openpyxl.load_workbook(path, data_only=True)
                 ws = wb.active
@@ -543,9 +575,7 @@ def upload_bulk_data():
             return jsonify({"error": f"Parse error: {str(e)}"}), 400
         for row in rows:
             code = row.get("Employee Code", row.get("employee_code", "")).strip()
-            user = User.query.filter_by(employee_code=code).first()
-            if not user:
-                user = User.query.filter_by(email=code).first()
+            user = _member_user_by_code(code)
             if not user:
                 continue
             uid = str(user.id)
@@ -570,7 +600,7 @@ def upload_bulk_data():
     payroll_data = data.get("data", [])
     for row in payroll_data:
         code = row.get("employee_code", "").strip()
-        user = User.query.filter_by(employee_code=code).first()
+        user = _member_user_by_code(code)
         if not user:
             continue
         uid = str(user.id)
@@ -618,9 +648,12 @@ def download_slip_pdf(sid):
     col_mid = pw / 2
 
     # ── Header ──
+    from shared.models.company import Company
+    _company = Company.query.get(current_company_id())
     c.setFillColor(colors.HexColor("#1a237e"))
     c.setFont("Helvetica-Bold", 20)
-    c.drawCentredString(pw / 2, ph - 40, "Solarkon (Private) Limited")
+    c.drawCentredString(pw / 2, ph - 40,
+                        _company.name if _company else "Accountix ERP")
     c.setFillColor(colors.black)
     c.setFont("Helvetica", 11)
     c.drawCentredString(pw / 2, ph - 58, f"Salary Slip - {slip.payroll_run.month}/{slip.payroll_run.year}")
@@ -658,10 +691,21 @@ def download_slip_pdf(sid):
         if val:
             deductions_list.append((name, val))
 
-    # Draw earnings/deductions rows with alternating shading
+    # Draw earnings/deductions rows with alternating shading. Long component
+    # lists flow onto extra pages instead of drawing off the page.
     max_rows = max(len(earnings), len(deductions_list), 0)
     c.setFont("Helvetica", 9.5)
     for i in range(max_rows):
+        if y < 150:
+            c.showPage()
+            y = ph - 60
+            c.setFillColor(colors.HexColor("#1a237e"))
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(margin, y, "Earnings (contd.)")
+            c.drawString(col_mid + 10, y, "Deductions (contd.)")
+            c.setFillColor(colors.black)
+            c.setFont("Helvetica", 9.5)
+            y -= 16
         if i % 2 == 1:
             c.setFillColor(colors.HexColor("#f0f4ff"))
         else:
@@ -681,6 +725,9 @@ def download_slip_pdf(sid):
     y -= 6
 
     # ── Totals ──
+    if y < 170:
+        c.showPage()
+        y = ph - 60
     c.setStrokeColor(colors.HexColor("#1a237e"))
     c.setLineWidth(1)
     c.line(margin, y, pw - margin, y)
@@ -702,7 +749,7 @@ def download_slip_pdf(sid):
     c.drawString(margin + 12, box_y + 16,
                  f"Net Payable: Rs. {_m(slip.net_pay, decimal_places=0)}")
     # Amount in words (wrapped if too long)
-    words = _num_to_words(int(slip.net_pay))
+    words = _num_to_words(int(round(float(slip.net_pay or 0))))
     c.setFont("Helvetica", 9)
     c.drawRightString(pw - margin - 12, box_y + 18, f"(Rupees {words})")
     y = box_y - 20

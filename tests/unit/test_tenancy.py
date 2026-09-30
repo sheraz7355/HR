@@ -45,6 +45,8 @@ def spike_app():
     import shared.models.base  # noqa: F401  (users/roles: FK targets)
     import shared.models.company  # noqa: F401
     import shared.models.ledger  # noqa: F401  (chart_of_accounts: FK target)
+    import shared.models.project_label  # noqa: F401  (label_id FK target)
+    import shared.models.invoice_template  # noqa: F401  (report_settings FK)
     import shared.models.inventory_settings  # noqa: F401  (FKs to COA)
     tenancy._reset_registry()
     with application.app_context():
@@ -162,3 +164,55 @@ def test_query_get_is_filtered_at_sql_level(spike_app):
     with app.test_request_context():
         tenancy.set_current_company(c1)
         assert SpikeItem.query.get(_other_item_id(c2)) is None
+
+
+def test_bulk_update_is_tenant_scoped(spike_app):
+    """Query.update() used to bypass scoping entirely and rewrite every
+    tenant's rows."""
+    app, c1, c2 = spike_app
+    with app.test_request_context():
+        tenancy.set_current_company(c1)
+        SpikeItem.query.filter_by(amount=10.0).update({"amount": 11.0})
+        db.session.commit()
+        with tenancy.unscoped():
+            amounts = {r.company_id: r.amount for r in SpikeItem.query.all()}
+        assert amounts == {c1: 11.0, c2: 20.0}
+
+
+def test_bulk_update_fails_closed_without_company(spike_app):
+    app, c1, c2 = spike_app
+    with app.test_request_context():
+        with pytest.raises(tenancy.NoActiveCompanyError):
+            SpikeItem.query.filter_by(amount=10.0).update({"amount": 0.0})
+        db.session.rollback()
+
+
+def test_bulk_delete_is_tenant_scoped(spike_app):
+    """Query.delete() used to wipe every tenant's rows."""
+    app, c1, c2 = spike_app
+    with app.test_request_context():
+        tenancy.set_current_company(c1)
+        SpikeItem.query.filter_by(company_id=c1).delete()
+        db.session.commit()
+        with tenancy.unscoped():
+            left = [r.company_id for r in SpikeItem.query.all()]
+        assert left == [c2]
+
+
+def test_bulk_delete_fails_closed_without_company(spike_app):
+    app, c1, c2 = spike_app
+    with app.test_request_context():
+        with pytest.raises(tenancy.NoActiveCompanyError):
+            SpikeItem.query.filter_by(amount=10.0).delete()
+        db.session.rollback()
+
+
+def test_row_cannot_change_tenants(spike_app):
+    app, c1, c2 = spike_app
+    with app.test_request_context():
+        tenancy.set_current_company(c1)
+        mine = SpikeItem.query.first()
+        mine.company_id = c2
+        with pytest.raises(ValueError, match="never change tenants"):
+            db.session.commit()
+        db.session.rollback()

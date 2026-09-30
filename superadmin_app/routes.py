@@ -60,6 +60,7 @@ def login():
             login_user(user)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            flash(f"Welcome back, {user.full_name or user.email}.", "success")
             return redirect(url_for("superadmin.index"))
         flash("Those credentials do not open the super admin console.",
               "error")
@@ -116,12 +117,17 @@ def index():
 def companies():
     _require_super_admin()
     if request.method == "POST":
+        from shared.routes.portal import SLUG_RE
         name = request.form.get("name", "").strip()
         slug = request.form.get("slug", "").strip().lower()
         plan = request.form.get("plan_name", "").strip() or "free"
         email = request.form.get("admin_email", "").strip().lower()
         if not name or not slug or not email:
             flash("Company name, slug and admin email are required.", "error")
+            return redirect(url_for("superadmin.companies"))
+        if not SLUG_RE.match(slug):
+            flash("Company address must be 2-62 characters: lowercase "
+                  "letters, digits and hyphens only.", "error")
             return redirect(url_for("superadmin.companies"))
         if Company.query.filter_by(slug=slug).first():
             flash(f"A company with slug '{slug}' already exists.", "error")
@@ -423,6 +429,24 @@ def member_block(company_id, membership_id):
         m.status = CompanyMembership.ACTIVE
         msg = "unblocked"
     elif m.status == CompanyMembership.ACTIVE:
+        # Blocking the owner or the last active admin would orphan the
+        # company (member_remove refuses both for the same reason) — only a
+        # super admin could undo it.
+        company = Company.query.get(company_id)
+        if company is not None and m.user_id == company.created_by:
+            flash("The company owner cannot be blocked.", "error")
+            return redirect(url_for("superadmin.company_edit",
+                                    company_id=company_id))
+        admin_role = Role.query.filter_by(name=Role.ADMIN).first()
+        if admin_role is not None and m.role_id == admin_role.id:
+            active_admins = CompanyMembership.query.filter_by(
+                company_id=m.company_id, status=CompanyMembership.ACTIVE,
+                role_id=admin_role.id).count()
+            if active_admins <= 1:
+                flash("Cannot block the last active admin of the company.",
+                      "error")
+                return redirect(url_for("superadmin.company_edit",
+                                        company_id=company_id))
         m.status = CompanyMembership.BLOCKED
         msg = "blocked"
     else:
@@ -448,8 +472,18 @@ def users():
         if not email or not password:
             flash("Email and password are required.", "error")
             return redirect(url_for("superadmin.users"))
+        if len(password) < 4:
+            flash("Password must be at least 4 characters.", "error")
+            return redirect(url_for("superadmin.users"))
         if User.query.filter_by(email=email).first():
             flash(f"A user with {email} already exists.", "error")
+            return redirect(url_for("superadmin.users"))
+        # login_id is globally unique and may have diverged from email on an
+        # older account (Settings lets the two differ) — an email-only check
+        # would pass and the INSERT would 500 on the unique constraint.
+        if User.query.filter_by(login_id=email).first():
+            flash(f"The login id {email} is already taken by another "
+                  f"account.", "error")
             return redirect(url_for("superadmin.users"))
         emp_role = Role.query.filter_by(name=Role.EMPLOYEE).first()
         if emp_role is None:

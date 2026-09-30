@@ -28,7 +28,11 @@ def check_duplicate():
 @inv_units_bp.route("/template")
 @login_required
 def download_template():
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        flash("Excel support is not installed on the server.", "error")
+        return redirect(url_for("inv_units.list_units"))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Units"
@@ -108,7 +112,7 @@ def edit_unit(id):
     return render_template("units/form_inv.html", unit=unit)
 
 
-@inv_units_bp.route("/delete/<int:id>")
+@inv_units_bp.route("/delete/<int:id>", methods=["POST"])
 @login_required
 def delete_unit(id):
     unit = scoped_get_404(InvUnit, id)

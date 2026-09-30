@@ -281,8 +281,17 @@ def set_selection(account_ids, include_children_ids=None, user_id=None):
     Replace rather than merge: the settings screen posts the full picture, and
     a merge would make unticking an account impossible.
     """
-    wanted = {int(i) for i in (account_ids or [])}
-    deep = {int(i) for i in (include_children_ids or [])}
+    def _ids(values):
+        out = set()
+        for i in (values or []):
+            try:
+                out.add(int(i))
+            except (TypeError, ValueError):
+                continue  # crafted non-numeric ids are ignored, not a 500
+        return out
+
+    wanted = _ids(account_ids)
+    deep = _ids(include_children_ids)
 
     existing = {int(s.account_id): s for s in ExecAccountSelection.query.all()}
     for account_id, row in existing.items():
@@ -361,9 +370,18 @@ def _age_party(account_id, acct, rows, balance, as_of_day, side):
     """FIFO-age one account: returns the surviving layers, oldest day, and
     the weighted average age of what remains."""
     layers = []  # [entry_date, remaining amount] — oldest first
+    # A settlement that arrives before anything it could settle (an advance
+    # from a customer, a prepayment to a supplier) is held here and applied
+    # to the next layers as they open. Dropping it left the layers summing to
+    # more than the balance: advance 400 then invoice 1,000 aged 1,000 against
+    # a 600 balance, inflating the average and pushing bucket shares past 100%.
+    unapplied = _q(0)
     add_idx, take_idx = (1, 2) if side == RECEIVABLE else (2, 1)
     for entry_date, dr, cr in rows:
         add = _q(dr if add_idx == 1 else cr)
+        if add and unapplied:
+            used = min(add, unapplied)
+            add, unapplied = _q(add - used), _q(unapplied - used)
         if add:
             layers.append([entry_date, add])
         take = _q(cr if take_idx == 2 else dr)
@@ -374,6 +392,8 @@ def _age_party(account_id, acct, rows, balance, as_of_day, side):
             else:
                 layers[0][1] = _q(layers[0][1] - take)
                 take = None
+        if take:
+            unapplied = _q(unapplied + take)
     if not layers:
         return None
 

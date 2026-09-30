@@ -46,7 +46,7 @@
               <a href="{{ url_for('settings.user_rights', uid=u.id) }}" class="btn btn-sm btn-outline">Edit Rights</a>
               {% if u.id in configured %}
               <form method="POST" action="{{ url_for('settings.reset_rights', uid=u.id) }}" style="display:inline;"
-                    onsubmit="return confirm('Reset section rights for {{ u.full_name }}?');">
+                    onsubmit="return confirm('Reset section rights for ' + {{ (u.full_name)|tojson|forceescape }} + '?');">
                 <button type="submit" class="btn btn-sm btn-outline">Reset</button>
               </form>
               {% endif %}

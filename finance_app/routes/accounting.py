@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, send_file, abort
 from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.models.stock_ledger import VoucherNumber
@@ -91,6 +91,14 @@ def voucher_form(id=None):
     is_approved = voucher and voucher.status == "approved"
     edit_mode = request.args.get("edit") == "1" if (voucher and not is_approved) else False
 
+    if request.method == "POST" and is_approved:
+        # Approvals are terminal for the form: without this, a resubmit or a
+        # crafted POST fell through to the GET render and the edit vanished
+        # with a 200 that looked normal.
+        flash("That voucher is approved and cannot be edited. "
+              "Unapprove it first to make changes.", "error")
+        return redirect(url_for("accounting.voucher_form", id=voucher.id))
+
     if request.method == "POST" and not is_approved:
         is_new = voucher is None
         vtype_for_perm = voucher.voucher_type if voucher else request.form.get("voucher_type", "CPV")
@@ -143,6 +151,23 @@ def voucher_form(id=None):
         credits = request.form.getlist("credit[]")
         label_ids = request.form.getlist("label_id[]")
 
+        def _valid_aid(i):
+            """Row i names a real account — the same test the saver below
+            applies, so the totals that follow can never count a line the
+            saver skips (an amount with no account, or a crafted non-integer
+            id, used to inflate the cash/bank total and slip an unbalanced
+            voucher into the books)."""
+            if i >= len(accounts):
+                return False
+            aid = accounts[i].strip()
+            if not aid:
+                return False
+            try:
+                int(aid)
+            except ValueError:
+                return False
+            return True
+
         # The company default is assigned automatically to any line saved
         # without an explicit pick. The header label (cash/bank vouchers post
         # it as "label_id"; a JV sends no such field) tags the bank/cash line
@@ -174,9 +199,9 @@ def voucher_form(id=None):
 
         has_lines = False
         for i in range(len(accounts)):
-            aid = accounts[i].strip() if i < len(accounts) else ""
-            if not aid:
+            if not _valid_aid(i):
                 continue
+            aid = accounts[i].strip()
             try:
                 d = Decimal(str(float(debits[i]))) if i < len(debits) and debits[i].strip() else Decimal("0")
             except (ValueError, TypeError):
@@ -200,7 +225,7 @@ def voucher_form(id=None):
                     d, c = amt, Decimal("0")
             try:
                 acct_id = int(aid)
-            except ValueError:
+            except ValueError:  # unreachable: _valid_aid filtered these rows
                 continue
             line = AccountingVoucherLine(
                 voucher_id=voucher.id,
@@ -235,10 +260,12 @@ def voucher_form(id=None):
                 flash("Select a Cash/Bank account.", "error")
                 return render_template("accounting/voucher_form.html", voucher=voucher, **_err_ctx)
             total = sum(
-                (_safe_dec(d) for d in debits if d.strip()),
+                (_safe_dec(d) for i, d in enumerate(debits)
+                 if d.strip() and _valid_aid(i)),
                 Decimal("0"),
             ) + sum(
-                (_safe_dec(c) for c in credits if c.strip()),
+                (_safe_dec(c) for i, c in enumerate(credits)
+                 if c.strip() and _valid_aid(i)),
                 Decimal("0"),
             )
             if total == 0:
@@ -268,7 +295,7 @@ def voucher_form(id=None):
                 (
                     _safe_dec(d)
                     for i, d in enumerate(debits)
-                    if d.strip() and i < len(accounts) and accounts[i].strip()
+                    if d.strip() and _valid_aid(i)
                 ),
                 Decimal("0"),
             )
@@ -276,7 +303,7 @@ def voucher_form(id=None):
                 (
                     _safe_dec(c)
                     for i, c in enumerate(credits)
-                    if c.strip() and i < len(accounts) and accounts[i].strip()
+                    if c.strip() and _valid_aid(i)
                 ),
                 Decimal("0"),
             )
@@ -288,10 +315,30 @@ def voucher_form(id=None):
                 return render_template("accounting/voucher_form.html", voucher=voucher, **_err_ctx)
 
         if action == "approve":
-            errors = _approve_voucher(voucher)
+            # Posting can refuse: closed period, unbalanced dust, a line on an
+            # aggregating account. Those used to propagate as a 500 (and burn
+            # the pre-allocated voucher number); save as unapproved instead so
+            # the draft survives and the reason is shown. The savepoint keeps
+            # a mid-write failure from taking the voucher and its lines down
+            # with the journal.
+            try:
+                with db.session.begin_nested():
+                    errors = _approve_voucher(voucher)
+            except Exception as exc:  # noqa: BLE001 — any posting refusal
+                errors = (str(exc) or "Could not approve the voucher.")
             if errors:
-                flash(errors, "error")
-                return render_template("accounting/voucher_form.html", voucher=voucher, **_err_ctx)
+                # Commit the draft: rendering without a commit let teardown
+                # roll it back, so a refused approval threw the typed-in
+                # voucher away.
+                voucher.status = "unapproved"
+                voucher.approved_by = None
+                voucher.approved_at = None
+                db.session.commit()
+                flash(f"{VOUCHER_LABELS[voucher.voucher_type]} "
+                      f"{voucher.voucher_number} saved as unapproved — "
+                      f"could not approve: {errors}", "error")
+                return redirect(url_for("accounting.voucher_form",
+                                        id=voucher.id))
 
         # Only a literal "approve" approves — and that path already ran
         # _approve_voucher (journal posting + approved_by/at) or bailed with
@@ -437,7 +484,12 @@ def approve_voucher(id):
     if v.status == "approved":
         flash("Already approved.", "error")
         return redirect(url_for("accounting.voucher_form", id=v.id))
-    err = _approve_voucher(v)
+    try:
+        err = _approve_voucher(v)
+    except Exception as exc:  # noqa: BLE001 — closed period etc. must flash
+        db.session.rollback()
+        flash(f"Could not approve: {exc}", "error")
+        return redirect(url_for("accounting.voucher_form", id=v.id))
     if err:
         flash(err, "error")
         return redirect(url_for("accounting.voucher_form", id=v.id))
@@ -457,7 +509,12 @@ def unapprove_voucher(id):
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("accounting.voucher_list"))
-    reverse_journal_entry(v.voucher_type, v.id, created_by=current_user.id)
+    try:
+        reverse_journal_entry(v.voucher_type, v.id, created_by=current_user.id)
+    except Exception as exc:  # noqa: BLE001 — closed period must flash
+        db.session.rollback()
+        flash(f"Could not unapprove: {exc}", "error")
+        return redirect(url_for("accounting.voucher_form", id=v.id))
     v.status = "unapproved"
     v.approved_by = None
     v.approved_at = None
@@ -493,7 +550,8 @@ def voucher_export(id):
     headers = ["#", "A/c Code", "Account Name", "Description", "Debit", "Credit"]
     rows = []
     for i, line in enumerate(lines, 1):
-        rows.append([i, line.account.code, line.account.name,
+        acct = line.account
+        rows.append([i, acct.code if acct else "", acct.name if acct else "",
                      line.description or "",
                      float(line.debit) or 0, float(line.credit) or 0])
     rows.append(["", "", "", "Total", total_debit, total_credit])
@@ -504,13 +562,295 @@ def voucher_export(id):
         from .reports import _build_excel_wb
         out = _build_excel_wb(title, headers, rows)
         return send_file(out, as_attachment=True,
-                         download_name=f"voucher_{v.voucher_number}.xlsx")
+                         download_name=f"voucher_{v.voucher_number}.xlsx",
+                         mimetype="application/vnd.openxmlformats-"
+                         "officedocument.spreadsheetml.sheet")
+    if fmt != "pdf":
+        abort(404)
 
     from .reports import _build_pdf
     pdf_out = _build_pdf(title, headers, rows)
     return send_file(pdf_out, as_attachment=True,
                      download_name=f"voucher_{v.voucher_number}.pdf",
                      mimetype="application/pdf")
+
+def _voucher_narration_lines(v, vlines):
+    """Register Description from pre-fetched lines (chunk-friendly)."""
+    if (v.notes or "").strip():
+        return v.notes.strip()
+    ordered = sorted(vlines, key=lambda l: (l.line_no or 0))
+    line = next((l for l in ordered if (l.line_no or 0) != 0
+                 and (l.description or "").strip()), None)
+    if line is None:
+        line = next((l for l in ordered if (l.description or "").strip()),
+                    None)
+    if line is not None:
+        return line.description.strip()
+    for l in ordered:
+        if l.account is not None:
+            return f"{l.account.code} {l.account.name}"
+    return "-"
+
+
+def _voucher_narration(v):
+    """The register's Description: what the voucher is actually about.
+
+    The voucher's own notes first. Otherwise the first user-entered line —
+    never the auto-generated cash/bank line (line_no=0, "Cash Payment
+    Voucher - Payment"), which describes the money channel rather than the
+    transaction and is what made every register line read the same.
+    """
+    vlines = v.lines.order_by(AccountingVoucherLine.line_no).all()
+    return _voucher_narration_lines(v, vlines)
+
+
+@acct_bp.route("/registers/vouchers")
+@login_required
+def voucher_register():
+    """Bulk voucher book: filter by month / financial year / custom range.
+
+    Opening the page loads nothing — the register is fetched only when View
+    is pressed (chunked JSON with progress + cancel), or server-rendered
+    when ``view=1`` (no-JS fallback). Export/print use the same filters.
+    """
+    from shared.registers import resolve_register_filter
+    vtype = (request.args.get("vtype") or "").strip().upper()
+    if vtype not in VOUCHER_LABELS:
+        vtype = ""
+    status = (request.args.get("status") or "").strip().lower()
+    if status not in ("approved", "unapproved"):
+        status = ""
+    from_date, to_date, fctx = resolve_register_filter(request.args)
+    rows, total_dr, total_cr = [], 0.0, 0.0
+    loaded = request.args.get("view") == "1"
+    if loaded:
+        rows, total_dr, total_cr, _total = _voucher_register_rows(
+            vtype, status, from_date, to_date)
+    return render_template(
+        "accounting/voucher_register.html", rows=rows,
+        total_debit=total_dr, total_credit=total_cr,
+        vtype=vtype, status=status, labels=VOUCHER_LABELS,
+        from_date=from_date, to_date=to_date, f=fctx,
+        periods=fctx["periods"], loaded=loaded,
+        title="Voucher Register",
+    )
+
+
+def _voucher_register_query(vtype, status, from_date, to_date):
+    from shared.registers import apply_date_filter
+    # Same exclusion as the voucher list: auto-generated reversals are not
+    # vouchers anyone raised, and counting them doubles every reversed entry.
+    query = AccountingVoucher.query.filter(
+        ~AccountingVoucher.voucher_number.like("%-REV"))
+    if vtype:
+        query = query.filter_by(voucher_type=vtype)
+    if status:
+        query = query.filter_by(status=status)
+    return apply_date_filter(query, AccountingVoucher.voucher_date,
+                             from_date, to_date)
+
+
+def _voucher_register_rows(vtype, status, from_date, to_date,
+                           limit=None, offset=0):
+    """(rows, total_debit, total_credit, total_count) for the register.
+
+    Totals and the count always cover the whole filtered set; ``rows`` is
+    the requested chunk (or everything when ``limit`` is None).
+    """
+    from sqlalchemy import func
+    base = _voucher_register_query(vtype, status, from_date, to_date)
+    total_count = base.count()
+    # Totals over exactly the rows the register lists — the same filtered
+    # query, not a re-statement of its filters that can drift from it.
+    sdr, scr = (db.session.query(
+        func.coalesce(func.sum(AccountingVoucherLine.debit), 0),
+        func.coalesce(func.sum(AccountingVoucherLine.credit), 0))
+        .filter(AccountingVoucherLine.voucher_id.in_(
+            base.with_entities(AccountingVoucher.id)))
+        .first()) or (0, 0)
+    total_dr, total_cr = float(sdr or 0), float(scr or 0)
+    ordered = base.order_by(AccountingVoucher.voucher_date.asc(),
+                            AccountingVoucher.id.asc())
+    if limit is not None:
+        ordered = ordered.offset(offset).limit(limit)
+    vouchers = ordered.all()
+    line_map = {}
+    if vouchers:
+        ids = [v.id for v in vouchers]
+        for ln in AccountingVoucherLine.query.filter(
+                AccountingVoucherLine.voucher_id.in_(ids)).all():
+            line_map.setdefault(ln.voucher_id, []).append(ln)
+    rows = []
+    for v in vouchers:
+        vlines = line_map.get(v.id, [])
+        dr = sum(float(l.debit or 0) for l in vlines)
+        cr = sum(float(l.credit or 0) for l in vlines)
+        rows.append({
+            "id": v.id,
+            "date": v.voucher_date,
+            "number": v.voucher_number,
+            "description": _voucher_narration_lines(
+                v, sorted(vlines, key=lambda l: l.line_no)),
+            "debit": dr,
+            "credit": cr,
+        })
+    return rows, total_dr, total_cr, total_count
+
+
+@acct_bp.route("/registers/vouchers/export")
+@login_required
+def voucher_register_export():
+    from shared.registers import resolve_register_filter
+    from .reports import _build_excel_wb, _build_pdf
+    fmt = (request.args.get("fmt") or "pdf").strip().lower()
+    if fmt not in ("excel", "pdf"):
+        abort(404)
+    vtype = (request.args.get("vtype") or "").strip().upper()
+    if vtype not in VOUCHER_LABELS:
+        vtype = ""
+    status = (request.args.get("status") or "").strip().lower()
+    if status not in ("approved", "unapproved"):
+        status = ""
+    from_date, to_date, fctx = resolve_register_filter(request.args)
+    vouchers = (_voucher_register_query(vtype, status, from_date, to_date)
+                .order_by(AccountingVoucher.voucher_date.asc(),
+                          AccountingVoucher.id.asc()).all())
+    headers = ["Date", "Voucher #", "Description", "Debit", "Credit"]
+    data, kinds = [], []
+    total_dr, total_cr = 0.0, 0.0
+    for v in vouchers:
+        dr = round(sum(float(l.debit or 0) for l in v.lines), 2)
+        cr = round(sum(float(l.credit or 0) for l in v.lines), 2)
+        total_dr += dr
+        total_cr += cr
+        data.append([v.voucher_date.strftime("%d %b %Y") if v.voucher_date else "-",
+                     v.voucher_number, _voucher_narration(v), dr, cr])
+        kinds.append("account")
+    data.append(["", "", "TOTAL", round(total_dr, 2), round(total_cr, 2)])
+    kinds.append("grand")
+    subtitle = fctx["label"]
+    if vtype:
+        subtitle += f" · {VOUCHER_LABELS[vtype]}"
+    if status:
+        subtitle += f" · {status.title()}"
+    if fmt == "excel":
+        out = _build_excel_wb(f"Voucher Register — {subtitle}", headers,
+                              data, sheet_title="Voucher Register",
+                              period=subtitle, bold_rows=[len(data) - 1])
+        return send_file(out, as_attachment=True,
+                         download_name="voucher_register.xlsx",
+                         mimetype="application/vnd.openxmlformats-"
+                         "officedocument.spreadsheetml.sheet")
+    out = _build_pdf("Voucher Register", headers, data, subtitle=subtitle,
+                     row_kinds=kinds, mono_col=1)
+    return send_file(out, as_attachment=True,
+                     download_name="voucher_register.pdf",
+                     mimetype="application/pdf")
+
+
+@acct_bp.route("/registers/vouchers/data")
+@login_required
+def voucher_register_data():
+    """One chunk of the register as JSON.
+
+    Table mode (default): {total, rows, debit, credit, debit_label,
+    credit_label, html} — totals cover the whole filtered set, ``html`` is
+    the table body for this chunk through the shared partial.
+    Full mode (``full=1``): {total, rows, docs} — complete print-ready
+    voucher documents for the bulk print page. Each chunk is an independent
+    GET, so cancelling is just dropping the loop.
+    """
+    vtype = (request.args.get("vtype") or "").strip().upper()
+    if vtype not in VOUCHER_LABELS:
+        vtype = ""
+    status = (request.args.get("status") or "").strip().lower()
+    if status not in ("approved", "unapproved"):
+        status = ""
+    full = request.args.get("full") == "1"
+    try:
+        limit = max(1, min(int(request.args.get("limit", 200)),
+                           20 if full else 500))
+    except (TypeError, ValueError):
+        limit = 20 if full else 200
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except (TypeError, ValueError):
+        offset = 0
+    from shared.registers import resolve_register_filter
+    from_date, to_date, _fctx = resolve_register_filter(request.args)
+    rows, total_dr, total_cr, total = _voucher_register_rows(
+        vtype, status, from_date, to_date, limit=limit, offset=offset)
+    if full:
+        docs = []
+        for r in rows:
+            v = scoped_get(AccountingVoucher, r["id"])
+            if v is None:
+                continue
+            lines = v.lines.order_by(AccountingVoucherLine.line_no).all()
+            docs.append(render_template(
+                "accounting/_voucher_doc.html", voucher=v, lines=lines,
+                total_debit=sum(float(l.debit or 0) for l in lines),
+                total_credit=sum(float(l.credit or 0) for l in lines),
+                labels=VOUCHER_LABELS))
+        return jsonify({"total": total, "rows": len(rows),
+                        "offset": offset, "limit": limit, "docs": docs})
+    html = render_template("accounting/_voucher_table_body.html",
+                           rows=rows)
+    tfoot = render_template("accounting/_voucher_table_totals.html",
+                            total_debit=total_dr, total_credit=total_cr)
+    from shared.formatting import format_amount
+    return jsonify({"total": total, "rows": len(rows),
+                    "debit": total_dr, "credit": total_cr,
+                    "debit_label": format_amount(total_dr, 0),
+                    "credit_label": format_amount(total_cr, 0),
+                    "offset": offset, "limit": limit, "html": html,
+                    "tfoot": tfoot})
+
+
+@acct_bp.route("/registers/vouchers/documents")
+@login_required
+def voucher_register_documents():
+    """Bulk print: every filtered voucher as a full document, one per page.
+
+    Each voucher renders through the same partial as the single-voucher
+    preview, so the bulk print and the individual print can never diverge.
+    Print All uses the browser (PDF via print-to-PDF); Excel comes from the
+    register export carrying the same filters.
+    """
+    from shared.registers import resolve_register_filter
+    vtype = (request.args.get("vtype") or "").strip().upper()
+    if vtype not in VOUCHER_LABELS:
+        vtype = ""
+    status = (request.args.get("status") or "").strip().lower()
+    if status not in ("approved", "unapproved"):
+        status = ""
+    from_date, to_date, fctx = resolve_register_filter(request.args)
+    docs = None
+    if request.args.get("view") == "1":
+        # No-JS fallback: render every document server-side. Without it the
+        # page fetches chunks itself, so nothing is loaded here.
+        vouchers = (_voucher_register_query(vtype, status, from_date, to_date)
+                    .order_by(AccountingVoucher.voucher_date.asc(),
+                              AccountingVoucher.id.asc()).all())
+        docs = []
+        for v in vouchers:
+            lines = v.lines.order_by(AccountingVoucherLine.line_no).all()
+            docs.append({
+                "voucher": v,
+                "lines": lines,
+                "total_debit": sum(float(l.debit or 0) for l in lines),
+                "total_credit": sum(float(l.credit or 0) for l in lines),
+            })
+    label = fctx["label"]
+    if vtype:
+        label += f" · {VOUCHER_LABELS[vtype]}"
+    if status:
+        label += f" · {status.title()}"
+    return render_template(
+        "accounting/voucher_documents.html", docs=docs, label=label,
+        labels=VOUCHER_LABELS, f=fctx,
+    )
+
 
 @acct_bp.route("/vouchers/<int:id>/delete", methods=["POST"])
 @login_required

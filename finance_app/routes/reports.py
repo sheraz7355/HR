@@ -607,6 +607,11 @@ def _build_pdf(title, headers, rows, col_widths=None, bold_rows=None,
     kinds = list(row_kinds or [])
     kinds += ["plain"] * (len(rows) - len(kinds))
 
+    # Every row must have exactly the header count: a ragged row used to
+    # IndexError the width loop below (a totals row with one cell too many
+    # turned an export into a 500). Pad short rows, trim long ones.
+    rows = [list(r[:ncols]) + [""] * (ncols - len(r)) for r in rows]
+
     # A section band spans the table, so its label has to sit in the first
     # cell. Reports write it wherever their column layout puts it; move it.
     body = []
@@ -915,8 +920,9 @@ def ledger():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
     labels, label_ids_str, label_ids = _resolve_labels()
 
-    # Don't auto-calculate on first page load
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/ledger.html", account_sections=[],
                                heads=heads, leaf_accounts=leaf_accounts,
                                mode="", selection_mode="custom",
@@ -950,11 +956,17 @@ def ledger():
     account_sections = [s for s in account_sections if not s.get("empty")]
 
     fmt = request.args.get("format")
-    if fmt and account_sections:
+    if fmt in ("excel", "pdf"):
         headers = ["Date", "Voucher #", "Description", "Debit", "Credit", "Balance"]
         if fmt == "excel":
             wb = openpyxl.Workbook()
             wb.remove(wb.active)
+            if not account_sections:
+                ws = wb.create_sheet(title="General Ledger")
+                _write_sheet_heading(ws, 6, "General Ledger",
+                                     from_date=from_date, to_date=to_date)
+                ws.cell(row=5, column=1,
+                        value="No accounts selected.").font = DATA_FONT
             for sec in account_sections:
                 # The balance stays a number and the Dr/Cr side goes in the
                 # label. Written as "1,234.50 Dr" it was text: SUM() skipped
@@ -1052,7 +1064,9 @@ def trial_balance():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
     labels, label_ids_str, label_ids = _resolve_labels()
 
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/trial_balance.html", rows=[],
                                total_dr_opening=0, total_cr_opening=0,
                                total_dr_movement=0, total_cr_movement=0,
@@ -1241,8 +1255,8 @@ def trial_balance():
                       float(total_dr_mv), float(total_cr_mv),
                       float(total_dr_cl), float(total_cr_cl)]
         for ct in comp_class_totals:
-            totals_row += [format_amount(ct["total_dr_closing"]),
-                           format_amount(ct["total_cr_closing"])]
+            totals_row += [float(ct["total_dr_closing"] or 0),
+                           float(ct["total_cr_closing"] or 0)]
         kinds = ["account"] * len(data)
         data.append(totals_row)
         kinds.append("grand")
@@ -1278,7 +1292,9 @@ def profit_loss():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
     labels, label_ids_str, label_ids = _resolve_labels()
 
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/profit_loss.html", pl_rows=[], net_profit=0,
                                from_date=None, to_date=None,
                                periods=periods, selected_period_id=selected_period_id,
@@ -1453,7 +1469,9 @@ def balance_sheet():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
     labels, label_ids_str, label_ids = _resolve_labels()
 
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/balance_sheet.html", assets=[], liabilities=[], equity=[],
                                total_assets=0, total_liabilities=0, total_equity=0,
                                as_of=date.today(),
@@ -1860,7 +1878,9 @@ def socie():
                 comp_period_ids_str=comp_period_ids_str, now=datetime.utcnow(),
                 labels=labels, label_ids_str=label_ids_str)
 
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/socie.html", socie_columns=[], socie_rows=[],
                                from_date=None, to_date=None,
                                filter_mode="", from_str="", to_str="", **base)
@@ -1994,7 +2014,9 @@ def cash_flow():
     from_date, to_date, periods, selected_period_id, filter_mode, from_str, to_str, comp_mode, comp_periods, comp_period_ids_str = _resolve_period()
     labels, label_ids_str, label_ids = _resolve_labels()
 
-    if from_date is None:
+    # Don't auto-calculate on first page load — but an explicit export
+    # always runs, returning an (empty) file instead of the HTML page.
+    if from_date is None and request.args.get("format") not in ("excel", "pdf"):
         return render_template("finance/cash_flow.html", op_items=[], inv_items=[], fin_items=[],
                                net_operating=0, net_investing=0, net_financing=0,
                                net_change=0, opening_cash=0, closing_cash=0,
@@ -2406,6 +2428,8 @@ def twcf():
                 db.session.delete(line)
                 db.session.commit()
                 flash(f"Forecast line deleted: {line.description}", "success")
+            else:
+                flash("Forecast line not found.", "error")
             return redirect(back)
 
     # The window is computed on demand: a bare open (no ``start``) shows the

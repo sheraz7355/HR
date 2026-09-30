@@ -29,6 +29,12 @@ Contract (all agents and code MUST follow this):
    explicitly. No code path may create a NULL-company row (it would be
    invisible to every tenant-scoped query); outside ``unscoped()`` blocks
    that raises instead of writing the row.
+
+7. Bulk DML (``Query.update()``/``Query.delete()``) is tenant-filtered too:
+   the hook adds ``company_id == cid`` to UPDATE/DELETE statements on
+   scoped tables (loader criteria do not apply to them), and fails closed
+   with no active company. Committed rows can never change tenants: a
+   flush that reassigns ``company_id`` raises instead of writing.
 """
 
 from contextlib import contextmanager
@@ -36,6 +42,7 @@ from contextlib import contextmanager
 from flask import g, has_app_context
 from sqlalchemy import event, inspect as sa_inspect
 from sqlalchemy.sql.base import Executable
+from sqlalchemy.sql.dml import Delete, Update
 from sqlalchemy.sql.selectable import AliasedReturnsRows, Join, Select
 from sqlalchemy.orm import with_loader_criteria
 
@@ -211,6 +218,26 @@ def _tenancy_hook(execute_state):
     statement = execute_state.statement
     cid = current_company_id()
 
+    # Bulk DML (Query.update()/delete()) carries no entities and exposes no
+    # FROMs, so the table walk below sees nothing and with_loader_criteria
+    # does not apply to it either — without this branch every bulk write ran
+    # unscoped across all tenants (and fail-open with no company set).
+    if isinstance(statement, (Update, Delete)):
+        table = getattr(statement, "table", None)
+        tname = getattr(table, "name", None)
+        if tname in registry:
+            if cid is None:
+                raise NoActiveCompanyError(
+                    "Tenant-scoped bulk write attempted with no active "
+                    "company. Set a company with set_current_company() or "
+                    "wrap the block in tenancy.unscoped() if the write is "
+                    "deliberately global."
+                )
+            col = table.c.get("company_id", None)
+            if col is not None:
+                execute_state.statement = statement.where(col == cid)
+        return
+
     names = _statement_table_names(statement)
     for ent in getattr(execute_state, "entities", ()) or ():
         cls = getattr(ent, "class_", ent)  # AliasedClass -> mapped class
@@ -266,6 +293,22 @@ def _stamp_company_id(session, flush_context, instances):
                 "global."
             )
         obj.company_id = cid
+    # Rows must never change tenants: re-homing a row would expose one
+    # company's data to another. Explicit moves are only possible inside
+    # unscoped() blocks (which returned above).
+    for obj in session.dirty:
+        if type(obj) not in registry.values():
+            continue
+        try:
+            hist = sa_inspect(obj).attrs.company_id.history
+        except Exception:
+            continue
+        if hist.deleted and hist.added and hist.deleted[0] != hist.added[0]:
+            raise ValueError(
+                f"Cannot move {type(obj).__name__} id "
+                f"{getattr(obj, 'id', '?')} from company {hist.deleted[0]} "
+                f"to company {hist.added[0]}: rows never change tenants."
+            )
 
 
 # ── Safe PK lookups (identity-map bypasses the event, so NEVER use .get) ────

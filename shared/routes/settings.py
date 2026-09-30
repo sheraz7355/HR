@@ -437,9 +437,8 @@ def save_inventory():
         from shared.costing import revalue_for_method_change
         revalue_for_method_change(method)
         flash(f"Valuation method changed to "
-              f"{'FIFO' if method == 'fifo' else 'weighted average'}. Stock on "
-              f"hand was revalued at book value; previously posted costs are "
-              f"unchanged.", "success")
+              f"{'FIFO' if method == 'fifo' else 'weighted average'}. "
+              f"Old costs unchanged.", "success")
     s.valuation_method = method
     s.allow_negative_stock = request.form.get("allow_negative_stock") == "on"
     s.auto_generate_vouchers = request.form.get("auto_generate_vouchers") == "on"
@@ -714,7 +713,9 @@ def create_template():
         # The first template of its type becomes the default: otherwise it is
         # created and nothing prints with it, which reads as the save failing.
         if is_default or not InvoiceTemplate.query.filter_by(type=doc_type).first():
-            InvoiceTemplate.query.filter_by(type=doc_type, is_default=True).update(
+            InvoiceTemplate.query.filter_by(
+                type=doc_type, is_default=True,
+                company_id=current_company_id()).update(
                 {"is_default": False})
             t.is_default = True
         db.session.add(t)
@@ -745,7 +746,9 @@ def edit_template(id):
                                    **_template_ctx(t, t.type))
 
         if is_default and not t.is_default:
-            InvoiceTemplate.query.filter_by(type=t.type, is_default=True).update(
+            InvoiceTemplate.query.filter_by(
+                type=t.type, is_default=True,
+                company_id=current_company_id()).update(
                 {"is_default": False})
         t.name = name
         t.design = design
@@ -845,8 +848,10 @@ def user_rights(uid):
             setattr(u, flag_attr, request.form.get(f"module_{module_key}") == "on")
 
         # Rewrite this user's rows from the submitted grid so stored state
-        # always matches exactly what the admin sees on screen.
-        UserPermission.query.filter_by(user_id=u.id).delete()
+        # always matches exactly what the admin sees on screen. Company-scoped
+        # (and hook-scoped): another company's rows for this user survive.
+        UserPermission.query.filter_by(
+            user_id=u.id, company_id=current_company_id()).delete()
         for _module_key, _label, _flag, sections in MODULES:
             for resource, _res_label in sections:
                 db.session.add(UserPermission(
@@ -871,7 +876,8 @@ def reset_rights(uid):
     if denied:
         return denied
     u = _managed_user_or_404(uid)
-    UserPermission.query.filter_by(user_id=u.id).delete()
+    UserPermission.query.filter_by(
+        user_id=u.id, company_id=current_company_id()).delete()
     db.session.commit()
     flash(f"Rights reset for {u.full_name} — unrestricted section access again.",
           "success")
@@ -1067,8 +1073,10 @@ def invite():
                                          Role.EMPLOYEE):
         flash("Pick a valid role.", "error")
         return back
-    if CompanyMembership.query.filter_by(
-            company_id=company.id, user_id=user.id).first():
+    if CompanyMembership.query.filter(
+            CompanyMembership.company_id == company.id,
+            CompanyMembership.user_id == user.id,
+            CompanyMembership.status != CompanyMembership.REMOVED).first():
         flash(f"{user.full_name} is already a member of this company.",
               "error")
         return back
@@ -1088,8 +1096,7 @@ def invite():
         company_id=company.id, email=email, role_id=role.id,
         invited_by=current_user.id, status=CompanyInvitation.SENT))
     db.session.commit()
-    flash(f"Invitation sent to {email} — they accept it from their "
-          f"Settings \u2192 Invitations.", "success")
+    flash(f"Invitation sent to {email}.", "success")
     return back
 
 
@@ -1144,8 +1151,9 @@ def accept_invitation(invitation_id):
     if company is None or not company.is_active:
         flash("That company is no longer accepting members.", "error")
         return back
-    if CompanyMembership.query.filter_by(
-            company_id=company.id, user_id=current_user.id).first():
+    existing = CompanyMembership.query.filter_by(
+        company_id=company.id, user_id=current_user.id).first()
+    if existing is not None and existing.status != CompanyMembership.REMOVED:
         flash("You are already a member of that company.", "error")
         return back
     limits = GlobalLimits.get()
@@ -1168,9 +1176,15 @@ def accept_invitation(invitation_id):
                   f"allowed for your account ({join_cap}).", "error")
             return back
     inv.status = CompanyInvitation.ACCEPTED
-    db.session.add(CompanyMembership(
-        company_id=company.id, user_id=current_user.id,
-        role_id=inv.role_id, status=CompanyMembership.ACTIVE))
+    if existing is not None:
+        # Re-hire: a REMOVED row survives departure (unique on
+        # company+user), so reactivate it instead of inserting a duplicate.
+        existing.status = CompanyMembership.ACTIVE
+        existing.role_id = inv.role_id
+    else:
+        db.session.add(CompanyMembership(
+            company_id=company.id, user_id=current_user.id,
+            role_id=inv.role_id, status=CompanyMembership.ACTIVE))
     db.session.commit()
     session["company_id"] = company.id
     flash(f"Welcome to {company.name}.", "success")

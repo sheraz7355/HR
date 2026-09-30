@@ -55,6 +55,7 @@ def login():
             login_user(user)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            flash(f"Welcome back, {user.full_name or user.email}.", "success")
             next_page = safe_local_url(request.args.get("next"))
             if next_page:
                 return redirect(next_page)

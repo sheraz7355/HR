@@ -182,7 +182,9 @@ def export_excel():
         from openpyxl.utils import get_column_letter
     except ImportError:
         return jsonify({"error": "openpyxl not installed"}), 500
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "No data supplied for export."}), 400
     rows = data.get("rows", [])
     columns = data.get("columns", [])
     wb = openpyxl.Workbook()

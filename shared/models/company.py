@@ -185,15 +185,18 @@ class GlobalLimits(db.Model):
         return r
 
     def member_limit_for(self, company):
-        return company.max_members or self.default_max_members
+        val = getattr(company, "max_members", None)
+        return val if val is not None else self.default_max_members
 
     # Per-user overrides beat the global default; NULL means "use the
     # default", which is why these read the attribute rather than trusting a
     # column value that is NULL on every row predating the migration.
     def company_limit_for(self, user):
         """How many companies this user may create."""
-        return (getattr(user, "max_companies_owned", None)
-                or self.max_companies_per_user)
+        # NULL means "use the default" — but 0 is a real value ("may create
+        # none"), so test for None instead of truthiness.
+        val = getattr(user, "max_companies_owned", None)
+        return val if val is not None else self.max_companies_per_user
 
     def join_limit_for(self, user):
         """How many companies this user may belong to. No global default

@@ -11,7 +11,9 @@ if __name__ == "__main__":
     # same SQLite file, and the loser's company_id backfill dies with
     # "database is locked", leaving legacy rows invisible to tenancy scoping.
     testing = os.environ.get("FLASK_ENV") == "testing"
+    # Debug only on explicit opt-in, never by default: see app.py.
+    debug = (os.environ.get("DEBUG", "0") == "1") and not testing
     # PORT lets the E2E harness run on its own port instead of competing with
     # a dev server on 5000 (see tests/e2e/conftest.py).
     port = int(os.environ.get("PORT", "5000"))
-    app.run(port=port, debug=not testing, use_reloader=not testing)
+    app.run(port=port, debug=debug, use_reloader=debug)

@@ -8,13 +8,7 @@
         <h1>Accountix Inventory</h1>
         <p>Sign in to manage inventory</p>
       </div>
-      {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-      {% for category, message in messages %}
-      <div class="flash-{{ category }}">{{ message }}</div>
-      {% endfor %}
-      {% endif %}
-      {% endwith %}
+      {% include '_flash.html' %}
       <form method="POST" class="login-form">
         <div class="form-group">
           <label for="email">Email</label>

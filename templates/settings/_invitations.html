@@ -19,7 +19,7 @@
           <td data-label="Invited">{{ inv.created_at.strftime('%Y-%m-%d') if inv.created_at else '&mdash;'|safe }}</td>
           <td data-label="Actions">
             <div class="m-acts">
-              <form method="POST" action="{{ url_for('settings.accept_invitation', invitation_id=inv.id) }}" style="display:inline;" onsubmit="return confirm('Join {{ inv.company.name }} as a member?');">
+              <form method="POST" action="{{ url_for('settings.accept_invitation', invitation_id=inv.id) }}" style="display:inline;" onsubmit="return confirm('Join ' + {{ (inv.company.name)|tojson|forceescape }} + ' as a member?');">
                 <button type="submit" class="btn btn-sm btn-primary">Accept</button>
               </form>
               <form method="POST" action="{{ url_for('settings.decline_invitation', invitation_id=inv.id) }}" style="display:inline;">

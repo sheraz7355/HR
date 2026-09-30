@@ -4,7 +4,7 @@ import traceback as _tb
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from flask import Flask, redirect, render_template, url_for, request, g
+from flask import Flask, flash, redirect, render_template, url_for, request, g
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
 
@@ -356,7 +356,9 @@ a:hover{{background:#1d4ed8}}
 
     from shared.costing import NegativeStockError, ConsumedLayerError
     from shared.periods import ClosedPeriodError
+    from shared.forms import FormInputError
 
+    @app.errorhandler(FormInputError)
     @app.errorhandler(NegativeStockError)
     @app.errorhandler(ConsumedLayerError)
     @app.errorhandler(ClosedPeriodError)
@@ -376,13 +378,21 @@ a:hover{{background:#1d4ed8}}
                 == "application/json":
             return jsonify({"ok": False, "error": str(e)}), 409
         flash(str(e), "error")
-        return redirect(request.referrer or url_for("dashboard.hub"))
+        from shared.security import safe_local_url
+        return redirect(safe_local_url(request.referrer)
+                        or url_for("dashboard.hub"))
 
     @app.errorhandler(Exception)
     def handle_all(e):
-        # Genuine unexpected server error — keep the traceback (useful while the
-        # app is being stabilised) but only for real 500s, not HTTP errors.
-        return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>{_tb.format_exc()}</pre>", 500
+        # Genuine unexpected server error. Full tracebacks only leave the
+        # process when debugging is on — in any other mode they leak paths,
+        # SQL fragments and source context to whoever provoked the 500.
+        if app.debug or app.testing:
+            return f"<pre style='background:#fef2f2;padding:20px;border:2px solid #ef4444;border-radius:8px;font-size:13px;overflow:auto;max-height:90vh;'>{_tb.format_exc()}</pre>", 500
+        app.logger.exception("Unhandled exception")
+        return _friendly_error_page(
+            500, "Server error",
+            "Something went wrong on our side. The error has been logged."), 500
 
     return app
 
@@ -738,13 +748,12 @@ def _migrate_schema(db):
             # column; the models no longer map it, so it is inert either way.
             print(f"MIGRATION SKIP drop {table}.{col}: {e}")
 
-    # Charge rows attached to orders have nothing left to belong to.
-    try:
-        with engine.begin() as conn:
-            conn.execute(db.text(
-                "DELETE FROM additional_charges WHERE doc_type IN ('SO', 'PO')"))
-    except Exception as e:
-        print("MIGRATION SKIP order charge cleanup:", e)
+    # NOTE (2026-09): a previous version of this migration ran
+    # ``DELETE FROM additional_charges WHERE doc_type IN ('SO','PO')`` here on
+    # every boot. That premise was wrong — sales/purchases still attach live
+    # order charges with those doc_types — so every restart wiped every
+    # company's order charges. The statement is removed, not scoped: there is
+    # no correct scope for deleting another tenant's live rows.
 
     # Legacy GLOBAL unique index on inv_invoices.voucher_number. It predates
     # the composite (company_id, voucher_number) constraint and must go — with
@@ -1500,4 +1509,10 @@ def _seed_all_data(app):
 app = _create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    import os as _os
+    # Debug (debugger + reloader) only on explicit opt-in: an unreachable
+    # machine running `python app.py` must never expose the Werkzeug console.
+    _debug = _os.environ.get("DEBUG", "0") == "1"
+    _host = _os.environ.get("HOST", "127.0.0.1")
+    _port = int(_os.environ.get("PORT", "5000"))
+    app.run(debug=_debug, host=_host, port=_port)

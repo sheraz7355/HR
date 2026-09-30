@@ -137,8 +137,17 @@ def stock_value(product_id):
     The carried figure, not qty x unit_cost: the product of a 4dp cost and a
     quantity is only ever approximately what was posted, and that is the
     approximation the invariant used to be checked against.
+
+    Counts every layer still carrying a balance — including short layers
+    (negative ``qty_remaining``) left by issues beyond stock on hand. Those
+    are value the ledger moved that no positive layer holds, so excluding
+    them would untie the pool from the ledger.
     """
-    return sum((_d(l.value_remaining) for l in _open_layers(product_id)), ZERO)
+    return sum((_d(l.value_remaining)
+                for l in StockLayer.query
+                .filter(StockLayer.product_id == product_id,
+                        StockLayer.qty_remaining != 0)
+                .all()), ZERO)
 
 
 def current_unit_cost(product_id):
@@ -299,6 +308,40 @@ def _write_row(product_id, voucher_type, voucher_id, voucher_number,
     return row
 
 
+def _cover_shorts(product_id, receipt_row, qty, value):
+    """Net a receipt against short layers, oldest first.
+
+    Returns the (qty, value) left over for the shelf. Each covered short gives
+    up its carried value for the units it gets back, so the receipt's surplus
+    carries what the ledger's running cost now says it is worth. The cover is
+    recorded as a negative consumption on the receipt's row, which is what a
+    reversal of the receipt gives back to reopen the short.
+    """
+    shorts = (StockLayer.query
+              .filter(StockLayer.product_id == product_id,
+                      StockLayer.qty_remaining < 0)
+              .order_by(StockLayer.id.asc()).all())
+    for s in shorts:
+        if qty <= 0:
+            break
+        owed = -_d(s.qty_remaining)
+        take = min(owed, qty)
+        if take >= owed:
+            moved = -_d(s.value_remaining)
+        else:
+            moved = _q(take * _d(s.value_remaining) / _d(s.qty_remaining))
+        s.qty_remaining = _d(s.qty_remaining) + take
+        s.value_remaining = _d(s.value_remaining) + moved
+        db.session.add(LayerConsumption(
+            layer_id=s.id, out_ledger_id=receipt_row.id,
+            product_id=product_id, qty=-take, unit_cost=_d(s.unit_cost),
+            total_cost=-moved,
+        ))
+        qty -= take
+        value -= moved
+    return qty, value
+
+
 def record_in(product_id, voucher_type, voucher_id, voucher_number,
               qty, unit_cost, notes="", created_by=1):
     """Stock received at an actual acquisition cost (e.g. landed purchase cost).
@@ -308,26 +351,42 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
     running average.
     """
     qty = _d(qty)
+    if qty <= 0:
+        raise ValueError(
+            f"Cannot receive {qty} of product {product_id}: receipt quantity "
+            "must be positive."
+        )
     unit_cost = _q(unit_cost)
     total_cost = _q(qty * unit_cost, 2)
     row = _write_row(product_id, voucher_type, voucher_id, voucher_number,
                      "IN", qty, unit_cost, total_cost, notes, created_by)
 
+    # Fill any short first: those units were already issued, so they are not
+    # stock on hand and must not sit on a positive layer.
+    layer_qty, layer_value = _cover_shorts(product_id, row, qty, total_cost)
+
     settings = _settings()
     open_layers = _open_layers(product_id)
-    if settings.is_fifo() or not open_layers:
+    if layer_qty <= 0:
+        # Entirely absorbed by the short — nothing reaches the shelf. A value
+        # left over (the short was charged at a different cost) is what the
+        # ledger clamps away at zero quantity, so the layers drop it too.
+        pass
+    elif settings.is_fifo() or not open_layers:
         db.session.add(StockLayer(
             product_id=product_id, source_ledger_id=row.id,
-            unit_cost=unit_cost, qty_original=qty, qty_remaining=qty,
+            unit_cost=unit_cost, qty_original=layer_qty,
+            qty_remaining=layer_qty,
             # The 2dp figure this receipt posted, not qty x the 4dp cost:
             # the layer must move in the same amount the ledger moved in.
-            value_remaining=total_cost,
+            value_remaining=layer_value,
             method=settings.valuation_method, notes=notes,
         ))
     else:
         # Weighted average: re-average the single open layer. Any extra open
         # layers (left by a FIFO period before the switch) are folded in too,
         # so the pool collapses back to one.
+        qty, total_cost = layer_qty, layer_value
         total_qty = sum((_d(l.qty_remaining) for l in open_layers), ZERO) + qty
         total_value = sum((_d(l.value_remaining)
                            for l in open_layers), ZERO) + total_cost
@@ -395,6 +454,33 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
         db.session.add(LayerConsumption(
             layer_id=layer.id, out_ledger_id=row.id, product_id=product_id,
             qty=take, unit_cost=_q(charged), total_cost=value,
+        ))
+    if uncovered > 0:
+        # Beyond stock on hand: the plan drained every layer, so the part of
+        # the posted cost no layer held had nowhere to go and used to be
+        # dropped — the ledger kept it, the pool lost it, and every later
+        # receipt built on a diverged base. Carry it as a short layer instead:
+        # a negative balance the next _withdraw_value-style accounting still
+        # counts, so the pool stays tied to the ledger by construction.
+        # Reversing this issue restores the consumption below and zeroes the
+        # short back out exactly. Recorded even at zero value: the short also
+        # carries the missing QUANTITY, which the next receipt must fill
+        # before anything reaches the shelf (_cover_shorts).
+        short = total - sum(withdrawn, ZERO)
+        short_layer = StockLayer(
+            product_id=product_id, source_ledger_id=row.id,
+            unit_cost=unit, qty_original=-uncovered,
+            qty_remaining=-uncovered, value_remaining=-short,
+            method=_settings().valuation_method,
+            notes=(f"Short {uncovered} unit(s) issued beyond stock on "
+                   f"{voucher_number}; covered by a future receipt"),
+        )
+        db.session.add(short_layer)
+        db.session.flush()
+        db.session.add(LayerConsumption(
+            layer_id=short_layer.id, out_ledger_id=row.id,
+            product_id=product_id, qty=uncovered, unit_cost=unit,
+            total_cost=short,
         ))
     db.session.flush()
     _sync_product_stock(product_id)
@@ -505,7 +591,14 @@ def _resync_pool(product_id):
     """
     if _settings().is_fifo():
         return
-    layers = _open_layers(product_id)
+    # Short layers are part of the pool too: under WA a deficit is just the
+    # pool below zero, so they fold into the same single figure.
+    layers = (StockLayer.query
+              .filter(StockLayer.product_id == product_id,
+                      StockLayer.qty_remaining != 0)
+              .order_by((StockLayer.qty_remaining > 0).desc(),
+                        StockLayer.id.asc())
+              .all())
     if not layers:
         return
     qty, cost, _avg = StockLedger.get_running_balance(product_id)
@@ -514,7 +607,7 @@ def _resync_pool(product_id):
     for l in rest:
         l.qty_remaining = ZERO
         l.value_remaining = ZERO
-    if qty <= 0:
+    if qty == 0:
         keep.qty_remaining = ZERO
         keep.value_remaining = ZERO
     else:
@@ -522,7 +615,7 @@ def _resync_pool(product_id):
         # The ledger's own running_cost, so the pool does not merely round to
         # the ledger here — it IS the ledger.
         keep.value_remaining = cost
-        keep.unit_cost = _q(cost / qty)
+        keep.unit_cost = _q(abs(cost / qty))
     db.session.flush()
 
 
@@ -581,7 +674,9 @@ def _reconcile_to_variance(product_id, voucher_number, created_by=1):
     running_cost lands back on the layers' value, and the caller posts the
     matching journal entry.
     """
-    layer_qty = sum((_d(l.qty_remaining) for l in _open_layers(product_id)), ZERO)
+    layer_qty = sum((_d(l.qty_remaining) for l in StockLayer.query.filter(
+        StockLayer.product_id == product_id,
+        StockLayer.qty_remaining != 0).all()), ZERO)
     ledger_qty = on_hand(product_id)
 
     # Quantity: re-draw the surplus from surviving layers, oldest first.
@@ -693,7 +788,10 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
     # the pool — so the consumption check above cannot see it. Stock is
     # fungible there, but withdrawing more than is still on hand necessarily
     # takes back units that were already issued at a cost now posted and
-    # frozen. Refuse on quantity instead.
+    # frozen. Refuse on quantity instead — and on value: a receipt whose
+    # value has already left through issued stock cannot come back either,
+    # even when enough *units* remain (withdrawing it would delete purchase
+    # value that posted COGS is still drawn from).
     for r in rows:
         if r.transaction_type != "IN" or allow_variance:
             continue
@@ -706,6 +804,20 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
                 f"issued at a cost that is now posted and cannot change. "
                 f"Reverse the issues that consumed it first."
             )
+        if not _settings().is_fifo():
+            received = sum((_d(x.total_cost) for x in StockLedger.query.filter_by(
+                product_id=r.product_id, transaction_type="IN").all()), ZERO)
+            issued = sum((_d(x.total_cost) for x in StockLedger.query.filter_by(
+                product_id=r.product_id, transaction_type="OUT").all()), ZERO)
+            if issued > received - _d(r.total_cost):
+                raise ConsumedLayerError(
+                    f"Cannot reverse {voucher_type} #{voucher_id}: "
+                    f"{issued} of product {r.product_id} has already been "
+                    f"issued at a posted cost, but only "
+                    f"{received - _d(r.total_cost)} of received value would "
+                    f"survive this reversal. Reverse the issues first, or "
+                    f"reverse with a cost variance."
+                )
 
     # Give back quantity this voucher's issues took out of the layers.
     consumptions = LayerConsumption.query.filter(
@@ -731,8 +843,12 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
     # throw away every other receipt's value with it (reversing the first of
     # two receipts destroyed the second's 200 as well). There, the pool is left
     # alone and _resync_pool re-points it at the surviving ledger.
-    doomed = (StockLayer.query.filter(StockLayer.source_ledger_id.in_(row_ids)).all()
-              if _settings().is_fifo() else [])
+    # Receipt layers only: a short opened by a reversed issue was just given
+    # its units back above, and may since have been covered by a receipt that
+    # is staying — it is detached below, not withdrawn.
+    in_row_ids = [r.id for r in rows if r.transaction_type == "IN"]
+    doomed = (StockLayer.query.filter(StockLayer.source_ledger_id.in_(in_row_ids)).all()
+              if _settings().is_fifo() and in_row_ids else [])
     if doomed:
         LayerConsumption.query.filter(
             LayerConsumption.layer_id.in_([l.id for l in doomed])
@@ -740,6 +856,19 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
         db.session.flush()
     for layer in doomed:
         db.session.delete(layer)
+    db.session.flush()
+
+    # Layers that survive still name a row about to be deleted as their
+    # source: a short opened by a reversed issue, or (weighted average) the
+    # shared pool a reversed receipt happened to open. Detach them so the
+    # foreign key never dangles; a spent short with no history left goes.
+    for layer in StockLayer.query.filter(
+            StockLayer.source_ledger_id.in_(row_ids)).all():
+        spent = _d(layer.qty_remaining) == 0 and _d(layer.value_remaining) == 0
+        if spent and not LayerConsumption.query.filter_by(layer_id=layer.id).first():
+            db.session.delete(layer)
+        else:
+            layer.source_ledger_id = None
     db.session.flush()
 
     for r in rows:
