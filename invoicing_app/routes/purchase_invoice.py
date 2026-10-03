@@ -10,7 +10,6 @@ from inventory_app.models.additional_charge import AdditionalCharge
 from inventory_app.models.supplier import InvSupplier
 from inventory_app.models.product import InvProduct
 from inventory_app.models.stock_movement import InvStockMovement
-from shared.models.vouchers import ConsumptionItem as ConsItem, ScrapItem, StockAdjustmentItem as AdjItem
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account, party_account
 from shared.models.ledger import ChartOfAccount
 from shared.models.company_settings import CompanyInfo, ReportSettings
@@ -23,6 +22,7 @@ from shared.models.invoice_template import (
 from shared.formatting import format_amount as _m
 from shared.permissions import deny_json, deny_page
 from shared.costing import record_in, reverse_voucher_stock
+from shared.posting_helpers import parse_doc_date, label_weights, split_by_label
 
 inv_pinv_bp = Blueprint("inv_purchase_invoice", __name__,
                          url_prefix="/inventory/purchase-invoice")
@@ -256,6 +256,9 @@ def save_invoice():
                             "error": "Over-invoicing blocked — " + "; ".join(over)}), 400
 
     inv.supplier_id = data.get("supplier_id")
+    # Posts — journal and stock receipt — on the invoice's own date.
+    inv.invoice_date = parse_doc_date(data.get("invoice_date"),
+                                      fallback=inv.invoice_date)
     inv.party_account_id = data.get("party_account_id") or None
     _default_label = InventorySettings.get().default_invoice_label()
     _default_lid = _default_label.id if _default_label else None
@@ -368,6 +371,7 @@ def save_invoice():
                             - float(inv.total_withholding_tax or 0), 2)
     inv.total_amount = inv.net_payable
 
+    landed_by_label = {}
     if action == "approve":
         # Spread the document-level absorbed carriage (less the combined
         # discount) across lines pro-rata by value, so each purchase layer's
@@ -403,11 +407,14 @@ def save_invoice():
                             + float(item.loading_unloading or 0)
                             + share)
             qty_f = float(item.quantity or 0)
+            landed_by_label[item.label_id or inv.label_id] = (
+                landed_by_label.get(item.label_id or inv.label_id, 0.0) + landed_total)
             if qty_f > 0:
                 record_in(item.product_id, "PI", inv.id, inv.voucher_number,
                           qty=qty_f, unit_cost=landed_total / qty_f,
                           notes=f"Purchase {inv.invoice_number}",
-                          created_by=current_user.id)
+                          created_by=current_user.id,
+                          txn_date=inv.invoice_date)
 
     # §4.4: approving bills the source order lines — invoiced quantities rise
     # and each order moves Open -> Partially invoiced -> Fully invoiced.
@@ -452,10 +459,14 @@ def save_invoice():
             _first_item = InvPurchaseInvoiceItem.query.filter_by(
                 invoice_id=inv.id).order_by(InvPurchaseInvoiceItem.id).first()
             llid = _first_item.label_id if _first_item else plid
+            # Inventory is split by each label's share of the landed cost, so
+            # a multi-project purchase shows each project's stock intake.
+            weights = label_weights(landed_by_label.items()) or {llid: 1}
             lines = [
-                {"account_id": inv_acc.id, "debit": inventory_dr, "credit": 0,
-                 "label_id": llid,
-                 "description": f"Inventory - {inv.invoice_number}"},
+                {"account_id": inv_acc.id, "debit": float(share), "credit": 0,
+                 "label_id": lid,
+                 "description": f"Inventory - {inv.invoice_number}"}
+                for lid, share in split_by_label(inventory_dr, weights)
             ]
             if input_tax > 0:
                 in_tax_acc = posting_account("input_tax")
@@ -501,7 +512,7 @@ def save_invoice():
                 voucher_number=inv.voucher_number,
                 description=f"Purchase Invoice {inv.invoice_number} - {inv.supplier.name if inv.supplier else ''}",
                 lines=lines,
-                entry_date=datetime.utcnow(),
+                entry_date=inv.invoice_date,
                 created_by=current_user.id,
             )
 
@@ -531,25 +542,23 @@ def unapprove_invoice(id):
     if inv.status != "approved":
         return jsonify({"ok": False, "error": "Only approved invoices can be unapproved"}), 400
 
-    # Dependency check: has any item been consumed/sold/adjusted?
-    product_ids = [item.product_id for item in inv.items.all() if item.product_id]
-    if product_ids:
-        cons = ConsItem.query.filter(
-            ConsItem.product_id.in_(product_ids)
-        ).first()
-        if cons:
-            return jsonify({"ok": False, "error": "Cannot unapprove: Items already consumed"}), 400
-        scrap = ScrapItem.query.filter(
-            ScrapItem.product_id.in_(product_ids)
-        ).first()
-        if scrap:
-            return jsonify({"ok": False, "error": "Cannot unapprove: Items already scrapped"}), 400
-        adj = AdjItem.query.filter(
-            AdjItem.product_id.in_(product_ids)
-        ).first()
-        if adj:
-            return jsonify({"ok": False, "error": "Cannot unapprove: Items already adjusted"}), 400
+    # A posted purchase return debits this invoice's supplier against it;
+    # un-posting the invoice underneath would leave a debit note for goods
+    # that were never bought.
+    from inventory_app.models.purchase_return import InvPurchaseReturn
+    returns = InvPurchaseReturn.query.filter_by(original_invoice_id=inv.id,
+                                                status="approved").all()
+    if returns:
+        return jsonify({"ok": False, "error": (
+            "Cannot unapprove: approved purchase return(s) "
+            + ", ".join(r.return_number for r in returns)
+            + " were raised against this invoice. Unapprove them first.")}), 400
 
+    # Stock from this invoice may already have been sold or consumed. That is
+    # allowed — correcting a purchase is exactly unapprove -> edit ->
+    # re-approve. The issues it fed are carried short at their posted cost
+    # until the corrected invoice is re-approved on its date, which re-costs
+    # them at the corrected price (shared/costing.py: _replay).
     reverse_journal_entry("PI", inv.id, current_user.id)
 
     # §4.4: un-posting restores each source purchase order's balance and
@@ -567,17 +576,10 @@ def unapprove_invoice(id):
         reference_type="purchase_invoice", reference_id=inv.id
     ).delete()
 
-    # Remove this invoice's purchase layers from the cost history and rebuild
-    # each product's running balances (also re-syncs current_stock).
-    #
-    # allow_variance: stock from this invoice may already have been issued, and
-    # that issue posted a cost drawn from it which cannot now be restated. The
-    # difference is booked to Inventory Cost Variance rather than blocking the
-    # unapprove or letting inventory drift away from COGS.
-    from shared.ledger_utils import post_variance_journal
-    variances = reverse_voucher_stock("PI", inv.id, allow_variance=True,
-                                      created_by=current_user.id)
-    post_variance_journal(variances, inv.invoice_number, current_user.id)
+    # Remove this invoice's purchase layers from the cost history. Later
+    # issues are re-costed in date order; any cost that moves is journalled.
+    moved = reverse_voucher_stock("PI", inv.id, allow_variance=True,
+                                  created_by=current_user.id)
 
     db.session.commit()
     # An unapproved invoice owes nothing, so anything assigned to it stops
@@ -585,13 +587,18 @@ def unapprove_invoice(id):
     from shared import payment_tracking as _pt
     _pt.sync_invoice(_pt.PURCHASE, inv.id)
     message = "Invoice has been unapproved and unlocked for editing"
-    if variances:
-        total = sum(variances.values())
-        message += (f". {_m(abs(total))} was booked to Inventory Cost Variance: "
-                    f"stock from this invoice had already been issued at a cost "
-                    f"that is already posted and cannot be changed")
+    from shared.costing import on_hand
+    short = [i.product.name for i in inv.items.all()
+             if i.product_id and i.product and on_hand(i.product_id) < 0]
+    if moved:
+        message += (f". Later issues were re-costed in date order "
+                    f"(net {_m(sum(moved.values()))}) and adjusted in the ledger")
+    if short:
+        message += (". Stock from this invoice was already issued ("
+                    + ", ".join(short[:5]) + "); re-approve the corrected "
+                    "invoice on its date to re-cost those issues")
     return jsonify({"ok": True, "status": "unapproved", "message": message,
-                    "variance": float(sum(variances.values())) if variances else 0})
+                    "variance": float(sum(moved.values())) if moved else 0})
 
 
 @inv_pinv_bp.route("/delete/<int:id>", methods=["POST"])

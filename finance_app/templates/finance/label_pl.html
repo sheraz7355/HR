@@ -1,0 +1,85 @@
+{% extends "finance/layouts/base.html" %}
+{% block title %}P&amp;L by Label{% endblock %}
+{% block heading %}Profit &amp; Loss by Project Label{% endblock %}
+{% block actions %}
+<button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
+{% endblock %}
+{% block content %}
+<style>
+  .lpl-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+  .lpl-filter label.cap{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+  .lpl-chips{display:flex;flex-wrap:wrap;gap:6px;max-width:100%}
+  .lpl-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);
+    border-radius:999px;padding:3px 10px;font-size:12.5px;cursor:pointer;background:var(--card)}
+  .lpl-chip input{margin:0}
+  .lpl-note{font-size:12px;color:var(--muted);margin-top:8px}
+  .report-table .lpl-total{font-weight:600}
+</style>
+
+<form method="get" class="card mb-6 no-print">
+  <div class="lpl-filter">
+    <div><label class="cap" for="lplFrom">From</label>
+      <input type="date" id="lplFrom" name="from" value="{{ from_str }}" class="form-control"></div>
+    <div><label class="cap" for="lplTo">To</label>
+      <input type="date" id="lplTo" name="to" value="{{ to_str }}" class="form-control"></div>
+    <div style="flex:1 1 260px">
+      <span class="cap" style="display:block;font-size:12px;color:var(--muted);margin-bottom:3px">Labels (none ticked = all, plus Unlabelled)</span>
+      <div class="lpl-chips">
+        {% for l in labels_all %}
+        <label class="lpl-chip"><input type="checkbox" name="label_id" value="{{ l.id }}" {{ 'checked' if l.id in picked }}> {{ l.name }}{% if not l.is_active %} <em style="color:var(--muted)">(archived)</em>{% endif %}</label>
+        {% else %}
+        <span class="lpl-note">No labels yet — create them in Settings → Labels.</span>
+        {% endfor %}
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> View</button>
+  </div>
+</form>
+
+<div class="card report-sheet">
+  <div class="report-head">
+    <div>
+      <div class="report-company">{{ company.company_name if company and company.company_name else (company.name if company else '') }}</div>
+      <div class="report-title-lg">Profit &amp; Loss by Project Label</div>
+      <div class="report-period">For the period {{ from_str }} to {{ to_str }}</div>
+    </div>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="report-table statement">
+      <thead>
+        <tr>
+          <th>Account</th>
+          {% for l in labels %}<th class="num">{{ l.name }}</th>{% endfor %}
+          {% if unlabelled_net is not none %}<th class="num">Unlabelled</th>{% endif %}
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          {% if r.kind == 'header' %}
+          <tr class="section-head"><td colspan="{{ labels|length + 3 }}"><strong>{{ r.label }}</strong></td></tr>
+          {% else %}
+          <tr class="{{ 'lpl-total' if r.kind in ('total','subtotal') }}">
+            <td>{% if r.kind == 'account' %}{{ r.code }} {{ r.name }}{% else %}{{ r.label }}{% endif %}</td>
+            {% for v in r.by_label %}<td class="num">{{ v|amount_format(2) }}</td>{% endfor %}
+            {% if unlabelled_net is not none %}<td class="num">{{ r.unlabelled|amount_format(2) }}</td>{% endif %}
+            <td class="num">{{ r.amount|amount_format(2) }}</td>
+          </tr>
+          {% endif %}
+        {% else %}
+          <tr><td colspan="{{ labels|length + 3 }}" style="text-align:center;color:var(--muted);padding:20px">No income or expense posted in this period.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="lpl-total">
+          <td>Net profit / (loss)</td>
+          {% for n in label_nets %}<td class="num">{{ n|amount_format(2) }}</td>{% endfor %}
+          {% if unlabelled_net is not none %}<td class="num">{{ unlabelled_net|amount_format(2) }}</td>{% endif %}
+          <td class="num">{{ net_profit|amount_format(2) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p class="lpl-note">Each journal line carries at most one label, so the label columns plus Unlabelled add up to the company total. COGS follows each sale line's label and is re-costed when earlier documents are back-dated or corrected; consumption, scrap, adjustments and the depreciation of labelled assets carry their document's label.</p>
+</div>
+{% endblock %}

@@ -52,8 +52,33 @@ FIFO layers by replaying OUT quantities against IN rows, which silently
 assumed every past issue had consumed oldest-first; switching methods then
 invented value (buy 10@10 + 10@20, sell 10 at avg 15, switch to FIFO ->
 COGS 350 against purchases of 300). Layers make that unrepresentable.
+
+TIME: DOCUMENT DATE, NOT KEYING ORDER
+------------------------------------
+Every ledger row carries ``txn_date`` -- the date of the document that moved
+the stock. Layers are consumed in (txn_date, id) order. A document keyed in
+order (the normal case) is costed on the fast path exactly as above. Two
+things break the order, and both are handled by replaying the product's
+history in date order (``_replay``):
+
+    back-dating   a purchase dated last month, keyed after this month's sales.
+                  In date order those sales could have drawn on it, so they
+                  are re-costed as if it had been entered on time.
+    reversal      unapproving an earlier document (to correct it, or because
+                  it never happened). Later issues are re-costed from what is
+                  left; re-approving the corrected document re-costs them
+                  again around it.
+
+Rows before the change are frozen -- nothing earlier can be affected by it.
+Rows after it are re-costed. Every issue whose cost moves gets a
+``StockCostAdjustment`` and a journal (shared/cost_adjustment.py) charging the
+difference to the account the issue originally hit, so the inventory control
+account keeps tying to the stock valuation and P&L carries the true cost.
+A back-dated issue is refused if stock was not on hand AT ITS DATE, or if it
+would leave a later issue uncovered.
 """
 
+from datetime import date, datetime
 from decimal import Decimal
 
 from shared.extensions import db
@@ -106,6 +131,64 @@ def _d(value):
 
 def _settings():
     return InventorySettings.get()
+
+
+# OUT rows whose cost is a fixed basis rather than drawn from the layers: a
+# purchase return leaves at the cost it was bought at.
+EXPLICIT_BASIS_TYPES = {"PRV"}
+
+
+def as_txn_date(when):
+    """Normalise a document date (date, datetime, 'YYYY-MM-DD', None=today)."""
+    if when is None or when == "":
+        return date.today()
+    if isinstance(when, datetime):
+        return when.date()
+    if isinstance(when, date):
+        return when
+    return datetime.strptime(str(when)[:10], "%Y-%m-%d").date()
+
+
+def _key(row):
+    return (row.txn_date or date.min, row.id)
+
+
+def _ordered_rows(product_id):
+    return (StockLedger.query.filter_by(product_id=product_id)
+            .order_by(StockLedger.txn_date.asc(), StockLedger.id.asc()).all())
+
+
+def _is_backdated(product_id, txn_date):
+    """True when the product already has movement dated AFTER ``txn_date``."""
+    return (StockLedger.query
+            .filter(StockLedger.product_id == product_id,
+                    StockLedger.txn_date > txn_date)
+            .first()) is not None
+
+
+def on_hand_at(product_id, when):
+    """Quantity on hand at the end of ``when`` (document-date view)."""
+    d = as_txn_date(when)
+    total = ZERO
+    for r in (StockLedger.query
+              .filter(StockLedger.product_id == product_id,
+                      StockLedger.txn_date <= d).all()):
+        q = _d(r.quantity)
+        total += q if r.transaction_type == "IN" else -q
+    return total
+
+
+def value_at(product_id, when):
+    """Stock value at the end of ``when``: posted IN cost less posted OUT cost
+    of every movement dated on or before it."""
+    d = as_txn_date(when)
+    total = ZERO
+    for r in (StockLedger.query
+              .filter(StockLedger.product_id == product_id,
+                      StockLedger.txn_date <= d).all()):
+        c = _d(r.total_cost)
+        total += c if r.transaction_type == "IN" else -c
+    return total
 
 
 def _open_layers(product_id):
@@ -165,7 +248,39 @@ def current_unit_cost(product_id):
     return _q(total_value / total_qty)
 
 
-def _plan_consumption(product_id, qty):
+def _preferred_layer_ids(product_id, prefer):
+    """Layer ids opened by the receipt ``prefer`` = (voucher_type, voucher_id).
+
+    A purchase return sends back the goods of ONE invoice, so it must draw from
+    that invoice's layers first — taking the oldest layer instead charged a
+    landed cost to stock bought at a different price, and the difference
+    landed on whatever layer was left (even driving its value negative).
+    """
+    if not prefer:
+        return []
+    vtype, vid = prefer
+    rows = [r.id for r in StockLedger.query.filter_by(
+        voucher_type=vtype, voucher_id=vid, product_id=product_id,
+        transaction_type="IN").all()]
+    if not rows:
+        return []
+    return [l.id for l in StockLayer.query.filter(
+        StockLayer.source_ledger_id.in_(rows)).all()]
+
+
+def _return_source(row):
+    """(voucher_type, voucher_id) a purchase-return row sends goods back from."""
+    if row.voucher_type != "PRV":
+        return None
+    try:
+        from inventory_app.models.purchase_return import InvPurchaseReturn
+    except Exception:
+        return None
+    ret = scoped_get(InvPurchaseReturn, row.voucher_id)
+    return ("PI", ret.original_invoice_id) if ret and ret.original_invoice_id else None
+
+
+def _plan_consumption(product_id, qty, prefer=None):
     """(plan, uncovered) for issuing ``qty`` — oldest layers first.
 
     ``plan`` is [(layer, take_qty, effective_cost)]; ``uncovered`` is what no
@@ -178,7 +293,12 @@ def _plan_consumption(product_id, qty):
     """
     remaining = qty
     plan = []
-    for layer in _open_layers(product_id):
+    layers = _open_layers(product_id)
+    first = set(_preferred_layer_ids(product_id, prefer))
+    if first:
+        layers = ([l for l in layers if l.id in first]
+                  + [l for l in layers if l.id not in first])
+    for layer in layers:
         if remaining <= 0:
             break
         take = min(_d(layer.qty_remaining), remaining)
@@ -275,7 +395,8 @@ def _sync_product_stock(product_id):
 
 
 def _write_row(product_id, voucher_type, voucher_id, voucher_number,
-               transaction_type, qty, unit_cost, total_cost, notes, created_by):
+               transaction_type, qty, unit_cost, total_cost, notes, created_by,
+               txn_date=None):
     prev_qty, prev_cost, _prev_avg = StockLedger.get_running_balance(product_id)
     prev_qty, prev_cost = _d(prev_qty), _d(prev_cost)
     if transaction_type == "IN":
@@ -300,6 +421,7 @@ def _write_row(product_id, voucher_type, voucher_id, voucher_number,
         running_cost=new_cost,
         running_avg=new_avg,
         valuation_method=_settings().valuation_method,
+        txn_date=as_txn_date(txn_date),
         notes=notes,
         created_by=created_by,
     )
@@ -343,12 +465,16 @@ def _cover_shorts(product_id, receipt_row, qty, value):
 
 
 def record_in(product_id, voucher_type, voucher_id, voucher_number,
-              qty, unit_cost, notes="", created_by=1):
+              qty, unit_cost, notes="", created_by=1, txn_date=None):
     """Stock received at an actual acquisition cost (e.g. landed purchase cost).
 
     FIFO opens a new layer. Weighted average merges into the open layer and
     re-averages it, so exactly one layer stays open and its cost is the
     running average.
+
+    ``txn_date`` is the document date. Dated before the product's latest
+    movement, the receipt is slotted into the timeline and every later issue
+    is re-costed around it (``_replay``).
     """
     qty = _d(qty)
     if qty <= 0:
@@ -358,21 +484,37 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
         )
     unit_cost = _q(unit_cost)
     total_cost = _q(qty * unit_cost, 2)
+    txn_date = as_txn_date(txn_date)
+    backdated = _is_backdated(product_id, txn_date)
     row = _write_row(product_id, voucher_type, voucher_id, voucher_number,
-                     "IN", qty, unit_cost, total_cost, notes, created_by)
+                     "IN", qty, unit_cost, total_cost, notes, created_by,
+                     txn_date=txn_date)
+    if backdated:
+        _replay(product_id, _key(row), new_ids={row.id},
+                trigger=voucher_number, created_by=created_by)
+        return row
 
+    _apply_receipt(product_id, row, qty, unit_cost, total_cost,
+                   _settings().valuation_method, notes)
+    db.session.flush()
+    _sync_product_stock(product_id)
+    return row
+
+
+def _apply_receipt(product_id, row, qty, unit_cost, total_cost, method, notes):
+    """Put a receipt's quantity and value onto the layers (no ledger write)."""
     # Fill any short first: those units were already issued, so they are not
     # stock on hand and must not sit on a positive layer.
     layer_qty, layer_value = _cover_shorts(product_id, row, qty, total_cost)
 
-    settings = _settings()
+    is_fifo = method == "fifo"
     open_layers = _open_layers(product_id)
     if layer_qty <= 0:
         # Entirely absorbed by the short — nothing reaches the shelf. A value
         # left over (the short was charged at a different cost) is what the
         # ledger clamps away at zero quantity, so the layers drop it too.
         pass
-    elif settings.is_fifo() or not open_layers:
+    elif is_fifo or not open_layers:
         db.session.add(StockLayer(
             product_id=product_id, source_ledger_id=row.id,
             unit_cost=unit_cost, qty_original=layer_qty,
@@ -380,7 +522,7 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
             # The 2dp figure this receipt posted, not qty x the 4dp cost:
             # the layer must move in the same amount the ledger moved in.
             value_remaining=layer_value,
-            method=settings.valuation_method, notes=notes,
+            method=method, notes=notes,
         ))
     else:
         # Weighted average: re-average the single open layer. Any extra open
@@ -403,12 +545,11 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
             l.qty_remaining = ZERO
             l.value_remaining = ZERO
     db.session.flush()
-    _sync_product_stock(product_id)
-    return row
 
 
 def record_out(product_id, voucher_type, voucher_id, voucher_number,
-               qty, notes="", created_by=1, unit_cost=None):
+               qty, notes="", created_by=1, unit_cost=None, txn_date=None,
+               prefer=None):
     """Stock issued; cost computed from the layers unless an explicit cost
     basis is passed (purchase returns use the original invoice cost).
 
@@ -423,7 +564,25 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
     if qty <= 0:
         return ZERO, ZERO
 
-    plan, uncovered = _plan_consumption(product_id, qty)
+    txn_date = as_txn_date(txn_date)
+    if _is_backdated(product_id, txn_date):
+        # Cost it where it sits in time: replay the timeline with this issue
+        # slotted in. The replay refuses it if the stock was not on hand at
+        # its date, or if it would strip a later issue of its stock.
+        if unit_cost is not None:
+            unit = _q(unit_cost)
+            total = _q(qty * unit, 2)
+        else:
+            unit = total = ZERO
+        row = _write_row(product_id, voucher_type, voucher_id, voucher_number,
+                         "OUT", qty, unit, total, notes, created_by,
+                         txn_date=txn_date)
+        _replay(product_id, _key(row), new_ids={row.id},
+                explicit_ids={row.id} if unit_cost is not None else set(),
+                trigger=voucher_number, created_by=created_by)
+        return _q(row.unit_cost), _q(row.total_cost, 2)
+
+    plan, uncovered = _plan_consumption(product_id, qty, prefer)
     if uncovered > 0 and not _settings().allow_negative_stock:
         raise NegativeStockError(
             f"Cannot issue {qty} of product {product_id}: only "
@@ -440,8 +599,22 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
         total = _q(qty * unit, 2)
 
     row = _write_row(product_id, voucher_type, voucher_id, voucher_number,
-                     "OUT", qty, unit, total, notes, created_by)
+                     "OUT", qty, unit, total, notes, created_by,
+                     txn_date=txn_date)
+    _apply_issue(product_id, row, plan, uncovered, unit, total,
+                 unit if unit_cost is not None else None,
+                 _settings().valuation_method)
+    db.session.flush()
+    _sync_product_stock(product_id)
+    return unit, total
 
+
+def _apply_issue(product_id, row, plan, uncovered, unit, total, explicit_unit,
+                 method):
+    """Take an issue's quantity and posted value off the layers (no ledger
+    write). ``explicit_unit`` is the fixed basis, or None when the cost was
+    drawn from the layers themselves."""
+    voucher_number = row.voucher_number
     # Draw the quantity down against real layers and record what was taken
     # from where, so every posted cost can be traced to its purchases.
     withdrawn = _withdraw_value(plan, total)
@@ -450,7 +623,7 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
         # consumption row records the basis actually charged, and the value
         # actually taken off the layer — which is what a reversal gives back,
         # so the round trip is exact.
-        charged = unit if unit_cost is not None else layer_cost
+        charged = explicit_unit if explicit_unit is not None else layer_cost
         db.session.add(LayerConsumption(
             layer_id=layer.id, out_ledger_id=row.id, product_id=product_id,
             qty=take, unit_cost=_q(charged), total_cost=value,
@@ -471,7 +644,7 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
             product_id=product_id, source_ledger_id=row.id,
             unit_cost=unit, qty_original=-uncovered,
             qty_remaining=-uncovered, value_remaining=-short,
-            method=_settings().valuation_method,
+            method=method,
             notes=(f"Short {uncovered} unit(s) issued beyond stock on "
                    f"{voucher_number}; covered by a future receipt"),
         )
@@ -483,8 +656,6 @@ def record_out(product_id, voucher_type, voucher_id, voucher_number,
             total_cost=short,
         ))
     db.session.flush()
-    _sync_product_stock(product_id)
-    return unit, total
 
 
 def revalue_for_method_change(new_method, created_by=1):
@@ -557,7 +728,7 @@ def rebuild_running(product_id):
     Only the running_* columns are touched. A row's unit_cost/total_cost is
     what was posted to the general ledger and never changes.
     """
-    rows = StockLedger.query.filter_by(product_id=product_id).order_by(StockLedger.id.asc()).all()
+    rows = _ordered_rows(product_id)
     qty = cost = ZERO
     for r in rows:
         rqty = _d(r.quantity)
@@ -575,48 +746,6 @@ def rebuild_running(product_id):
         r.running_avg = _q(cost / qty) if qty > 0 else ZERO
     db.session.flush()
     _sync_product_stock(product_id)
-
-
-def _resync_pool(product_id):
-    """Re-point the weighted-average pool at the ledger balance.
-
-    Only meaningful under weighted average, where the pool IS the ledger
-    balance: one layer holding running_qty at running_cost/running_qty.
-
-    Needed because a WA receipt merges into the open layer instead of opening
-    its own, so reversing that receipt has no layer to withdraw — the ledger
-    would drop the value while the layer kept it (reversing a merged 10 @ 20
-    left a layer worth 300 against a ledger of 100). FIFO layers are withdrawn
-    precisely by source_ledger_id and must not be touched here.
-    """
-    if _settings().is_fifo():
-        return
-    # Short layers are part of the pool too: under WA a deficit is just the
-    # pool below zero, so they fold into the same single figure.
-    layers = (StockLayer.query
-              .filter(StockLayer.product_id == product_id,
-                      StockLayer.qty_remaining != 0)
-              .order_by((StockLayer.qty_remaining > 0).desc(),
-                        StockLayer.id.asc())
-              .all())
-    if not layers:
-        return
-    qty, cost, _avg = StockLedger.get_running_balance(product_id)
-    qty, cost = _d(qty), _d(cost)
-    keep, rest = layers[0], layers[1:]
-    for l in rest:
-        l.qty_remaining = ZERO
-        l.value_remaining = ZERO
-    if qty == 0:
-        keep.qty_remaining = ZERO
-        keep.value_remaining = ZERO
-    else:
-        keep.qty_remaining = qty
-        # The ledger's own running_cost, so the pool does not merely round to
-        # the ledger here — it IS the ledger.
-        keep.value_remaining = cost
-        keep.unit_cost = _q(abs(cost / qty))
-    db.session.flush()
 
 
 def original_issue_cost(voucher_type, voucher_id, product_id):
@@ -639,87 +768,21 @@ def original_issue_cost(voucher_type, voucher_id, product_id):
     return _d(row.unit_cost) if row is not None else None
 
 
-def _unaccounted_value(product_id):
-    """Value received, less value expensed out, less value still on the shelf.
+def original_receipt_cost(voucher_type, voucher_id, product_id):
+    """Unit cost a product was RECEIVED at on a given voucher, or None.
 
-    Zero when the books tie. Non-zero only after a retroactive change, where it
-    is the money a posted cost can no longer account for. Reads the frozen row
-    costs directly rather than running_cost, which is clamped to zero whenever
-    quantity reaches zero.
+    What a purchase return needs: goods going back to the supplier leave stock
+    at the landed cost they came in at, so the inventory credit matches the
+    inventory debit the purchase made — never a tax-inclusive return value.
+    Quantity-weighted when the voucher received the product on several lines.
     """
-    rows = StockLedger.query.filter_by(product_id=product_id).all()
-    received = sum((_d(r.total_cost) for r in rows if r.transaction_type == "IN"), ZERO)
-    issued = sum((_d(r.total_cost) for r in rows if r.transaction_type == "OUT"), ZERO)
-    return received - issued - stock_value(product_id)
-
-
-def _reconcile_to_variance(product_id, voucher_number, created_by=1):
-    """Realign the layers with the ledger after a retroactive change; return
-    the value that no longer has a home.
-
-    Withdrawing a receipt whose stock was already issued leaves two
-    inconsistencies:
-
-      quantity  the issue drew from a layer that no longer exists, so the
-                layers hold MORE units than the ledger says are on hand. The
-                surplus is re-drawn from the surviving layers, oldest first —
-                a quantity move only. No posted cost is touched.
-
-      value     the issue's cost stays frozen at what it charged (correct: it
-                was posted, and conveyed), but the stock that actually left is
-                worth what the surviving layers cost. The gap is real money.
-
-    That gap is returned as the variance. A value-only ledger row (quantity 0,
-    carrying just the cost) records it against the product so the ledger's
-    running_cost lands back on the layers' value, and the caller posts the
-    matching journal entry.
-    """
-    layer_qty = sum((_d(l.qty_remaining) for l in StockLayer.query.filter(
-        StockLayer.product_id == product_id,
-        StockLayer.qty_remaining != 0).all()), ZERO)
-    ledger_qty = on_hand(product_id)
-
-    # Quantity: re-draw the surplus from surviving layers, oldest first.
-    surplus = layer_qty - ledger_qty
-    if surplus > 0:
-        for layer in _open_layers(product_id):
-            if surplus <= 0:
-                break
-            take = min(_d(layer.qty_remaining), surplus)
-            # Value follows the units off the layer — read the effective cost
-            # before the decrement. What the surplus was worth is precisely
-            # the value with no purchase left to back it, which is what
-            # _unaccounted_value is about to surface as the variance.
-            if take >= _d(layer.qty_remaining):
-                layer.value_remaining = ZERO
-            else:
-                layer.value_remaining = (_d(layer.value_remaining)
-                                         - _q(take * layer.unit_cost_effective))
-            layer.qty_remaining = _d(layer.qty_remaining) - take
-            surplus -= take
-        db.session.flush()
-
-    # Value: what was received, less what was expensed out, less what is still
-    # on the shelf. Anything left over has no home.
-    #
-    # Deliberately NOT running_cost - stock_value: _write_row zeroes
-    # running_cost whenever quantity hits zero, which is exactly the case a
-    # reversal creates, so that reading would report no variance at the moment
-    # one certainly exists. This arithmetic survives the clamp. It also stays
-    # correct under weighted average, where _resync_pool has already folded any
-    # gap into the surviving units' average and there is genuinely nothing left
-    # to write off.
-    variance = _unaccounted_value(product_id)
-    if abs(variance) <= Decimal("0.01"):
-        return ZERO
-
-    _write_row(product_id, "VAR", 0, voucher_number,
-               "OUT" if variance > 0 else "IN", ZERO, ZERO, abs(variance),
-               f"Cost variance on reversal of {voucher_number}: value with no "
-               f"remaining purchase to back it", created_by)
-    db.session.flush()
-    _sync_product_stock(product_id)
-    return variance
+    rows = (StockLedger.query
+            .filter_by(voucher_type=voucher_type, voucher_id=voucher_id,
+                       product_id=product_id, transaction_type="IN").all())
+    qty = sum((_d(r.quantity) for r in rows), ZERO)
+    if qty <= 0:
+        return None
+    return _q(sum((_d(r.total_cost) for r in rows), ZERO) / qty)
 
 
 def consumers_of_voucher(voucher_type, voucher_id):
@@ -819,71 +882,230 @@ def reverse_voucher_stock(voucher_type, voucher_id, allow_variance=False,
                     f"reverse with a cost variance."
                 )
 
-    # Give back quantity this voucher's issues took out of the layers.
-    consumptions = LayerConsumption.query.filter(
-        LayerConsumption.out_ledger_id.in_(row_ids)).all()
-    for c in consumptions:
-        layer = scoped_get(StockLayer, c.layer_id)
-        if layer is not None:
-            layer.qty_remaining = _d(layer.qty_remaining) + _d(c.qty)
-            # total_cost is the value this consumption actually withdrew, so
-            # the layer comes back to where it was rather than to a re-derived
-            # approximation of where it was.
-            layer.value_remaining = _d(layer.value_remaining) + _d(c.total_cost)
-        db.session.delete(c)
-    db.session.flush()
-
-    # Withdraw layers this voucher's receipts opened, along with any
-    # consumption that drew from them — with allow_variance those exist, and
-    # _reconcile_to_variance re-draws their quantity from the surviving layers.
+    # Re-sequence each product without these rows. Rows dated before the
+    # reversed voucher cannot be affected and stay frozen; later issues are
+    # re-costed from what is left, and any cost that moves is adjusted
+    # through the general ledger (_replay -> shared.cost_adjustment).
     #
-    # FIFO only. Under weighted average the open layer is a SHARED pool that
-    # later receipts merged into, and source_ledger_id still names whichever
-    # receipt happened to open it — so deleting "this voucher's layer" would
-    # throw away every other receipt's value with it (reversing the first of
-    # two receipts destroyed the second's 200 as well). There, the pool is left
-    # alone and _resync_pool re-points it at the surviving ledger.
-    # Receipt layers only: a short opened by a reversed issue was just given
-    # its units back above, and may since have been covered by a receipt that
-    # is staying — it is detached below, not withdrawn.
-    in_row_ids = [r.id for r in rows if r.transaction_type == "IN"]
-    doomed = (StockLayer.query.filter(StockLayer.source_ledger_id.in_(in_row_ids)).all()
-              if _settings().is_fifo() and in_row_ids else [])
-    if doomed:
-        LayerConsumption.query.filter(
-            LayerConsumption.layer_id.in_([l.id for l in doomed])
-        ).delete(synchronize_session=False)
-        db.session.flush()
-    for layer in doomed:
-        db.session.delete(layer)
-    db.session.flush()
+    # allow_variance (purchase-invoice unapprove, i.e. "correct an earlier
+    # purchase"): an issue that drew on the withdrawn receipt keeps going --
+    # it is carried as a short at its posted cost until the corrected
+    # document is re-approved, and re-approving it (back-dated to its own
+    # date) re-costs that issue at the corrected price.
+    # This voucher's own past cost adjustments belong to it and go with it.
+    from shared.cost_adjustment import reverse_adjustments
+    reverse_adjustments(voucher_type, voucher_id, created_by)
 
-    # Layers that survive still name a row about to be deleted as their
-    # source: a short opened by a reversed issue, or (weighted average) the
-    # shared pool a reversed receipt happened to open. Detach them so the
-    # foreign key never dangles; a spent short with no history left goes.
-    for layer in StockLayer.query.filter(
-            StockLayer.source_ledger_id.in_(row_ids)).all():
-        spent = _d(layer.qty_remaining) == 0 and _d(layer.value_remaining) == 0
-        if spent and not LayerConsumption.query.filter_by(layer_id=layer.id).first():
-            db.session.delete(layer)
-        else:
-            layer.source_ledger_id = None
-    db.session.flush()
-
+    thresholds = {}
+    for r in rows:
+        k = _key(r)
+        if r.product_id not in thresholds or k < thresholds[r.product_id]:
+            thresholds[r.product_id] = k
+    previously_short = {pid: _short_sources(pid) for pid in product_ids}
+    for pid in product_ids:
+        _wipe_layers(pid)
     for r in rows:
         db.session.delete(r)
     db.session.flush()
 
-    variances = {}
+    allow_short = allow_variance or bool(_settings().allow_negative_stock)
+    moved = {}
     for pid in product_ids:
-        rebuild_running(pid)
-        _resync_pool(pid)
-        if allow_variance:
-            v = _reconcile_to_variance(pid, voucher_number, created_by)
-            if v:
-                variances[pid] = v
-    return variances
+        adjustments = _replay(pid, thresholds[pid], allow_short=allow_short,
+                              previously_short=previously_short[pid],
+                              trigger=f"reversal of {voucher_number}",
+                              created_by=created_by)
+        total = sum((new - old for _r, old, new in adjustments), ZERO)
+        if total:
+            moved[pid] = total
+    return moved
+
+
+# ─────────────────────────────────────────────
+# Date-ordered replay
+# ─────────────────────────────────────────────
+
+# Receipts whose cost mirrors an issue and must follow it when it is re-costed.
+IN_RECOST_TYPES = {"SRV"}
+
+
+PENDING_SHORT = "[pending correction]"
+
+
+def _short_sources(product_id):
+    """Ledger rows that already carry a short the company accepted (issued
+    beyond stock under 'allow negative stock'). Shorts opened only because an
+    earlier receipt was withdrawn for correction are not accepted: the
+    corrected receipt has to cover them again."""
+    return {l.source_ledger_id for l in StockLayer.query.filter(
+        StockLayer.product_id == product_id,
+        StockLayer.qty_original < 0).all()
+        if l.source_ledger_id and PENDING_SHORT not in (l.notes or "")}
+
+
+def _fallback_cost(product_id):
+    """Cost for units issued with nothing on hand at their date: the last
+    known layer cost, else the first receipt the product ever had."""
+    unit = current_unit_cost(product_id)
+    if unit > 0:
+        return unit
+    first = (StockLedger.query
+             .filter(StockLedger.product_id == product_id,
+                     StockLedger.transaction_type == "IN",
+                     StockLedger.quantity > 0,
+                     StockLedger.unit_cost > 0)
+             .order_by(StockLedger.txn_date.asc(), StockLedger.id.asc()).first())
+    return _d(first.unit_cost) if first else ZERO
+
+
+def _wipe_layers(product_id):
+    LayerConsumption.query.filter(
+        LayerConsumption.product_id == product_id).delete(synchronize_session=False)
+    StockLayer.query.filter(
+        StockLayer.product_id == product_id).delete(synchronize_session=False)
+    db.session.flush()
+
+
+def _collapse_pool(product_id):
+    """Weighted average holds one pool; fold any extra positive layers in."""
+    layers = _open_layers(product_id)
+    if len(layers) <= 1:
+        return
+    total_qty = sum((_d(l.qty_remaining) for l in layers), ZERO)
+    total_value = sum((_d(l.value_remaining) for l in layers), ZERO)
+    keep, rest = layers[0], layers[1:]
+    keep.qty_remaining = total_qty
+    keep.value_remaining = total_value
+    keep.unit_cost = _q(total_value / total_qty) if total_qty > 0 else ZERO
+    for l in rest:
+        l.qty_remaining = ZERO
+        l.value_remaining = ZERO
+    db.session.flush()
+
+
+def _shift_value(product_id, amount):
+    """Apply a value-only movement (legacy VAR rows) to the newest layer."""
+    layers = _open_layers(product_id)
+    if layers and amount:
+        layers[-1].value_remaining = _d(layers[-1].value_remaining) + amount
+        db.session.flush()
+
+
+def _resolve_in_cost(row):
+    """Re-derived unit cost of a receipt that mirrors an issue, or None.
+
+    A sales return comes back at the cost its sale left at; when that sale is
+    re-costed, the return must follow it or the round trip invents value.
+    """
+    if row.voucher_type != "SRV":
+        return None
+    try:
+        from inventory_app.models.sales_return import InvSalesReturn
+    except Exception:
+        return None
+    ret = scoped_get(InvSalesReturn, row.voucher_id)
+    if ret is None or not ret.original_invoice_id:
+        return None
+    return original_issue_cost("SI", ret.original_invoice_id, row.product_id)
+
+
+def _replay(product_id, threshold, new_ids=(), explicit_ids=(),
+            allow_short=None, previously_short=None, trigger="",
+            created_by=1):
+    """Rebuild a product's layers from its ledger in (txn_date, id) order.
+
+    Rows keyed before ``threshold`` are frozen: they re-apply at exactly the
+    cost they posted. Rows from ``threshold`` on are re-costed from the layers
+    as they stand at that point in time. ``new_ids`` are rows being posted
+    right now -- they have no journal yet, so their cost is set, not adjusted.
+
+    Returns [(row, old_total, new_total)] for every already-posted row whose
+    cost moved; each one is journalled by shared.cost_adjustment.
+    """
+    settings = _settings()
+    if allow_short is None:
+        allow_short = bool(settings.allow_negative_stock)
+    if previously_short is None:
+        previously_short = _short_sources(product_id)
+    new_ids = set(new_ids)
+    explicit_ids = set(explicit_ids)
+
+    _wipe_layers(product_id)
+    adjustments = []
+    for r in _ordered_rows(product_id):
+        frozen = _key(r) < threshold and r.id not in new_ids
+        method = r.valuation_method or settings.valuation_method
+        if method != "fifo":
+            _collapse_pool(product_id)
+        qty = _d(r.quantity)
+
+        if r.transaction_type == "IN":
+            if qty <= 0:
+                _shift_value(product_id, _d(r.total_cost))
+                continue
+            unit, total = _d(r.unit_cost), _d(r.total_cost)
+            if (not frozen and r.id not in new_ids
+                    and r.voucher_type in IN_RECOST_TYPES):
+                basis = _resolve_in_cost(r)
+                if basis is not None:
+                    new_total = _q(qty * basis, 2)
+                    if new_total != _q(total, 2):
+                        adjustments.append((r, _q(total, 2), new_total))
+                    unit, total = _q(basis), new_total
+                    r.unit_cost, r.total_cost = unit, total
+            _apply_receipt(product_id, r, qty, unit, total, method, r.notes)
+            continue
+
+        if qty <= 0:
+            _shift_value(product_id, -_d(r.total_cost))
+            continue
+        plan, uncovered = _plan_consumption(product_id, qty, _return_source(r))
+        if (uncovered > 0 and not allow_short and not frozen
+                and (r.id in new_ids or r.id not in previously_short)):
+            when = r.txn_date.strftime("%d %b %Y") if r.txn_date else "its date"
+            if r.id in new_ids:
+                msg = (f"Cannot issue {qty.normalize()} of product {product_id} "
+                       f"on {when}: only {(qty - uncovered).normalize()} were "
+                       f"on hand at that date.")
+            else:
+                msg = (f"Cannot post this change: {r.voucher_type} "
+                       f"{r.voucher_number} dated {when} would be left "
+                       f"{uncovered.normalize()} unit(s) short -- the stock it "
+                       f"issued would no longer have been on hand.")
+            raise NegativeStockError(
+                msg + " Receive the stock first, or enable 'allow negative "
+                "stock' in Inventory Settings.")
+        explicit = (frozen or r.voucher_type in EXPLICIT_BASIS_TYPES
+                    or r.id in explicit_ids)
+        if explicit:
+            unit, total = _d(r.unit_cost), _d(r.total_cost)
+        else:
+            cost = sum((take * c for _l, take, c in plan), ZERO)
+            if uncovered > 0:
+                fallback = (_d(r.unit_cost)
+                            if r.id not in new_ids and _d(r.unit_cost) > 0
+                            else _fallback_cost(product_id))
+                cost += uncovered * fallback
+            unit, total = _q(cost / qty), _q(cost, 2)
+            if r.id not in new_ids and total != _q(_d(r.total_cost), 2):
+                adjustments.append((r, _q(_d(r.total_cost), 2), total))
+            r.unit_cost, r.total_cost = unit, total
+        _apply_issue(product_id, r, plan, uncovered, unit, total,
+                     unit if explicit else None, method)
+
+    db.session.flush()
+    if allow_short and not settings.allow_negative_stock:
+        # Shorts opened only because a receipt was withdrawn for correction.
+        for l in StockLayer.query.filter(StockLayer.product_id == product_id,
+                                         StockLayer.qty_remaining < 0).all():
+            if l.source_ledger_id not in previously_short:
+                l.notes = f"{l.notes or ''} {PENDING_SHORT}".strip()
+        db.session.flush()
+    rebuild_running(product_id)
+    if adjustments:
+        from shared.cost_adjustment import post_adjustments
+        post_adjustments(adjustments, trigger, created_by)
+    return adjustments
 
 
 def ensure_opening_balances(created_by=1):

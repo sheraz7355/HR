@@ -601,17 +601,20 @@ def test_reversing_a_resold_sales_return_is_refused(settings, product):
 
 
 # ─────────────────────────────────────────────
-# Variance: deleting a consumed receipt anyway
+# Correcting an earlier receipt: later issues are re-costed
 # ─────────────────────────────────────────────
 
-def test_variance_lets_a_consumed_receipt_be_reversed(settings, product):
-    """The case that is refused without allow_variance.
+def _adjustments():
+    from shared.models.stock_layer import StockCostAdjustment
+    return StockCostAdjustment.query.order_by(StockCostAdjustment.id).all()
 
-    Buy 10 @ 10 and 10 @ 20, sell 10 (FIFO: COGS 100 from the first layer),
-    then delete the 10 @ 10 purchase. It never happened — but 100 was posted
-    against it and conveyed. The 10 units sold must now come out of the 20-cost
-    layer, which is worth 200, while the posted COGS stays 100. The 100 gap is
-    the variance.
+
+def test_withdrawing_a_consumed_receipt_recosts_the_issue(settings, product):
+    """Buy 10 @ 10 and 10 @ 20, sell 10 (FIFO: COGS 100 from the first layer),
+    then withdraw the 10 @ 10 purchase. In the corrected history the sale
+    could only have come out of the 20-cost layer, so its cost becomes 200 and
+    the 100 difference is adjusted through the books rather than parked in a
+    variance account.
     """
     settings.valuation_method = "fifo"
     db.session.commit()
@@ -620,20 +623,22 @@ def test_variance_lets_a_consumed_receipt_be_reversed(settings, product):
     _u, cogs = issue(10, n=1)
     assert cogs == Decimal("100.00")
 
-    variances = costing.reverse_voucher_stock("PI", 1, allow_variance=True)
+    moved = costing.reverse_voucher_stock("PI", 1, allow_variance=True)
     db.session.commit()
 
-    assert variances[1] == Decimal("100.00"), \
-        "200 of surviving purchase, 100 expensed, nothing left = 100 unhomed"
+    assert moved[1] == Decimal("100.00")
     assert costing.on_hand(1) == 0
     assert costing.stock_value(1) == 0
-    assert_ties("after reversing a consumed receipt with a variance")
-
+    assert_ties("after withdrawing a consumed receipt")
     sale = StockLedger.query.filter_by(voucher_type="SI").one()
-    assert sale.total_cost == cogs, "the posted COGS must not be restated"
+    assert sale.total_cost == Decimal("200.00"), "re-costed in the corrected history"
+    adj = _adjustments()
+    assert [(a.voucher_number, a.old_cost, a.new_cost) for a in adj] == [
+        ("SI-00001", Decimal("100.00"), Decimal("200.00"))]
+    assert adj[0].journal_entry_id, "every re-costing is journalled"
 
 
-def test_variance_writes_a_value_only_ledger_row(settings, product):
+def test_no_variance_rows_are_written_any_more(settings, product):
     settings.valuation_method = "fifo"
     db.session.commit()
     buy(10, 10, n=1)
@@ -641,68 +646,72 @@ def test_variance_writes_a_value_only_ledger_row(settings, product):
     issue(10, n=1)
     costing.reverse_voucher_stock("PI", 1, allow_variance=True)
     db.session.commit()
-
-    var = StockLedger.query.filter_by(voucher_type="VAR").one()
-    assert var.quantity == 0, "a variance moves value, not stock"
-    assert var.total_cost == Decimal("100.00")
-    assert "no remaining purchase" in var.notes
+    assert StockLedger.query.filter_by(voucher_type="VAR").count() == 0
 
 
-def test_no_variance_when_the_reversed_receipt_was_untouched(settings, product):
+def test_no_adjustment_when_the_reversed_receipt_was_untouched(settings, product):
     settings.valuation_method = "fifo"
     db.session.commit()
     buy(10, 10, n=1)
     buy(10, 20, n=2)
 
-    variances = costing.reverse_voucher_stock("PI", 2, allow_variance=True)
+    moved = costing.reverse_voucher_stock("PI", 2, allow_variance=True)
     db.session.commit()
 
-    assert variances == {}, "nothing consumed it, so nothing is unaccounted for"
-    assert StockLedger.query.filter_by(voucher_type="VAR").count() == 0
-    assert_ties("after a clean reversal under allow_variance")
+    assert moved == {}
+    assert _adjustments() == []
+    assert_ties("after a clean reversal")
 
 
-def test_weighted_average_absorbs_the_gap_into_the_surviving_units(settings, product):
-    """Under WA the pool re-averages rather than writing off.
-
-    Buy 10 @ 10 and 10 @ 20 (pool 20 @ 15), sell 5 at 15, then delete the
-    10 @ 10 purchase. 200 was bought and 75 expensed, so the 5 units left carry
-    125 — an average of 25. The posted 75 does not move; the future re-prices.
+def test_weighted_average_recosts_the_issue_from_the_surviving_pool(settings, product):
+    """Buy 10 @ 10 and 10 @ 20 (pool 20 @ 15), sell 5 at 15, then withdraw
+    the 10 @ 10 purchase. Without it, the sale came out of a 10 @ 20 pool: its
+    cost is 100, and 5 units worth 100 remain.
     """
     buy(10, 10, n=1)
     buy(10, 20, n=2)
     _u, cogs = issue(5, n=1)
     assert cogs == Decimal("75.00")
 
-    variances = costing.reverse_voucher_stock("PI", 1, allow_variance=True)
+    moved = costing.reverse_voucher_stock("PI", 1, allow_variance=True)
     db.session.commit()
 
-    assert variances == {}, "with units left, WA re-averages instead"
+    assert moved[1] == Decimal("25.00")
     assert costing.on_hand(1) == 5
-    assert costing.current_unit_cost(1) == Decimal("25.0000")
-    assert_ties("after WA absorbs the gap")
-
-    sale = StockLedger.query.filter_by(voucher_type="SI").one()
-    assert sale.total_cost == cogs, "the posted COGS must not be restated"
+    assert costing.current_unit_cost(1) == Decimal("20.0000")
+    assert costing.stock_value(1) == Decimal("100.00")
+    assert_ties("after WA re-cost")
 
 
-def test_weighted_average_writes_off_when_no_units_remain(settings, product):
-    """With nothing left to absorb the gap, WA must write it off.
-
-    The qty==0 clamp zeroes running_cost, so a variance computed from
-    running_cost would read zero here while 50 is genuinely unaccounted for.
+def test_withdrawn_receipt_leaves_a_short_until_it_is_corrected(settings, product):
+    """Correcting a purchase is unapprove -> edit -> re-approve. In between,
+    the sale it fed is carried as a short at its posted cost (nothing moves
+    in the books); re-approving the corrected purchase on its original date
+    re-costs the sale at the corrected price.
     """
-    buy(10, 10, n=1)
-    buy(10, 20, n=2)
-    issue(10, n=1)            # WA: 10 @ 15 = 150 posted
+    from datetime import date, timedelta
+    d1 = date.today() - timedelta(days=10)
+    d2 = date.today() - timedelta(days=5)
+    costing.record_in(1, "PI", 1, "PI-00001", qty=10, unit_cost=10, txn_date=d1)
+    _u, cogs = costing.record_out(1, "SI", 1, "SI-00001", qty=5, txn_date=d2)
+    assert cogs == Decimal("50.00")
 
-    variances = costing.reverse_voucher_stock("PI", 1, allow_variance=True)
+    costing.reverse_voucher_stock("PI", 1, allow_variance=True)
     db.session.commit()
+    assert costing.on_hand(1) == -5
+    assert StockLedger.query.filter_by(voucher_type="SI").one().total_cost == Decimal("50.00")
+    assert _adjustments() == [], "the interim short keeps the posted cost"
+    assert_ties("while the purchase is withdrawn")
 
-    assert costing.on_hand(1) == 0
-    assert variances[1] == Decimal("50.00"), \
-        "200 bought, 150 expensed, nothing on hand = 50 unhomed"
-    assert_ties("after WA write-off")
+    # The supplier's price was really 12: re-approve on the original date.
+    costing.record_in(1, "PI", 1, "PI-00001", qty=10, unit_cost=12, txn_date=d1)
+    db.session.commit()
+    assert StockLedger.query.filter_by(voucher_type="SI").one().total_cost == Decimal("60.00")
+    assert costing.on_hand(1) == 5
+    assert costing.stock_value(1) == Decimal("60.00")
+    assert [(a.old_cost, a.new_cost) for a in _adjustments()] == [
+        (Decimal("50.00"), Decimal("60.00"))]
+    assert_ties("after the corrected purchase is re-approved")
 
 
 def test_reversal_still_refuses_by_default(settings, product):

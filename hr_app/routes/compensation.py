@@ -293,15 +293,35 @@ def run_payroll():
         import json
         replace_ids = json.loads(replace_ids_str) if replace_ids_str else []
 
+        if not (1 <= month <= 12) or not (2000 <= year <= 2100):
+            flash("Pick a valid payroll month.", "danger")
+            return redirect(url_for("compensation.run_payroll"))
+        import calendar
+        # The run posts on the last day of its month: that is the period the
+        # salary expense belongs to, whenever the run is actually processed.
+        period_end = date(year, month, calendar.monthrange(year, month)[1])
+
         existing = PayrollRun.query.filter_by(month=month, year=year).first()
         if existing:
             if replace_all:
+                # Undo EVERYTHING the old run did before it goes: its journals
+                # (they used to stay posted, so a replaced month carried its
+                # salary expense twice), the loan instalments it recovered
+                # (balances used to stay reduced, so a re-run deducted again)
+                # and its PF postings. A closed period refuses here.
+                from shared.ledger_utils import reverse_journal_entry
+                reverse_journal_entry("PRL", existing.id, created_by=current_user.id)
+                for lr in LoanRepayment.query.filter_by(payroll_run_id=existing.id).all():
+                    loan = LoanAdvanceRequest.query.filter_by(id=lr.loan_id).first()
+                    if loan is not None:
+                        loan.remaining_amount = (loan.remaining_amount or 0) + (lr.amount or 0)
+                        if loan.status == "paid" and loan.remaining_amount > 0:
+                            loan.status = "approved"
+                    db.session.delete(lr)
+                PFContribution.query.filter_by(month=month, year=year).delete()
+                PFLedger.query.filter_by(
+                    description=f"PF contribution {month}/{year}").delete()
                 for slip in existing.slips:
-                    for lr in LoanRepayment.query.filter_by(payroll_run_id=existing.id).all():
-                        db.session.delete(lr)
-                    PFContribution.query.filter_by(month=month, year=year).delete()
-                    PFLedger.query.filter_by(transaction_date=date.today(),
-                                              description=f"PF contribution {month}/{year}").delete()
                     db.session.delete(slip)
                 db.session.delete(existing)
                 db.session.commit()
@@ -390,7 +410,7 @@ def run_payroll():
                                           employee_amount=pf_employee, employer_amount=pf_employer,
                                           total_amount=round(pf_employee + pf_employer, 2))
                 db.session.add(contrib)
-                db.session.add(PFLedger(user_id=pp.user_id, transaction_date=date.today(),
+                db.session.add(PFLedger(user_id=pp.user_id, transaction_date=period_end,
                                          transaction_type="contribution",
                                          description=f"PF contribution {month}/{year}",
                                          credit=round(pf_employee + pf_employer, 2), debit=0))
@@ -434,7 +454,7 @@ def run_payroll():
         post_journal_entry(voucher_type="PRL", voucher_id=pr.id,
                            voucher_number=f"PRL-{year}{month:02d}",
                            description=f"Payroll Run {month}/{year}",
-                           lines=lines, entry_date=datetime.utcnow(),
+                           lines=lines, entry_date=period_end,
                            created_by=current_user.id)
 
         if round(total_pf_er, 2) > 0:
@@ -445,7 +465,7 @@ def run_payroll():
             post_journal_entry(voucher_type="PRL", voucher_id=pr.id,
                                voucher_number=f"PRL-{year}{month:02d}-PF",
                                description=f"PF Employer Contribution {month}/{year}",
-                               lines=pf_lines, entry_date=datetime.utcnow(),
+                               lines=pf_lines, entry_date=period_end,
                                created_by=current_user.id)
 
         db.session.add(PayrollAuditLog(payroll_run_id=pr.id, action="payroll_run",
@@ -461,7 +481,7 @@ def run_payroll():
     for pp in profiles:
         if not pp.user.is_active:
             continue
-        p = _preview_employee(pp, 7, 2026, pf_config)  # default preview month
+        p = _preview_employee(pp, date.today().month, date.today().year, pf_config)
         if p:
             active_loans = LoanAdvanceRequest.query.filter_by(user_id=pp.user_id, status="approved").filter(
                 LoanAdvanceRequest.remaining_amount > 0).all()

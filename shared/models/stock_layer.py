@@ -105,3 +105,35 @@ class LayerConsumption(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     layer = db.relationship("StockLayer", backref="consumptions")
+
+
+class StockCostAdjustment(db.Model):
+    """A posted cost that changed after the fact, and the journal that moved it.
+
+    Written when a back-dated document, or the reversal of an earlier one,
+    re-sequences a product's history so that a later issue (a sale, a
+    consumption, a scrap) now draws from different layers. The issue's
+    ledger row is re-costed to what it truly cost in date order, and the
+    difference is posted here rather than silently: Dr/Cr the account the
+    issue originally charged (COGS, the consumption account, the asset)
+    against Inventory, dated in the issue's own period when that is still
+    open, otherwise in the current open period.
+    """
+
+    __tablename__ = "stock_cost_adjustments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, index=True)
+    product_id = db.Column(db.Integer, nullable=False, index=True)
+    ledger_id = db.Column(db.Integer, index=True)
+    voucher_type = db.Column(db.String(50), nullable=False)
+    voucher_id = db.Column(db.Integer, nullable=False)
+    voucher_number = db.Column(db.String(50))
+    old_cost = db.Column(db.Numeric(16, 4), nullable=False)
+    new_cost = db.Column(db.Numeric(16, 4), nullable=False)
+    delta = db.Column(db.Numeric(16, 4), nullable=False)
+    # What re-sequenced the history: the back-dated or reversed document.
+    trigger = db.Column(db.String(120))
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey("journal_entries.id"))
+    entry_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

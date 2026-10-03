@@ -42,8 +42,9 @@ def dashboard():
     for p in InvProduct.query.filter(InvProduct.is_active == True).all():
         bal = StockLedger.get_running_balance(p.id)
         qty = float(bal[0])
-        avg = float(bal[2])
-        total_stock_value += qty * avg
+        # The ledger's carried value — the same figure the inventory account
+        # holds — not qty x a rounded average.
+        total_stock_value += float(bal[1])
         if p.current_stock != int(qty):
             p.current_stock = int(qty)
     db.session.commit()

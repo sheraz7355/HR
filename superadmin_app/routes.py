@@ -60,8 +60,15 @@ def login():
             login_user(user)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            from shared.audit import record_now
+            record_now("login", f"Super admin {user.full_name or user.email} "
+                       "entered the console", company_id=None, user_id=user.id,
+                       user_name=user.full_name or user.email)
             flash(f"Welcome back, {user.full_name or user.email}.", "success")
             return redirect(url_for("superadmin.index"))
+        from shared.audit import record_now
+        record_now("login_failed", f"Failed console sign-in for '{login_id[:80]}'",
+                   company_id=None, user_id=user.id if user else None)
         flash("Those credentials do not open the super admin console.",
               "error")
     return render_template("superadmin/login.html")
@@ -456,6 +463,44 @@ def member_block(company_id, membership_id):
     db.session.commit()
     flash(f"{user.full_name if user else 'Member'} {msg}.", "success")
     return redirect(url_for("superadmin.company_edit", company_id=company_id))
+
+
+@superadmin_bp.route("/audit/")
+@login_required
+def audit():
+    """Platform-wide audit trail: every company's activity plus platform
+    events (console sign-ins, failed sign-ins) that belong to no company."""
+    _require_super_admin()
+    from shared.models.audit_log import AuditLog
+    from shared import audit as audit_mod
+    from shared.tenancy import unscoped
+    args = request.args
+    with unscoped():
+        companies = Company.query.order_by(Company.name).all()
+    q = AuditLog.query
+    cid = args.get("company_id", "")
+    if cid == "platform":
+        q = q.filter(AuditLog.company_id.is_(None))
+    elif cid.isdigit():
+        q = q.filter(AuditLog.company_id == int(cid))
+    if args.get("action") in audit_mod.ACTIONS:
+        q = q.filter(AuditLog.action == args["action"])
+    term = (args.get("q") or "").strip()
+    if term:
+        like = f"%{term}%"
+        q = q.filter(db.or_(AuditLog.reference.ilike(like),
+                            AuditLog.summary.ilike(like),
+                            AuditLog.user_name.ilike(like),
+                            AuditLog.ip_address.ilike(like)))
+    page = max(args.get("page", 1, type=int) or 1, 1)
+    total = q.count()
+    rows = q.order_by(AuditLog.id.desc()).offset((page - 1) * 50).limit(50).all()
+    names = {c.id: c.name for c in companies}
+    return render_template("superadmin/audit.html", rows=rows, total=total,
+                           page=page, pages=max((total + 49) // 50, 1),
+                           companies=companies, company_names=names,
+                           actions=audit_mod.ACTIONS, decode=audit_mod.decode_changes,
+                           args=args)
 
 
 @superadmin_bp.route("/users/", methods=["GET", "POST"])

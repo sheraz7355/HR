@@ -13,6 +13,7 @@ from shared.ledger_utils import (post_journal_entry, reverse_journal_entry,
                                  posting_account, party_account)
 from shared.permissions import deny_json
 from shared.costing import record_in, reverse_voucher_stock, original_issue_cost
+from shared.posting_helpers import parse_doc_date
 
 inv_sreturn_bp = Blueprint("inv_sales_return", __name__,
                            url_prefix="/invoicing/sales-return")
@@ -176,6 +177,20 @@ def save_return():
 
     ret.original_invoice_id = data.get("original_invoice_id")
     ret.customer_id = data.get("customer_id")
+    # The return posts on its own date — and can never precede the sale.
+    ret.return_date = parse_doc_date(data.get("date"), fallback=ret.return_date)
+    _orig = scoped_get(InvInvoice, ret.original_invoice_id) if ret.original_invoice_id else None
+    if action == "approve":
+        if _orig is None or _orig.voucher_status != "approved":
+            return jsonify({"ok": False, "error":
+                            "A return can only be raised against an approved invoice"}), 400
+        if _orig.invoice_date and ret.return_date.date() < _orig.invoice_date.date():
+            return jsonify({"ok": False, "error":
+                            f"Return date cannot be before the invoice date "
+                            f"({_orig.invoice_date:%d %b %Y})"}), 400
+        over = _over_returned(ret, data)
+        if over:
+            return jsonify({"ok": False, "error": "; ".join(over)}), 400
     ret.notes = data.get("notes", "")
     ret.reverse_charges = data.get("reverse_charges", True)
     ret.gross_return_value = float(data.get("gross_return_value", 0))
@@ -262,7 +277,8 @@ def save_return():
                 record_in(item.product_id, "SRV", ret.id, ret.return_number,
                           qty=qty, unit_cost=basis,
                           notes=f"Sales return {ret.return_number}",
-                          created_by=current_user.id)
+                          created_by=current_user.id,
+                          txn_date=ret.return_date)
 
     ret.total_cost_returned = total_cost_returned
 
@@ -321,7 +337,7 @@ def save_return():
             description=f"Sales Return {ret.return_number} - "
                         f"{ret.customer.name if ret.customer else ''}",
             lines=lines,
-            entry_date=datetime.utcnow(),
+            entry_date=ret.return_date,
             created_by=current_user.id,
         )
 
@@ -334,6 +350,39 @@ def save_return():
         msg = "saved as unapproved"
     return jsonify({"ok": True, "id": ret.id, "status": ret.status,
                     "return_number": ret.return_number, "message": f"Return {msg}"})
+
+
+def _over_returned(ret, data):
+    """Server-side cap: sold quantity less what approved returns already took.
+
+    The browser sends its own ``max_returnable_qty``; trusting it would let a
+    tampered request return (and re-stock) more than was ever sold.
+    """
+    sold = {}
+    for it in InvInvoiceItem.query.filter_by(invoice_id=ret.original_invoice_id).all():
+        if it.product_id:
+            sold[it.product_id] = sold.get(it.product_id, 0.0) + float(it.quantity or 0)
+    already = {}
+    for other in InvSalesReturn.query.filter(
+            InvSalesReturn.original_invoice_id == ret.original_invoice_id,
+            InvSalesReturn.status == "approved",
+            InvSalesReturn.id != (ret.id or 0)).all():
+        for it in InvSalesReturnItem.query.filter_by(return_id=other.id).all():
+            if it.product_id:
+                already[it.product_id] = (already.get(it.product_id, 0.0)
+                                          + float(it.current_return_qty or 0))
+    asked = {}
+    for row in data.get("items", []):
+        pid = row.get("product_id")
+        if pid:
+            asked[int(pid)] = asked.get(int(pid), 0.0) + float(row.get("current_return_qty", 0) or 0)
+    errors = []
+    for pid, qty in asked.items():
+        room = sold.get(pid, 0.0) - already.get(pid, 0.0)
+        if qty > room + 0.0001:
+            errors.append(f"Product #{pid}: returning {qty:g} but only {room:g} "
+                          f"remain returnable on the invoice")
+    return errors
 
 
 @inv_sreturn_bp.route("/unapprove/<int:id>", methods=["POST"])
@@ -371,7 +420,7 @@ def unapprove_return(id):
     # Withdraw the returned stock. Refuses if it has since been re-sold: that
     # sale drew its cost from this return's layer and posted it, so the layer
     # cannot be removed without leaving that cost backed by nothing.
-    reverse_voucher_stock("SRV", ret.id)
+    reverse_voucher_stock("SRV", ret.id, created_by=current_user.id)
 
     db.session.commit()
     return jsonify({"ok": True, "status": "unapproved",

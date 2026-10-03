@@ -64,6 +64,16 @@
           <label class="form-label">Serial Number</label>
           <input type="text" name="serial_number" class="form-control" value="{{ asset.serial_number if asset else '' }}">
         </div>
+        <div class="form-group">
+          <label class="form-label">Project label</label>
+          <select name="label_id" class="form-control">
+            <option value="">— None —</option>
+            {% for l in active_labels() %}
+            <option value="{{ l.id }}" {{ 'selected' if asset and asset.label_id == l.id else '' }}>{{ l.name }}</option>
+            {% endfor %}
+          </select>
+          <small style="display:block;margin-top:4px;color:var(--muted);">Depreciation of this asset is charged to the label's P&amp;L.</small>
+        </div>
       </div>
       {% if accounts %}
       <hr><h4>Chart of Accounts Mapping</h4>

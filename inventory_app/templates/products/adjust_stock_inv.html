@@ -12,8 +12,13 @@
   <form method="POST" class="form" style="padding:20px;">
     <div class="form-group">
       <label>Quantity Adjustment</label>
-      <input type="number" name="quantity" class="form-control focus-ring" required placeholder="Positive to add, negative to remove">
+      <input type="number" step="any" name="quantity" class="form-control focus-ring" required placeholder="Positive to add, negative to remove">
       <small style="color:var(--muted);">Enter a positive number to add stock, negative to remove</small>
+    </div>
+    <div class="form-group">
+      <label>Date</label>
+      <input type="date" name="date" class="form-control focus-ring">
+      <small style="color:var(--muted);">Blank = today. Posted as an approved Stock Adjustment voucher at valuation cost.</small>
     </div>
     <div class="form-group">
       <label>Reason / Notes</label>

@@ -15,6 +15,8 @@ def _create_app():
     from shared.models.base import User, Role, Permission, load_user
     import shared.models.company  # noqa: F401  (tenancy tables: register before create_all)
     import shared.models.project_label  # noqa: F401  (project labels: register before create_all)
+    import shared.models.audit_log  # noqa: F401  (audit trail table)
+    import shared.audit  # noqa: F401  (registers the audit session hooks)
 
     app = Flask(
         __name__,
@@ -94,6 +96,19 @@ def _create_app():
     @app.context_processor
     def inject_now():
         return {"now": __import__("datetime").datetime.utcnow()}
+
+    @app.context_processor
+    def inject_labels():
+        """``active_labels()`` for any form that tags a document with a project
+        label (a callable so pages that never ask pay nothing)."""
+        def active_labels():
+            try:
+                from shared.models.project_label import ProjectLabel
+                return (ProjectLabel.query.filter_by(is_active=True)
+                        .order_by(ProjectLabel.name).all())
+            except Exception:
+                return []
+        return {"active_labels": active_labels}
 
     @app.context_processor
     def inject_company():
@@ -357,7 +372,9 @@ a:hover{{background:#1d4ed8}}
     from shared.costing import NegativeStockError, ConsumedLayerError
     from shared.periods import ClosedPeriodError
     from shared.forms import FormInputError
+    from shared.posting_helpers import DocumentDateError
 
+    @app.errorhandler(DocumentDateError)
     @app.errorhandler(FormInputError)
     @app.errorhandler(NegativeStockError)
     @app.errorhandler(ConsumedLayerError)
@@ -371,11 +388,17 @@ a:hover{{background:#1d4ed8}}
         from flask import flash, jsonify
         from shared.extensions import db as _db
         _db.session.rollback()
+        # Who tried to post what, and why it was refused (e.g. into a closed
+        # period) — kept even though the request itself was rolled back.
+        from shared.audit import record_now
+        record_now("refused", f"{type(e).__name__}: {e}", module="accounting")
         # The unapprove endpoints are fetch()-driven and parse the body as
         # JSON; handing them a redirect to an HTML page fails silently in the
         # browser and looks like nothing happened.
-        if request.accept_mimetypes.best_match(["application/json", "text/html"]) \
-                == "application/json":
+        # A JSON body (every invoice/return form saves with fetch + JSON) is
+        # answered in JSON too — redirecting it showed the user nothing.
+        if request.is_json or request.accept_mimetypes.best_match(
+                ["application/json", "text/html"]) == "application/json":
             return jsonify({"ok": False, "error": str(e)}), 409
         flash(str(e), "error")
         from shared.security import safe_local_url
@@ -599,8 +622,11 @@ def _migrate_schema(db):
         ("accounting_vouchers", "label_id", "INTEGER"),
         ("inv_invoice_items", "label_id", "INTEGER"),
         ("inv_purchase_invoice_items", "label_id", "INTEGER"),
-        ("inventory_settings", "per_line_labeling_voucher", "BOOLEAN DEFAULT 0"),
-        ("inventory_settings", "per_line_labeling_invoice", "BOOLEAN DEFAULT 0"),
+        # bool_false, never a literal "BOOLEAN DEFAULT 0": Postgres refuses an
+        # integer default on a boolean, the ALTER was skipped, and every page
+        # reading InventorySettings died on the missing column (Neon prod).
+        ("inventory_settings", "per_line_labeling_voucher", bool_false),
+        ("inventory_settings", "per_line_labeling_invoice", bool_false),
         ("inventory_settings", "default_voucher_label_id", "INTEGER"),
         ("inventory_settings", "default_invoice_label_id", "INTEGER"),
         # Cost layers carry their remaining value instead of deriving it from
@@ -608,6 +634,19 @@ def _migrate_schema(db):
         # every re-average and every issue. DEFAULT 0 lands every existing row
         # at zero, so backfill_layer_values() below seeds them.
         ("stock_layers", "value_remaining", "NUMERIC(18,4) DEFAULT 0"),
+        # Document date of each stock movement: layers are consumed in
+        # (txn_date, id) order so back-dated documents cost correctly.
+        # Backfilled below from created_at, which is when every pre-existing
+        # row was posted (they all posted at approval time).
+        ("stock_ledger", "txn_date", "DATE"),
+        # Project labels on the remaining cost-bearing documents, so stock
+        # consumption, scrap, adjustments and depreciation report by project.
+        ("consumption_vouchers", "label_id", "INTEGER"),
+        ("scrap_vouchers", "label_id", "INTEGER"),
+        ("stock_adjustment_vouchers", "label_id", "INTEGER"),
+        ("fixed_assets", "label_id", "INTEGER"),
+        # Asset <-> inventory transfers post on their own date, not today's.
+        ("asset_transfers", "transfer_date", "DATE"),
     ]
 
     inspector = inspect(engine)
@@ -623,6 +662,16 @@ def _migrate_schema(db):
                 conn.execute(db.text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
         except Exception as e:
             print(f"MIGRATION SKIP {table}.{col}: {e}")
+
+    if "stock_ledger" in existing_tables:
+        try:
+            with engine.begin() as conn:
+                conn.execute(db.text(
+                    "UPDATE stock_ledger SET txn_date = "
+                    + ("CAST(created_at AS DATE)" if is_pg else "DATE(created_at)")
+                    + " WHERE txn_date IS NULL"))
+        except Exception as e:
+            print(f"MIGRATION SKIP stock_ledger.txn_date backfill: {e}")
 
 
     # Columns added by an EARLIER version of the list above, with the wrong
@@ -770,7 +819,12 @@ def _migrate_schema(db):
 
     # Create additional_charges table if not exists
     # Create invoice_settings table if not exists
+    # SQLite-only fallback DDL (AUTOINCREMENT): on Postgres create_all() has
+    # already built both tables from the models, and this syntax only ever
+    # produced a "MIGRATION SKIP" line on every cold start.
     try:
+        if is_pg:
+            raise RuntimeError("skipped on Postgres (create_all owns it)")
         with engine.begin() as conn:
             conn.execute(db.text("""
                 CREATE TABLE IF NOT EXISTS invoice_settings (
@@ -800,9 +854,12 @@ def _migrate_schema(db):
                 )
             """))
     except Exception as e:
-        print("MIGRATION SKIP invoice_settings table:", e)
+        if not is_pg:
+            print("MIGRATION SKIP invoice_settings table:", e)
 
     try:
+        if is_pg:
+            raise RuntimeError("skipped on Postgres (create_all owns it)")
         with engine.begin() as conn:
             conn.execute(db.text("""
                 CREATE TABLE IF NOT EXISTS additional_charges (
@@ -823,7 +880,8 @@ def _migrate_schema(db):
                 )
             """))
     except Exception as e:
-        print("MIGRATION SKIP additional_charges table:", e)
+        if not is_pg:
+            print("MIGRATION SKIP additional_charges table:", e)
 
     # ── Multi-company: company_id column + index on every scoped table ─────
     # Generic over the model registry so a new scoped model needs no entry

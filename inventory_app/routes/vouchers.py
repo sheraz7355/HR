@@ -10,6 +10,9 @@ from shared.ledger_utils import post_journal_entry, get_or_create_account
 from shared.costing import (cost_of_issue, current_unit_cost, on_hand,
                             record_in, record_out, reverse_voucher_stock)
 from shared.models.ledger import ChartOfAccount
+from shared.models.project_label import ProjectLabel
+from shared.permissions import deny_page
+from shared.posting_helpers import parse_doc_date
 from shared.models.vouchers import (
     ConsumptionVoucher, ConsumptionItem,
     ScrapVoucher, ScrapItem,
@@ -38,15 +41,49 @@ def _charge_accounts():
         ChartOfAccount.is_active == True).order_by(ChartOfAccount.code).all()
 
 
-def _post_voucher_journal(vtype, v, lines):
+def _next_take_reference():
+    """Next free ST-##### reference (skips any issued by the old count()+1)."""
+    while True:
+        ref = VoucherNumber.next("ST")
+        if not StockTake.query.filter_by(reference=ref).first():
+            return ref
+
+
+def _labels():
+    return ProjectLabel.query.filter_by(is_active=True).order_by(ProjectLabel.name).all()
+
+
+def _form_ctx():
+    from datetime import date as _date
+    return {"accounts": _charge_accounts(), "labels": _labels(),
+            "today_iso": _date.today().isoformat()}
+
+
+def _locked(voucher, list_endpoint):
+    """An approved voucher is posted: its stock and journal are final until it
+    is unapproved. Re-submitting the form used to delete and re-create its
+    items and issue the stock a SECOND time (or flip it to unapproved while
+    the stock and journal stayed posted). Refuse instead."""
+    if voucher is not None and voucher.status == "approved":
+        flash(f"{voucher.voucher_number} is approved and posted. Unapprove it "
+              f"to make changes.", "error")
+        return redirect(url_for(list_endpoint))
+    return None
+
+
+def _post_voucher_journal(vtype, v, lines, entry_date=None):
     vname = {"CONS": "Consumption", "SCRAP": "Scrap",
              "ADJ": "Stock Adjustment", "ST": "Stock Take"}.get(vtype, vtype)
+    label_id = getattr(v, "label_id", None)
+    for l in lines:
+        l.setdefault("label_id", label_id)
     post_journal_entry(
         voucher_type=vtype,
         voucher_id=v.id,
         voucher_number=v.voucher_number,
         description=f"{vname} {v.voucher_number}: {getattr(v, 'reason', '') or getattr(v, 'reference', '')}",
         lines=lines,
+        entry_date=entry_date or getattr(v, "date", None),
         created_by=current_user.id
     )
 
@@ -60,7 +97,18 @@ def _post_voucher_journal(vtype, v, lines):
 @login_required
 def consumption_form(id=None):
     voucher = scoped_get(ConsumptionVoucher, id) if id else None
+    if id and voucher is None:
+        flash("Voucher not found.", "error")
+        return redirect(url_for("inv_vouchers.consumption_list"))
     if request.method == "POST":
+        if deny_page("consumption_vouchers", "edit" if voucher else "create"):
+            return redirect(url_for("inv_vouchers.consumption_list"))
+        locked = _locked(voucher, "inv_vouchers.consumption_list")
+        if locked:
+            return locked
+        status = request.form.get("status", "unapproved")
+        if status == "approved" and deny_page("consumption_vouchers", "approve"):
+            return redirect(url_for("inv_vouchers.consumption_list"))
         is_new = voucher is None
         if is_new:
             voucher = ConsumptionVoucher(
@@ -72,11 +120,11 @@ def consumption_form(id=None):
             ConsumptionItem.query.filter_by(voucher_id=voucher.id).delete()
             db.session.flush()
 
-        voucher.date = datetime.utcnow()
+        voucher.date = parse_doc_date(request.form.get("date"), fallback=voucher.date)
         voucher.department = request.form.get("department", "")
         voucher.reason = request.form.get("reason", "")
         voucher.charge_account_id = request.form.get("charge_account_id", type=int)
-        status = request.form.get("status", "unapproved")
+        voucher.label_id = request.form.get("label_id", type=int)
 
         db.session.flush()
 
@@ -100,9 +148,10 @@ def consumption_form(id=None):
             new_items.append(item)
 
         if not new_items:
+            db.session.rollback()
             flash("Add at least one item with quantity > 0.", "error")
-            return render_template("vouchers/consumption_form.html", voucher=voucher,
-                                   accounts=_charge_accounts())
+            return render_template("vouchers/consumption_form.html",
+                                   voucher=None if is_new else voucher, **_form_ctx())
 
         if status == "approved":
             db.session.flush()
@@ -117,6 +166,7 @@ def consumption_form(id=None):
                     qty=float(item.quantity),
                     notes=f"Consumption: {voucher.reason}",
                     created_by=current_user.id,
+                    txn_date=voucher.date,
                 )
                 item.unit_cost, item.total_cost = unit, total
             total_value = sum(float(i.total_cost) for i in new_items)
@@ -139,7 +189,7 @@ def consumption_form(id=None):
         return redirect(url_for("inv_vouchers.consumption_list"))
 
     return render_template("vouchers/consumption_form.html", voucher=voucher,
-                           accounts=_charge_accounts())
+                           **_form_ctx())
 
 
 @inv_vouchers_bp.route("/consumption/list")
@@ -149,9 +199,11 @@ def consumption_list():
     return render_template("vouchers/consumption_list.html", vouchers=vouchers)
 
 
-@inv_vouchers_bp.route("/consumption/<int:id>/delete")
+@inv_vouchers_bp.route("/consumption/<int:id>/delete", methods=["GET", "POST"])
 @login_required
 def consumption_delete(id):
+    if deny_page("consumption_vouchers", "delete"):
+        return redirect(url_for("inv_vouchers.consumption_list"))
     v = scoped_get_404(ConsumptionVoucher, id)
     if v.status == "approved":
         flash("Cannot delete an approved voucher. Unapprove it first.", "error")
@@ -162,16 +214,27 @@ def consumption_delete(id):
     return redirect(url_for("inv_vouchers.consumption_list"))
 
 
-@inv_vouchers_bp.route("/consumption/<int:id>/unapprove")
+@inv_vouchers_bp.route("/consumption/<int:id>/unapprove", methods=["GET", "POST"])
 @login_required
 def consumption_unapprove(id):
+    if deny_page("consumption_vouchers", "approve"):
+        return redirect(url_for("inv_vouchers.consumption_list"))
     v = scoped_get_404(ConsumptionVoucher, id)
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.consumption_list"))
-    reverse_voucher_stock("CONS", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("CONS", v.id, created_by=current_user.id)
+    if "CONS" == "ADJ":
+        # A stock take's adjustment posted its journal under the take.
+        take = StockTake.query.filter_by(adjustment_voucher_id=v.id).first()
+        if take is not None:
+            reverse_journal_entry("ST", take.id, created_by=current_user.id)
+            take.status = "in_progress"
+            take.adjustment_voucher_id = None
+    # Later issues of the same products are re-costed in date order and any
+    # change is journalled (shared/costing.py).
+    reverse_voucher_stock("CONS", v.id, created_by=current_user.id)
     v.status = "unapproved"
     v.approved_by = None
     v.approved_at = None
@@ -189,7 +252,18 @@ def consumption_unapprove(id):
 @login_required
 def scrap_form(id=None):
     voucher = scoped_get(ScrapVoucher, id) if id else None
+    if id and voucher is None:
+        flash("Voucher not found.", "error")
+        return redirect(url_for("inv_vouchers.scrap_list"))
     if request.method == "POST":
+        if deny_page("scrap_vouchers", "edit" if voucher else "create"):
+            return redirect(url_for("inv_vouchers.scrap_list"))
+        locked = _locked(voucher, "inv_vouchers.scrap_list")
+        if locked:
+            return locked
+        status = request.form.get("status", "unapproved")
+        if status == "approved" and deny_page("scrap_vouchers", "approve"):
+            return redirect(url_for("inv_vouchers.scrap_list"))
         is_new = voucher is None
         if is_new:
             voucher = ScrapVoucher(
@@ -201,10 +275,10 @@ def scrap_form(id=None):
             ScrapItem.query.filter_by(voucher_id=voucher.id).delete()
             db.session.flush()
 
-        voucher.date = datetime.utcnow()
+        voucher.date = parse_doc_date(request.form.get("date"), fallback=voucher.date)
         voucher.reason = request.form.get("reason", "")
         voucher.charge_account_id = request.form.get("charge_account_id", type=int)
-        status = request.form.get("status", "unapproved")
+        voucher.label_id = request.form.get("label_id", type=int)
 
         db.session.flush()
 
@@ -228,9 +302,10 @@ def scrap_form(id=None):
             new_items.append(item)
 
         if not new_items:
+            db.session.rollback()
             flash("Add at least one item with quantity > 0.", "error")
-            return render_template("vouchers/scrap_form.html", voucher=voucher,
-                                   accounts=_charge_accounts())
+            return render_template("vouchers/scrap_form.html",
+                                   voucher=None if is_new else voucher, **_form_ctx())
 
         if status == "approved":
             db.session.flush()
@@ -244,6 +319,7 @@ def scrap_form(id=None):
                     qty=float(item.quantity),
                     notes=f"Scrap: {voucher.reason}",
                     created_by=current_user.id,
+                    txn_date=voucher.date,
                 )
                 item.unit_cost, item.total_cost = unit, total
             total_value = sum(float(i.total_cost) for i in new_items)
@@ -266,7 +342,7 @@ def scrap_form(id=None):
         return redirect(url_for("inv_vouchers.scrap_list"))
 
     return render_template("vouchers/scrap_form.html", voucher=voucher,
-                           accounts=_charge_accounts())
+                           **_form_ctx())
 
 
 @inv_vouchers_bp.route("/scrap/list")
@@ -276,9 +352,11 @@ def scrap_list():
     return render_template("vouchers/scrap_list.html", vouchers=vouchers)
 
 
-@inv_vouchers_bp.route("/scrap/<int:id>/delete")
+@inv_vouchers_bp.route("/scrap/<int:id>/delete", methods=["GET", "POST"])
 @login_required
 def scrap_delete(id):
+    if deny_page("scrap_vouchers", "delete"):
+        return redirect(url_for("inv_vouchers.scrap_list"))
     v = scoped_get_404(ScrapVoucher, id)
     if v.status == "approved":
         flash("Cannot delete an approved voucher. Unapprove it first.", "error")
@@ -289,16 +367,27 @@ def scrap_delete(id):
     return redirect(url_for("inv_vouchers.scrap_list"))
 
 
-@inv_vouchers_bp.route("/scrap/<int:id>/unapprove")
+@inv_vouchers_bp.route("/scrap/<int:id>/unapprove", methods=["GET", "POST"])
 @login_required
 def scrap_unapprove(id):
+    if deny_page("scrap_vouchers", "approve"):
+        return redirect(url_for("inv_vouchers.scrap_list"))
     v = scoped_get_404(ScrapVoucher, id)
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.scrap_list"))
-    reverse_voucher_stock("SCRAP", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("SCRAP", v.id, created_by=current_user.id)
+    if "SCRAP" == "ADJ":
+        # A stock take's adjustment posted its journal under the take.
+        take = StockTake.query.filter_by(adjustment_voucher_id=v.id).first()
+        if take is not None:
+            reverse_journal_entry("ST", take.id, created_by=current_user.id)
+            take.status = "in_progress"
+            take.adjustment_voucher_id = None
+    # Later issues of the same products are re-costed in date order and any
+    # change is journalled (shared/costing.py).
+    reverse_voucher_stock("SCRAP", v.id, created_by=current_user.id)
     v.status = "unapproved"
     v.approved_by = None
     v.approved_at = None
@@ -316,7 +405,18 @@ def scrap_unapprove(id):
 @login_required
 def adjustment_form(id=None):
     voucher = scoped_get(StockAdjustmentVoucher, id) if id else None
+    if id and voucher is None:
+        flash("Voucher not found.", "error")
+        return redirect(url_for("inv_vouchers.adjustment_list"))
     if request.method == "POST":
+        if deny_page("adjustment_vouchers", "edit" if voucher else "create"):
+            return redirect(url_for("inv_vouchers.adjustment_list"))
+        locked = _locked(voucher, "inv_vouchers.adjustment_list")
+        if locked:
+            return locked
+        status = request.form.get("status", "unapproved")
+        if status == "approved" and deny_page("adjustment_vouchers", "approve"):
+            return redirect(url_for("inv_vouchers.adjustment_list"))
         is_new = voucher is None
         if is_new:
             voucher = StockAdjustmentVoucher(
@@ -328,9 +428,9 @@ def adjustment_form(id=None):
             StockAdjustmentItem.query.filter_by(voucher_id=voucher.id).delete()
             db.session.flush()
 
-        voucher.date = datetime.utcnow()
+        voucher.date = parse_doc_date(request.form.get("date"), fallback=voucher.date)
         voucher.reason = request.form.get("reason", "")
-        status = request.form.get("status", "unapproved")
+        voucher.label_id = request.form.get("label_id", type=int)
 
         db.session.flush()
 
@@ -358,8 +458,10 @@ def adjustment_form(id=None):
             new_items.append(item)
 
         if not new_items:
+            db.session.rollback()
             flash("No items with quantity differences to adjust.", "error")
-            return render_template("vouchers/adjustment_form.html", voucher=voucher)
+            return render_template("vouchers/adjustment_form.html",
+                                   voucher=None if is_new else voucher, **_form_ctx())
 
         if status == "approved":
             db.session.flush()
@@ -371,21 +473,26 @@ def adjustment_form(id=None):
             for item in new_items:
                 if item.difference > 0:
                     # Excess found — book it in at the current valuation cost.
+                    # The journal takes the ledger row's own 2dp total: the
+                    # 4dp qty x cost product is what used to put the
+                    # inventory account a few paisa off the stock valuation.
                     unit = current_unit_cost(item.product_id)
-                    record_in(item.product_id, "ADJ", voucher.id,
-                              voucher.voucher_number,
-                              qty=float(item.difference), unit_cost=unit,
-                              notes=f"Adjustment: {voucher.reason}",
-                              created_by=current_user.id)
-                    item.unit_cost = unit
-                    item.total_cost = Decimal(str(item.difference)) * unit
+                    row = record_in(item.product_id, "ADJ", voucher.id,
+                                    voucher.voucher_number,
+                                    qty=float(item.difference), unit_cost=unit,
+                                    notes=f"Adjustment: {voucher.reason}",
+                                    created_by=current_user.id,
+                                    txn_date=voucher.date)
+                    item.unit_cost = row.unit_cost
+                    item.total_cost = row.total_cost
                 else:
                     unit, total = record_out(
                         item.product_id, "ADJ", voucher.id,
                         voucher.voucher_number,
                         qty=float(abs(item.difference)),
                         notes=f"Adjustment: {voucher.reason}",
-                        created_by=current_user.id)
+                        created_by=current_user.id,
+                        txn_date=voucher.date)
                     item.unit_cost, item.total_cost = unit, total
                 val = float(item.total_cost)
                 if item.difference > 0:
@@ -405,7 +512,8 @@ def adjustment_form(id=None):
         flash(f"Adjustment voucher {voucher.voucher_number} saved.", "success")
         return redirect(url_for("inv_vouchers.adjustment_list"))
 
-    return render_template("vouchers/adjustment_form.html", voucher=voucher)
+    return render_template("vouchers/adjustment_form.html", voucher=voucher,
+                           **_form_ctx())
 
 
 @inv_vouchers_bp.route("/adjustment/list")
@@ -415,9 +523,11 @@ def adjustment_list():
     return render_template("vouchers/adjustment_list.html", vouchers=vouchers)
 
 
-@inv_vouchers_bp.route("/adjustment/<int:id>/delete")
+@inv_vouchers_bp.route("/adjustment/<int:id>/delete", methods=["GET", "POST"])
 @login_required
 def adjustment_delete(id):
+    if deny_page("adjustment_vouchers", "delete"):
+        return redirect(url_for("inv_vouchers.adjustment_list"))
     v = scoped_get_404(StockAdjustmentVoucher, id)
     if v.status == "approved":
         flash("Cannot delete an approved voucher. Unapprove it first.", "error")
@@ -428,16 +538,27 @@ def adjustment_delete(id):
     return redirect(url_for("inv_vouchers.adjustment_list"))
 
 
-@inv_vouchers_bp.route("/adjustment/<int:id>/unapprove")
+@inv_vouchers_bp.route("/adjustment/<int:id>/unapprove", methods=["GET", "POST"])
 @login_required
 def adjustment_unapprove(id):
+    if deny_page("adjustment_vouchers", "approve"):
+        return redirect(url_for("inv_vouchers.adjustment_list"))
     v = scoped_get_404(StockAdjustmentVoucher, id)
     if v.status != "approved":
         flash("Voucher is not approved.", "error")
         return redirect(url_for("inv_vouchers.adjustment_list"))
-    reverse_voucher_stock("ADJ", v.id)
     from shared.ledger_utils import reverse_journal_entry
     reverse_journal_entry("ADJ", v.id, created_by=current_user.id)
+    if "ADJ" == "ADJ":
+        # A stock take's adjustment posted its journal under the take.
+        take = StockTake.query.filter_by(adjustment_voucher_id=v.id).first()
+        if take is not None:
+            reverse_journal_entry("ST", take.id, created_by=current_user.id)
+            take.status = "in_progress"
+            take.adjustment_voucher_id = None
+    # Later issues of the same products are re-costed in date order and any
+    # change is journalled (shared/costing.py).
+    reverse_voucher_stock("ADJ", v.id, created_by=current_user.id)
     v.status = "unapproved"
     v.approved_by = None
     v.approved_at = None
@@ -455,11 +576,22 @@ def adjustment_unapprove(id):
 @login_required
 def stock_take_form(id=None):
     st = scoped_get(StockTake, id) if id else None
+    if id and st is None:
+        flash("Stock take not found.", "error")
+        return redirect(url_for("inv_vouchers.stock_take_list"))
     if request.method == "POST":
+        if deny_page("stock_take_vouchers", "edit" if st else "create"):
+            return redirect(url_for("inv_vouchers.stock_take_list"))
+        if st is not None and st.status == "approved":
+            flash(f"{st.reference} is approved and posted. Unapprove its "
+                  f"adjustment voucher to make changes.", "error")
+            return redirect(url_for("inv_vouchers.stock_take_list"))
         is_new = st is None
         if is_new:
             st = StockTake(
-                reference=f"ST-{StockTake.query.count() + 1:05d}",
+                # A sequence, not count()+1: deleting a take made count()+1
+                # re-issue an existing reference and the insert failed.
+                reference=_next_take_reference(),
                 created_by=current_user.id
             )
             db.session.add(st)
@@ -467,7 +599,7 @@ def stock_take_form(id=None):
             StockTakeItem.query.filter_by(stock_take_id=st.id).delete()
             db.session.flush()
 
-        st.date = datetime.utcnow()
+        st.date = parse_doc_date(request.form.get("date"), fallback=st.date)
         st.location = request.form.get("location", "")
         status = request.form.get("status", "in_progress")
 
@@ -496,13 +628,15 @@ def stock_take_form(id=None):
 
         if not new_items:
             flash("Add at least one product to the stock take.", "error")
-            return render_template("vouchers/stock_take_form.html", st=st)
+            db.session.rollback()
+            return render_template("vouchers/stock_take_form.html",
+                                   st=None if is_new else st, **_form_ctx())
 
         if status == "approved":
             db.session.flush()
             adj = StockAdjustmentVoucher(
                 voucher_number=VoucherNumber.next("ADJ"),
-                date=datetime.utcnow(),
+                date=st.date,
                 reason=f"Stock Take: {st.reference} ({st.location})",
                 status="approved",
                 created_by=current_user.id,
@@ -536,20 +670,22 @@ def stock_take_form(id=None):
 
                 if diff > 0:
                     unit = current_unit_cost(item.product_id)
-                    record_in(item.product_id, "ADJ", adj.id,
-                              adj.voucher_number,
-                              qty=float(diff), unit_cost=unit,
-                              notes=f"Stock Take {st.reference} adjustment ({st.location})",
-                              created_by=current_user.id)
-                    val = float(Decimal(str(diff)) * unit)
-                    adj_item.unit_cost, adj_item.total_cost = unit, Decimal(str(val))
+                    row = record_in(item.product_id, "ADJ", adj.id,
+                                    adj.voucher_number,
+                                    qty=float(diff), unit_cost=unit,
+                                    notes=f"Stock Take {st.reference} adjustment ({st.location})",
+                                    created_by=current_user.id,
+                                    txn_date=st.date)
+                    val = float(row.total_cost)
+                    adj_item.unit_cost, adj_item.total_cost = row.unit_cost, row.total_cost
                 else:
                     unit, total = record_out(
                         item.product_id, "ADJ", adj.id,
                         adj.voucher_number,
                         qty=float(abs(diff)),
                         notes=f"Stock Take {st.reference} adjustment ({st.location})",
-                        created_by=current_user.id)
+                        created_by=current_user.id,
+                        txn_date=st.date)
                     val = float(total)
                     adj_item.unit_cost, adj_item.total_cost = unit, total
                 if diff > 0:
@@ -558,14 +694,19 @@ def stock_take_form(id=None):
                 else:
                     jlines.append({"account_id": adj_acct, "debit": val, "credit": 0})
                     jlines.append({"account_id": inv_acct, "debit": 0, "credit": val})
-            _post_voucher_journal("ST", st, jlines if jlines else [])
+            # Posted under the ADJUSTMENT voucher that carries the stock rows,
+            # so unapproving that voucher reverses stock and journal together
+            # (the journal used to sit under the take, and unapproving the
+            # adjustment reversed the stock while the journal stayed posted).
+            if jlines:
+                _post_voucher_journal("ADJ", adj, jlines, entry_date=st.date)
 
         st.status = status
         db.session.commit()
         flash(f"Stock take {st.reference} saved.", "success")
         return redirect(url_for("inv_vouchers.stock_take_list"))
 
-    return render_template("vouchers/stock_take_form.html", st=st)
+    return render_template("vouchers/stock_take_form.html", st=st, **_form_ctx())
 
 
 @inv_vouchers_bp.route("/stock-take/list")
@@ -575,9 +716,11 @@ def stock_take_list():
     return render_template("vouchers/stock_take_list.html", takes=takes)
 
 
-@inv_vouchers_bp.route("/stock-take/<int:id>/delete")
+@inv_vouchers_bp.route("/stock-take/<int:id>/delete", methods=["GET", "POST"])
 @login_required
 def stock_take_delete(id):
+    if deny_page("stock_take_vouchers", "delete"):
+        return redirect(url_for("inv_vouchers.stock_take_list"))
     st = scoped_get_404(StockTake, id)
     if st.status == "approved":
         flash("Cannot delete an approved stock take.", "error")
@@ -602,10 +745,16 @@ def product_ledger():
     entries = []
     if product_id:
         product = scoped_get(InvProduct, product_id)
-        entries = StockLedger.query.filter_by(product_id=product_id).order_by(StockLedger.id).all()
+        entries = (StockLedger.query.filter_by(product_id=product_id)
+                   .order_by(StockLedger.txn_date, StockLedger.id).all())
+    from shared.models.stock_layer import StockCostAdjustment
+    adjustments = (StockCostAdjustment.query.filter_by(product_id=product_id)
+                   .order_by(StockCostAdjustment.id.desc()).all()
+                   if product_id else [])
     return render_template("vouchers/product_ledger.html",
                            products=products, product=product,
-                           entries=entries, selected_id=product_id)
+                           entries=entries, selected_id=product_id,
+                           adjustments=adjustments)
 
 
 @inv_vouchers_bp.route("/product-ledger/list")
@@ -620,7 +769,8 @@ def product_ledger_list():
         rows.append({
             "id": p.id, "sku": p.sku, "name": p.name,
             "qty": float(bal[0]), "cost": float(bal[2]),
-            "value": round(float(bal[0]) * float(bal[2]), 2),
+            # The ledger's carried value, not qty x the rounded average.
+            "value": round(float(bal[1]), 2),
             "unit": p.unit
         })
     return render_template("vouchers/product_ledger_list.html", rows=rows)

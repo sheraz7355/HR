@@ -22,13 +22,22 @@ class StockLedger(db.Model):
     # Method in force when this row was priced. Audit only — cost comes from
     # the layers, never from re-interpreting history under today's method.
     valuation_method = db.Column(db.String(20))
+    # The DOCUMENT date the movement belongs to (invoice date, voucher date),
+    # not the moment it was keyed in. Cost layers are consumed in
+    # (txn_date, id) order, so a back-dated document is costed where it
+    # belongs in time and every later issue is re-costed around it
+    # (shared/costing.py: _replay).
+    txn_date = db.Column(db.Date, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     notes = db.Column(db.Text)
 
     @classmethod
     def get_running_balance(cls, product_id):
-        last = cls.query.filter_by(product_id=product_id).order_by(cls.id.desc()).first()
+        # Latest by document date: a back-dated row has the highest id but
+        # sits in the middle of the timeline.
+        last = (cls.query.filter_by(product_id=product_id)
+                .order_by(cls.txn_date.desc(), cls.id.desc()).first())
         if last:
             return last.running_qty, last.running_cost, last.running_avg
         return Decimal("0.0000"), Decimal("0.0000"), Decimal("0.0000")

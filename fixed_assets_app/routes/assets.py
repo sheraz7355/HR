@@ -42,6 +42,7 @@ def post_acquisition(asset, created_by, credit_account_id=None):
         lines=[
             {"account_id": asset.fixed_asset_account_id,
              "debit": asset.purchase_cost, "credit": 0,
+             "label_id": getattr(asset, "label_id", None),
              "description": f"Fixed asset - {asset.name}"},
             {"account_id": credit_id, "debit": 0, "credit": asset.purchase_cost,
              "description": f"Acquisition of {asset.name}"},
@@ -112,6 +113,7 @@ def create_asset():
             assigned_to=request.form.get("assigned_to", ""),
             vendor=request.form.get("vendor", ""),
             serial_number=request.form.get("serial_number", ""),
+            label_id=request.form.get("label_id", type=int),
             fixed_asset_account_id=fa_acct_id,
             accum_dep_account_id=request.form.get("accum_dep_account_id", type=int) or None,
             dep_expense_account_id=request.form.get("dep_expense_account_id", type=int) or None,
@@ -187,6 +189,7 @@ def edit_asset(asset_id):
         asset.assigned_to = request.form.get("assigned_to", "")
         asset.vendor = request.form.get("vendor", "")
         asset.serial_number = request.form.get("serial_number", "")
+        asset.label_id = request.form.get("label_id", type=int)
         asset.notes = request.form.get("notes", "")
         asset.acquisition_credit_account_id = request.form.get(
             "acquisition_credit_account_id", type=int) or None
@@ -258,6 +261,17 @@ def dispose_asset(asset_id):
     if asset.status == "disposed":
         flash("This asset is already disposed.", "error")
         return redirect(url_for("fa_assets.view_asset", asset_id=asset.id))
+    from shared.posting_helpers import parse_doc_date
+    disposal_date = parse_doc_date(request.form.get("disposal_date")).date()
+    if asset.purchase_date and disposal_date < asset.purchase_date:
+        flash("Disposal date cannot be before the purchase date.", "error")
+        return redirect(url_for("fa_assets.view_asset", asset_id=asset.id))
+    # Depreciate up to the disposal date first: the asset was in use until
+    # then, so that charge belongs in P&L as depreciation — not hidden inside
+    # the gain/loss, which is what disposing at a stale book value did.
+    from .depreciation import post_asset_depreciation
+    post_asset_depreciation(asset, disposal_date, current_user.id)
+    db.session.flush()
     fa_acct_id = asset.fixed_asset_account_id
     accum_dep_acct_id = asset.accum_dep_account_id
     purchase_cost = asset.purchase_cost
@@ -304,7 +318,7 @@ def dispose_asset(asset_id):
             voucher_id=asset.id,
             voucher_number=f"FA-DISP-{asset.asset_code}",
             description=f"Disposal of {asset.name}",
-            entry_date=date.today(),
+            entry_date=disposal_date,
             created_by=current_user.id,
             lines=lines,
         )

@@ -37,7 +37,7 @@
         {% for e in entries %}
         <tr>
           <td>{{ e.id }}</td>
-          <td>{{ e.created_at.strftime('%d-%b-%Y') if e.created_at else '' }}</td>
+          <td>{{ (e.txn_date or e.created_at).strftime('%d-%b-%Y') if (e.txn_date or e.created_at) else '' }}</td>
           <td>{{ e.voucher_type }}</td>
           <td>
             {% set vtype_map = {'PI':'inv_purchase_invoice','PR':'inv_purchase_return',

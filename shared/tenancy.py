@@ -109,7 +109,11 @@ _scoped_registry_cache = None
 # column (the membership's company reference). Queries on them are always
 # written explicitly with company_id, so they must never be auto-scoped.
 GLOBAL_TABLES = {"companies", "company_memberships", "company_invitations",
-                 "global_limits"}
+                 "global_limits",
+                 # The audit trail stamps company_id itself (NULL for platform
+                 # events like a super admin signing in) and every reader
+                 # filters by company explicitly.
+                 "audit_logs"}
 
 
 def _build_scoped_registry():

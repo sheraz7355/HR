@@ -94,6 +94,10 @@
           style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;"
           onsubmit="return confirm('Dispose this asset?');">
       <div>
+        <label class="form-label">Disposal date</label>
+        <input type="date" name="disposal_date" class="form-control">
+      </div>
+      <div>
         <label class="form-label">Proceeds</label>
         <input type="number" step="0.01" min="0" name="proceeds" class="form-control" value="0">
       </div>

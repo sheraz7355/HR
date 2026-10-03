@@ -104,6 +104,7 @@ def post_asset_depreciation(asset, entry_date, created_by, amount=None):
         entry_date=entry_date, created_by=created_by,
         lines=[
             {"account_id": dep_expense_acct_id, "debit": amount, "credit": 0,
+             "label_id": getattr(asset, "label_id", None),
              "description": f"Depreciation expense - {asset.name}"},
             {"account_id": accum_dep_acct_id, "debit": 0, "credit": amount,
              "description": f"Accumulated depreciation - {asset.name}"},

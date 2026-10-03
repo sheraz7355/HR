@@ -81,7 +81,11 @@ def post_journal_entry(voucher_type, voucher_id, voucher_number, description,
     # after the balance/postability checks so a malformed entry still reports
     # the more specific problem first.
     from shared.periods import require_open_period
+    from datetime import date as _date
     entry_date = entry_date or datetime.utcnow()
+    if isinstance(entry_date, _date) and not isinstance(entry_date, datetime):
+        # A document date: keep it on its day (the column is a DateTime).
+        entry_date = datetime.combine(entry_date, datetime.min.time())
     require_open_period(entry_date, action=f"post {voucher_number} into")
 
     je = JournalEntry(

@@ -1,0 +1,105 @@
+<div class="set-card">
+  <h3>Audit Log</h3>
+  <p class="hint">Every change to a business record in this company — who did it, when, from where, and what changed. Entries are written automatically and cannot be edited or deleted.</p>
+
+  {% set a = audit_args %}
+  <form method="GET" action="{{ url_for('settings.index') }}" class="al-filter">
+    <input type="hidden" name="tab" value="audit">
+    <div class="fgroup"><label class="lbl" for="alFrom">From</label>
+      <input type="date" id="alFrom" name="from" class="inp" value="{{ a.get('from','') }}"></div>
+    <div class="fgroup"><label class="lbl" for="alTo">To</label>
+      <input type="date" id="alTo" name="to" class="inp" value="{{ a.get('to','') }}"></div>
+    <div class="fgroup"><label class="lbl" for="alUser">User</label>
+      <select id="alUser" name="user_id" class="sel">
+        <option value="">Everyone</option>
+        {% for uid, name in audit_members|dictsort(by='value') %}
+        <option value="{{ uid }}" {{ 'selected' if a.get('user_id') == uid|string }}>{{ name }}</option>
+        {% endfor %}
+      </select></div>
+    <div class="fgroup"><label class="lbl" for="alModule">Module</label>
+      <select id="alModule" name="module" class="sel">
+        <option value="">All</option>
+        {% for m in audit_modules %}<option value="{{ m }}" {{ 'selected' if a.get('module') == m }}>{{ m.replace('_',' ')|title }}</option>{% endfor %}
+      </select></div>
+    <div class="fgroup"><label class="lbl" for="alAction">Action</label>
+      <select id="alAction" name="action" class="sel">
+        <option value="">All</option>
+        {% for x in audit_actions %}<option value="{{ x }}" {{ 'selected' if a.get('action') == x }}>{{ x.replace('_',' ')|title }}</option>{% endfor %}
+      </select></div>
+    <div class="fgroup al-grow"><label class="lbl" for="alQ">Search</label>
+      <input type="search" id="alQ" name="q" class="inp" value="{{ a.get('q','') }}" placeholder="Invoice no., product, user…"></div>
+    <div class="al-btns">
+      <button type="submit" class="btn btn-p">Apply</button>
+      <a class="btn" href="{{ url_for('settings.audit_csv', **a.to_dict()) }}">Export CSV</a>
+    </div>
+  </form>
+
+  <p class="al-count">{{ audit_total }} entr{{ 'y' if audit_total == 1 else 'ies' }}{% if audit_pages > 1 %} · page {{ audit_page }} of {{ audit_pages }}{% endif %}</p>
+
+  <div class="tbl-scroll">
+    <table class="stbl al-tbl">
+      <thead><tr><th>When</th><th>User</th><th>Action</th><th>Record</th><th>What happened</th></tr></thead>
+      <tbody>
+      {% for r in audit_rows %}
+        {% set ch = audit_decode(r) %}
+        <tr>
+          <td class="al-when" data-label="When">{{ r.created_at.strftime('%d %b %Y %H:%M') }} <span class="al-utc">UTC</span></td>
+          <td data-label="User">{{ r.user_name or 'System' }}{% if r.ip_address %}<div class="al-sub">{{ r.ip_address }}</div>{% endif %}</td>
+          <td data-label="Action"><span class="al-act al-{{ r.action }}">{{ r.action.replace('_',' ') }}</span></td>
+          <td data-label="Record">{{ r.entity_type or '—' }}{% if r.reference %}<div class="al-sub">{{ r.reference }}</div>{% endif %}</td>
+          <td data-label="What happened">
+            {{ r.summary }}
+            {% if ch %}
+            <details class="al-det"><summary>{{ ch|length }} field{{ '' if ch|length == 1 else 's' }}</summary>
+              <table class="al-ch">
+                {% for c in ch %}
+                <tr><th>{{ c.field }}</th>
+                  {% if r.action in ('update','approve','unapprove','post','unpost') and c.old is not none %}
+                  <td><span class="al-old">{{ c.old }}</span> → <span class="al-new">{{ c.new }}</span></td>
+                  {% else %}
+                  <td>{{ c.new }}</td>
+                  {% endif %}
+                </tr>
+                {% endfor %}
+              </table>
+            </details>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:22px">No activity matches these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if audit_pages > 1 %}
+  {% set base = a.to_dict() %}
+  <div class="al-pager">
+    {% if audit_page > 1 %}{% set _ = base.update({'page': audit_page - 1}) %}<a class="btn" href="{{ url_for('settings.index', **base) }}">← Newer</a>{% endif %}
+    {% if audit_page < audit_pages %}{% set _ = base.update({'page': audit_page + 1}) %}<a class="btn" href="{{ url_for('settings.index', **base) }}">Older →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+<style>
+  .al-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:6px 0 10px}
+  .al-filter .fgroup{margin:0;min-width:130px}
+  .al-filter .al-grow{flex:1 1 200px}
+  .al-btns{display:flex;gap:8px}
+  .al-count{font-size:12px;color:var(--muted);margin:4px 0 8px}
+  .al-tbl td{vertical-align:top}
+  .al-when{white-space:nowrap}
+  .al-utc,.al-sub{font-size:11px;color:var(--muted)}
+  .al-act{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;
+    border:1px solid var(--line);text-transform:capitalize;white-space:nowrap}
+  .al-delete,.al-unapprove,.al-unpost,.al-refused,.al-login_failed{color:var(--neg,#c0392b);border-color:currentColor}
+  .al-approve,.al-post{color:var(--pos,#12794f);border-color:currentColor}
+  .al-det{margin-top:4px}
+  .al-det summary{cursor:pointer;font-size:12px;color:var(--muted)}
+  .al-ch{margin-top:4px;border-collapse:collapse;font-size:12px}
+  .al-ch th{text-align:left;font-weight:600;padding:2px 10px 2px 0;color:var(--muted);text-transform:capitalize;vertical-align:top}
+  .al-ch td{padding:2px 0;word-break:break-word}
+  .al-old{text-decoration:line-through;color:var(--muted)}
+  .al-pager{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
+  @media (max-width:600px){.al-filter .fgroup{flex:1 1 45%}.al-btns{width:100%}.al-btns .btn{flex:1;text-align:center}}
+</style>

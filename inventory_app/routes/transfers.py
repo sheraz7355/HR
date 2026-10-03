@@ -84,10 +84,13 @@ def create_transfer():
         )
         db.session.add(asset)
         db.session.flush()
+        # direction "to_fixed_asset": the same capitalisation the Fixed Assets
+        # module performs, so either module can unapprove it.
         transfer = AssetTransfer(
-            voucher_number=voucher_number, direction="from_inventory",
+            voucher_number=voucher_number, direction="to_fixed_asset",
             asset_id=asset.id, source_product_id=product_id,
-            transfer_amount=purchase_cost,
+            product_id=product_id,
+            transfer_amount=0, transfer_date=asset.purchase_date,
             description=f"Transfer from inventory: {name}",
             status="unapproved", created_by=current_user.id,
         )
@@ -95,30 +98,19 @@ def create_transfer():
         db.session.flush()
         status = request.form.get("status", "unapproved")
         if status == "approved":
-            fa_acct, accum_acct = create_fixed_asset_accounts(asset, name)
-            asset.fixed_asset_account_id = fa_acct.id
-            asset.accum_dep_account_id = accum_acct.id
-            inv_acct = create_entity_account("product", prod.id, prod.name)
-            lines = [
-                {"account_id": fa_acct.id, "debit": purchase_cost, "credit": 0,
-                 "description": f"Asset capitalised - {name}"},
-                {"account_id": inv_acct.id, "debit": 0, "credit": purchase_cost,
-                 "description": f"Transfer from inventory - {prod.name}"},
-            ]
+            # Issue the stock through the costing engine and capitalise the
+            # asset at exactly what it cost. This used to post a journal at a
+            # typed-in price and never touch the stock: quantity stayed on
+            # the shelf while the inventory account was credited, so the
+            # ledger and the stock valuation came apart.
+            from fixed_assets_app.routes.transfers import _capitalise_from_stock
+            qty = form_float("quantity", 1) or 1
             try:
-                post_journal_entry(
-                    voucher_type="INV-FA", voucher_id=transfer.id,
-                    voucher_number=voucher_number,
-                    description=f"Transfer from inventory to FA: {name}",
-                    entry_date=asset.purchase_date, created_by=current_user.id, lines=lines,
-                )
+                _capitalise_from_stock(transfer, prod, qty, current_user.id)
             except Exception as e:
                 db.session.rollback()
                 flash(f"Posting failed: {e}", "error")
                 return render_template("transfers/form.html", products=products, categories=categories)
-            transfer.approved_by = current_user.id
-            transfer.approved_at = datetime.utcnow()
-            transfer.status = "approved"
         db.session.commit()
         flash(f"Transfer {voucher_number} {'approved and ' if status == 'approved' else ''}saved.", "success")
         return redirect(url_for("inv_transfers.list_transfers"))
@@ -148,46 +140,30 @@ def edit_transfer(id):
         status = request.form.get("status", "unapproved")
         if status == "approved":
             product_id = request.form.get("product_id", type=int) or transfer.source_product_id
+            from inventory_app.models.product import InvProduct
+            prod = scoped_get(InvProduct, product_id) if product_id else None
+            if prod is None or asset is None:
+                flash("Select the stock item to capitalise.", "error")
+                return redirect(url_for("inv_transfers.edit_transfer", id=transfer.id))
+            transfer.product_id = transfer.source_product_id = prod.id
+            transfer.direction = "to_fixed_asset"
+            if not transfer.transfer_date:
+                transfer.transfer_date = asset.purchase_date or date.today()
+            from fixed_assets_app.routes.transfers import _capitalise_from_stock
             try:
-                from inventory_app.models.product import InvProduct
-                prod = scoped_get(InvProduct, product_id)
-            except Exception:
-                prod = None
-            name = asset.name if asset else ""
-            purchase_cost = asset.purchase_cost if asset else 0
-            if not asset.fixed_asset_account_id:
-                fa_acct, accum_acct = create_fixed_asset_accounts(asset, name)
-                asset.fixed_asset_account_id = fa_acct.id
-                asset.accum_dep_account_id = accum_acct.id
-            fa_acct_id = asset.fixed_asset_account_id
-            inv_acct = create_entity_account("product", prod.id, prod.name) if prod else posting_account("inventory")
-            lines = [
-                {"account_id": fa_acct_id, "debit": purchase_cost, "credit": 0,
-                 "description": f"Asset capitalised - {name}"},
-                {"account_id": inv_acct.id, "debit": 0, "credit": purchase_cost,
-                 "description": f"Transfer from inventory - {prod.name if prod else ''}"},
-            ]
-            try:
-                post_journal_entry(
-                    voucher_type="INV-FA", voucher_id=transfer.id,
-                    voucher_number=transfer.voucher_number,
-                    description=f"Transfer from inventory: {name}",
-                    entry_date=date.today(), created_by=current_user.id, lines=lines,
-                )
+                _capitalise_from_stock(transfer, prod, form_float("quantity", 1) or 1,
+                                       current_user.id)
             except Exception as e:
                 db.session.rollback()
                 flash(f"Posting failed: {e}", "error")
                 return render_template("transfers/form.html", products=products, categories=categories)
-            transfer.approved_by = current_user.id
-            transfer.approved_at = datetime.utcnow()
-            transfer.status = "approved"
         db.session.commit()
         flash(f"Transfer {transfer.voucher_number} updated.", "success")
         return redirect(url_for("inv_transfers.list_transfers"))
     return render_template("transfers/form.html", products=products, categories=categories, transfer=transfer, asset=asset)
 
 
-@inv_transfers_bp.route("/<int:id>/unapprove")
+@inv_transfers_bp.route("/<int:id>/unapprove", methods=["GET", "POST"])
 @login_required
 def unapprove_transfer(id):
     if not current_user.module_access("inventory"):
@@ -198,13 +174,29 @@ def unapprove_transfer(id):
         return redirect(url_for("inv_transfers.list_transfers"))
     FixedAsset, _ = _assets()
     asset = scoped_get(FixedAsset, transfer.asset_id)
-    if asset:
-        db.session.delete(asset)
+    if asset and asset.live_depreciation_query().count():
+        flash("Reverse this asset's depreciation charges first.", "error")
+        return redirect(url_for("inv_transfers.list_transfers"))
     try:
+        # Journal first (refuses a closed period), then the stock comes back
+        # to the shelf; "INV-FA" covers transfers approved before they moved
+        # stock through the costing engine.
+        reverse_journal_entry("FA-CAP", transfer.id, created_by=current_user.id)
         reverse_journal_entry("INV-FA", transfer.id, created_by=current_user.id)
+        from shared import costing
+        costing.reverse_voucher_stock("FA-CAP", transfer.id,
+                                      created_by=current_user.id)
     except Exception as e:
+        db.session.rollback()
         flash(f"Reversal failed: {e}", "error")
         return redirect(url_for("inv_transfers.list_transfers"))
+    if asset:
+        # Kept, not deleted: the transfer still points at it and the voucher
+        # can be re-approved. It simply holds nothing until then.
+        asset.status = "inactive"
+        asset.is_active = False
+        asset.purchase_cost = 0
+        asset.recalculate()
     transfer.status = "unapproved"
     transfer.approved_by = None
     transfer.approved_at = None
@@ -213,7 +205,7 @@ def unapprove_transfer(id):
     return redirect(url_for("inv_transfers.list_transfers"))
 
 
-@inv_transfers_bp.route("/<int:id>/delete")
+@inv_transfers_bp.route("/<int:id>/delete", methods=["GET", "POST"])
 @login_required
 def delete_transfer(id):
     if not current_user.module_access("inventory"):

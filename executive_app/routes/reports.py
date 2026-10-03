@@ -81,6 +81,27 @@ def _register(side):
     )
 
 
+@exec_bp.route("/integrity")
+@login_required
+def integrity():
+    """Books integrity: does every sub-ledger still agree with the GL?
+
+    Runs the same checks the test suite asserts after every transaction type
+    (shared/integrity.py) against the live books of the active company, and
+    lists the most recent stock re-costings with the journals that moved them.
+    """
+    if deny_page(RESOURCE, "view"):
+        return redirect(url_for("dashboard.hub"))
+    from shared import integrity as books
+    from shared.models.stock_layer import StockCostAdjustment
+    checks = books.run_all()
+    adjustments = (StockCostAdjustment.query
+                   .order_by(StockCostAdjustment.id.desc()).limit(25).all())
+    return render_template("executive/integrity.html", checks=checks,
+                           all_ok=all(c["ok"] for c in checks),
+                           adjustments=adjustments)
+
+
 @exec_bp.route("/receivables")
 @login_required
 def receivables():

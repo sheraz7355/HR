@@ -44,7 +44,7 @@ def create_product():
             unit_price=request.form.get("unit_price", 0, type=float),
             cost_price=request.form.get("cost_price", 0, type=float),
             reorder_level=request.form.get("reorder_level", 0, type=int),
-            current_stock=request.form.get("current_stock", 0, type=int),
+            current_stock=0,
             unit=request.form.get("unit", "pcs"),
             hs_code=request.form.get("hs_code", "").strip(),
             weight=request.form.get("weight", 0, type=float),
@@ -52,6 +52,20 @@ def create_product():
         db.session.add(prod)
         db.session.flush()
         create_entity_account("product", prod.id, f"{prod.name} ({prod.sku})")
+        # Opening stock is a real receipt: a cost layer at the opening cost and
+        # Dr Inventory / Cr Opening Balance Equity on the opening date — not
+        # just a number in the stock column the ledgers never saw.
+        opening_qty = request.form.get("current_stock", 0, type=float) or 0
+        if opening_qty < 0:
+            db.session.rollback()
+            flash("Opening stock cannot be negative.", "error")
+            return redirect(url_for("inv_products.create_product"))
+        if opening_qty > 0:
+            from shared.stock_entry import post_opening_stock
+            from shared.posting_helpers import parse_doc_date
+            post_opening_stock(prod, opening_qty, prod.cost_price or 0,
+                               when=parse_doc_date(request.form.get("opening_date")),
+                               created_by=current_user.id)
         db.session.commit()
         flash(f"Product created — ledger account '{prod.name} ({prod.sku})' added under Inventory", "success")
         return redirect(url_for("inv_products.list_products"))
@@ -93,8 +107,14 @@ def delete_product(id):
     if deny_page("products", "delete"):
         return redirect(url_for("inv_products.list_products"))
     prod = scoped_get_404(InvProduct, id)
+    from shared.models.stock_ledger import StockLedger
     if prod.po_items.count() > 0 or prod.so_items.count() > 0:
         flash("Cannot delete product with order history", "error")
+    elif StockLedger.query.filter_by(product_id=prod.id).first() is not None:
+        # Its stock movements and their journals are history; deleting the
+        # product would orphan them. Deactivate it instead.
+        flash("Cannot delete a product with stock history — mark it inactive "
+              "instead.", "error")
     else:
         db.session.delete(prod)
         db.session.commit()
@@ -105,23 +125,32 @@ def delete_product(id):
 @inv_prod_bp.route("/adjust-stock/<int:id>", methods=["GET", "POST"])
 @login_required
 def adjust_stock(id):
+    if deny_page("adjustment_vouchers", "approve"):
+        return redirect(url_for("inv_products.list_products"))
     prod = scoped_get_404(InvProduct, id)
     if request.method == "POST":
-        qty = request.form.get("quantity", 0, type=int)
+        qty = request.form.get("quantity", 0, type=float) or 0
         note = request.form.get("notes", "")
         if qty == 0:
             flash("Quantity must be non-zero", "error")
         else:
-            mtype = "adjustment_in" if qty > 0 else "adjustment_out"
-            prod.current_stock += qty
-            InvStockMovement(
-                product_id=prod.id, type=mtype, quantity=abs(qty),
-                notes=note or f"Manual adjustment of {qty}",
-                created_by=current_user.id  # noqa
-            )
-            db.session.add(prod)
+            # Was: current_stock += qty and nothing else — no cost, no
+            # journal, so the inventory account never followed. Now an
+            # approved Stock Adjustment voucher (reviewable, reversible).
+            from shared.stock_entry import quick_adjustment
+            from shared.posting_helpers import parse_doc_date
+            v = quick_adjustment(prod, qty, note or f"Manual adjustment of {qty:g}",
+                                 when=parse_doc_date(request.form.get("date")),
+                                 created_by=current_user.id)
+            db.session.add(InvStockMovement(
+                product_id=prod.id,
+                type="adjustment_in" if qty > 0 else "adjustment_out",
+                quantity=abs(qty), reference_type="stock_adjustment",
+                reference_id=v.id, notes=note or f"Manual adjustment of {qty:g}",
+                created_by=current_user.id))
             db.session.commit()
-            flash(f"Stock adjusted by {qty}. New stock: {prod.current_stock}", "success")
+            flash(f"Stock adjusted by {qty:g} ({v.voucher_number}). New stock: "
+                  f"{prod.current_stock}", "success")
             return redirect(url_for("inv_products.list_products"))
     return render_template("products/adjust_stock_inv.html", product=prod)
 
@@ -357,13 +386,17 @@ def batch_editor():
                 unit_price=unit_price,
                 cost_price=cost_price,
                 reorder_level=reorder,
-                current_stock=stock,
+                current_stock=0,
                 unit=unit,
                 hs_code=hs_code,
             )
             db.session.add(prod)
             db.session.flush()
             create_entity_account("product", prod.id, f"{prod.name} ({prod.sku})")
+            if stock > 0:
+                from shared.stock_entry import post_opening_stock
+                post_opening_stock(prod, stock, cost_price,
+                                   created_by=current_user.id)
             created += 1
 
         db.session.commit()

@@ -18,6 +18,8 @@ class AssetTransfer(db.Model):
     source_product_id = db.Column(db.Integer, nullable=True)
     transfer_amount = db.Column(db.Float, default=0)
     description = db.Column(db.Text, default="")
+    # Date the transfer happens: its journal and stock movement post here.
+    transfer_date = db.Column(db.Date)
     status = db.Column(db.String(20), default="unapproved")
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)

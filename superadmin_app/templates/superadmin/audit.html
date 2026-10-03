@@ -1,0 +1,58 @@
+{% extends "superadmin/base.html" %}
+{% block title %}Audit - Super Admin{% endblock %}
+{% block content %}
+<h1 class="sa-page-title">Audit Trail</h1>
+
+<div class="sa-card">
+  <form method="GET" class="sa-audit-filter">
+    <div class="fgroup"><label class="lbl" for="saCo">Company</label>
+      <select id="saCo" name="company_id" class="inp">
+        <option value="">All companies</option>
+        <option value="platform" {{ 'selected' if args.get('company_id') == 'platform' }}>Platform (no company)</option>
+        {% for c in companies %}<option value="{{ c.id }}" {{ 'selected' if args.get('company_id') == c.id|string }}>{{ c.name }}</option>{% endfor %}
+      </select></div>
+    <div class="fgroup"><label class="lbl" for="saAct">Action</label>
+      <select id="saAct" name="action" class="inp">
+        <option value="">All</option>
+        {% for a in actions %}<option value="{{ a }}" {{ 'selected' if args.get('action') == a }}>{{ a.replace('_',' ')|title }}</option>{% endfor %}
+      </select></div>
+    <div class="fgroup" style="flex:1 1 220px"><label class="lbl" for="saQ">Search</label>
+      <input id="saQ" type="search" name="q" class="inp" value="{{ args.get('q','') }}" placeholder="Reference, user, IP…"></div>
+    <div><button type="submit" class="btn btn-p">Apply</button></div>
+  </form>
+  <p style="font-size:12px;color:var(--muted);margin:8px 0">{{ total }} entr{{ 'y' if total == 1 else 'ies' }}{% if pages > 1 %} · page {{ page }} of {{ pages }}{% endif %}</p>
+
+  <div style="overflow-x:auto">
+    <table class="sa-tbl" style="width:100%;min-width:760px">
+      <thead><tr><th>When (UTC)</th><th>Company</th><th>User</th><th>Action</th><th>Record</th><th>What happened</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td style="white-space:nowrap">{{ r.created_at.strftime('%d %b %Y %H:%M') }}</td>
+          <td>{{ company_names.get(r.company_id, 'Platform') if r.company_id else 'Platform' }}</td>
+          <td>{{ r.user_name or 'System' }}{% if r.ip_address %}<div style="font-size:11px;color:var(--muted)">{{ r.ip_address }}</div>{% endif %}</td>
+          <td style="text-transform:capitalize">{{ r.action.replace('_',' ') }}</td>
+          <td>{{ r.entity_type or '—' }}{% if r.reference %}<div style="font-size:11px;color:var(--muted)">{{ r.reference }}</div>{% endif %}</td>
+          <td>{{ r.summary }}
+            {% set ch = decode(r) %}
+            {% if ch %}<details style="margin-top:3px"><summary style="cursor:pointer;font-size:12px;color:var(--muted)">{{ ch|length }} field(s)</summary>
+              {% for c in ch %}<div style="font-size:12px"><strong>{{ c.field }}</strong>: {% if c.old is not none %}<s style="color:var(--muted)">{{ c.old }}</s> → {% endif %}{{ c.new }}</div>{% endfor %}
+            </details>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No activity matches these filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages > 1 %}
+  {% set base = args.to_dict() %}
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
+    {% if page > 1 %}{% set _ = base.update({'page': page - 1}) %}<a class="btn" href="{{ url_for('superadmin.audit', **base) }}">← Newer</a>{% endif %}
+    {% if page < pages %}{% set _ = base.update({'page': page + 1}) %}<a class="btn" href="{{ url_for('superadmin.audit', **base) }}">Older →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+<style>.sa-audit-filter{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}.sa-audit-filter .fgroup{margin:0;min-width:150px}</style>
+{% endblock %}

@@ -3,6 +3,10 @@
 {% block page_title %}{{ 'Edit: '+voucher.voucher_number if voucher else 'New Consumption Voucher' }}{% endblock %}
 {% block content %}
 <form method="POST" class="voucher-form">
+  {% if voucher and voucher.status == 'approved' %}
+  <div class="vf-locked">Approved and posted{% if voucher.approved_at %} on {{ voucher.approved_at.strftime('%d %b %Y') }}{% endif %} — read only. Unapprove to make changes.</div>
+  {% endif %}
+  <fieldset class="vf-fieldset" {{ 'disabled' if voucher and voucher.status == 'approved' else '' }}>
   <div class="card">
     <div class="card-body">
       <div class="form-row">
@@ -26,13 +30,7 @@
           </select>
           <small style="display:block;margin-top:4px;color:var(--muted);">The consumed value (at automatic historic cost) is transferred from the product's inventory ledger to this account — e.g. an employee's account when charging them for damage.</small>
         </div>
-        <div class="form-group">
-          <label>Status</label>
-          <select name="status" class="form-control">
-            <option value="unapproved" {{ 'selected' if voucher and voucher.status=='unapproved' else '' }}>Unapproved</option>
-            <option value="approved" {{ 'selected' if voucher and voucher.status=='approved' else '' }}>Approved</option>
-          </select>
-        </div>
+      {% set doc = voucher %}{% include "vouchers/_voucher_meta.html" %}
       </div>
     </div>
   </div>
@@ -40,7 +38,7 @@
   <div class="card">
     <div class="card-header"><strong>Items</strong> <span class="badge badge-info" style="background:var(--accent);color:var(--card);">Consumption</span></div>
     <div class="card-body">
-      <table class="table" id="items-table">
+      <div class="vf-table-wrap"><table class="table" id="items-table">
         <thead><tr><th>Product</th><th>Qty</th><th>Unit Cost</th><th>Total</th><th></th></tr></thead>
         <tbody id="items-body">
           {% if voucher %}
@@ -55,26 +53,33 @@
           {% endfor %}
           {% endif %}
         </tbody>
-      </table>
+      </table></div>
       <button type="button" class="btn btn-outline" onclick="addRow()">+ Add Item</button>
     </div>
   </div>
-
-  <div style="background:var(--danger-light);padding:8px;margin:8px 0;border:2px solid red;font-weight:bold;">DEBUG: voucher={% if voucher %}{{ voucher.voucher_number }}, status="{{ voucher.status }}"{% else %}None{% endif %}</div>
+  </fieldset>
   {% if not voucher %}
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save as Unapproved</button>
-    <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Save & Approve</button>
+    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save as draft</button>
+    <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Save &amp; approve</button>
     <a href="{{ url_for('inv_vouchers.consumption_list') }}" class="btn btn-outline">Cancel</a>
+  </div>
+  {% elif voucher.status == 'approved' %}
+  <div class="form-actions">
+    <button type="submit" class="btn btn-warning" formnovalidate
+            formaction="{{ url_for('inv_vouchers.consumption_unapprove', id=voucher.id) }}"
+            onclick="return confirm('Unapprove {{ voucher.voucher_number }}? Its stock and journal are reversed and later issues re-costed.')">Unapprove</button>
+    <a href="{{ url_for('inv_vouchers.voucher_preview', vtype='CONS', vid=voucher.id) }}" target="_blank" class="btn btn-outline">Print</a>
+    <a href="{{ url_for('inv_vouchers.consumption_list') }}" class="btn btn-outline">Back</a>
   </div>
   {% else %}
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Edit</button>
-    {% if voucher.status != 'approved' %}
+    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save</button>
     <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Approve</button>
-    {% endif %}
     <a href="{{ url_for('inv_vouchers.voucher_preview', vtype='CONS', vid=voucher.id) }}" target="_blank" class="btn btn-outline">Print</a>
-    <a href="{{ url_for('inv_vouchers.consumption_delete', id=voucher.id) }}" class="btn btn-danger" onclick="return confirm('Delete this consumption voucher?')">Delete</a>
+    <button type="submit" class="btn btn-danger" formnovalidate
+            formaction="{{ url_for('inv_vouchers.consumption_delete', id=voucher.id) }}"
+            onclick="return confirm('Delete {{ voucher.voucher_number }}?')">Delete</button>
     <a href="{{ url_for('inv_vouchers.consumption_list') }}" class="btn btn-outline">Cancel</a>
   </div>
   {% endif %}

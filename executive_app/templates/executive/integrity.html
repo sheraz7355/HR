@@ -1,0 +1,66 @@
+{% extends "layouts/base_executive.html" %}
+{% block title %}Books Integrity{% endblock %}
+{% block page_title %}Books Integrity{% endblock %}
+{% block extra_css %}{% include "executive/_style.html" %}
+<style>
+  .bi-banner{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;
+    border:1px solid var(--border-soft);background:var(--card);margin-bottom:14px;font-size:14px}
+  .bi-banner .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .bi-banner.ok .dot{background:var(--success)} .bi-banner.bad .dot{background:var(--danger)}
+  .bi-banner.bad{border-color:var(--danger)}
+  .bi-status{font-weight:600;font-size:12px;white-space:nowrap}
+  .bi-status.ok{color:var(--success)} .bi-status.bad{color:var(--danger)}
+  .bi-detail{color:var(--muted);font-size:12.5px}
+  .bi-h{font-size:13px;font-weight:600;margin:22px 0 8px;color:var(--text)}
+  .bi-intro{color:var(--muted);font-size:13px;margin:-4px 0 14px;max-width:760px}
+</style>
+{% endblock %}
+{% block content %}
+<div class="exr">
+  <div class="bi-banner {{ 'ok' if all_ok else 'bad' }}">
+    <span class="dot" aria-hidden="true"></span>
+    <span>{% if all_ok %}All checks pass — the general ledger agrees with stock, assets and documents.{% else %}{{ checks|rejectattr('ok')|list|length }} check(s) need attention.{% endif %}</span>
+  </div>
+  <p class="bi-intro">Each document posts to its own register and to the general ledger. These checks prove both halves still match after every back-dated entry, edit and reversal.</p>
+
+  <div class="exr-wrap">
+    <table class="exr-table" style="min-width:640px">
+      <thead><tr><th>Check</th><th>Status</th><th class="num">Expected</th><th class="num">Actual</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for c in checks %}
+        <tr>
+          <td class="strong">{{ c.label }}</td>
+          <td><span class="bi-status {{ 'ok' if c.ok else 'bad' }}">{{ 'Pass' if c.ok else 'Fail' }}</span></td>
+          <td class="num">{{ c.expected|amount_format(2) }}</td>
+          <td class="num">{{ c.actual|amount_format(2) }}</td>
+          <td class="bi-detail">{{ c.detail }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="bi-h">Recent stock re-costings</h2>
+  {% if adjustments %}
+  <div class="exr-wrap">
+    <table class="exr-table" style="min-width:640px">
+      <thead><tr><th>Document</th><th>Posted on</th><th class="num">Was</th><th class="num">Now</th><th class="num">Change</th><th>Why</th></tr></thead>
+      <tbody>
+        {% for a in adjustments %}
+        <tr>
+          <td class="strong">{{ a.voucher_number }}</td>
+          <td>{{ a.entry_date.strftime('%d %b %Y') if a.entry_date else '' }}</td>
+          <td class="num">{{ a.old_cost|amount_format(2) }}</td>
+          <td class="num">{{ a.new_cost|amount_format(2) }}</td>
+          <td class="num">{{ a.delta|amount_format(2) }}</td>
+          <td class="bi-detail">{{ a.trigger }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="bi-detail">No issue has been re-costed. Re-costings happen when a document is back-dated, or an earlier one is corrected or reversed.</p>
+  {% endif %}
+</div>
+{% endblock %}

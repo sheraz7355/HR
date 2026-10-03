@@ -35,6 +35,7 @@ def app():
     import shared.models.project_label  # noqa: F401
     import shared.models.stock_ledger  # noqa: F401
     import shared.models.stock_layer  # noqa: F401
+    import shared.models.vouchers  # noqa: F401  (cost adjustments read the charge account)
     import shared.models.company_settings  # noqa: F401  (accounting_periods, fiscal_year_rule)
     import shared.models.invoice_template  # noqa: F401  (FK target for report_settings)
     import shared.models.company  # noqa: F401  (companies/memberships: tenancy)

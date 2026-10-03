@@ -60,6 +60,7 @@ SECTIONS = [
     ("templates", "Invoice Templates", "&#128196;", lambda u: u.module_access("invoicing")),
     ("rights",    "Rights & Access",   "&#128273;", lambda u: u.is_admin()),
     ("members",   "Members & Roles",   "&#128101;", lambda u: u.is_admin()),
+    ("audit",     "Audit Log",         "&#128220;", lambda u: u.is_admin()),
     ("invites",   "Invitations",       "&#9993;",   lambda u: True),
 ]
 _PREDICATE = {key: pred for key, _l, _i, pred in SECTIONS}
@@ -109,7 +110,9 @@ def index():
         "sections": sections,
         "module_key": "settings",
     }
-    if tab == "company":
+    if tab == "audit":
+        ctx.update(_audit_ctx())
+    elif tab == "company":
         ctx["company"] = CompanyInfo.get()
     elif tab == "periods":
         ctx["fiscal_rule"] = FiscalYearRule.get()
@@ -962,6 +965,60 @@ def _members_ctx():
             "inviter_names": inviter_names,
             "inv_role_names": _role_names_by_id(
                 {i.role_id for i in invitations})}
+
+
+def _audit_members():
+    """{user_id: name} of this company's members (filter list + scoping)."""
+    from shared.models.company import CompanyMembership
+    from shared.tenancy import current_company_id
+    cid = current_company_id()
+    ids = [m.user_id for m in CompanyMembership.query.filter_by(company_id=cid).all()]
+    users = User.query.filter(User.id.in_(ids)).all() if ids else []
+    return {u.id: (u.full_name or u.email) for u in users}
+
+
+def _audit_ctx():
+    from shared import audit
+    from shared.tenancy import current_company_id
+    members = _audit_members()
+    q = audit.search(current_company_id(), request.args, members.keys())
+    page = max(request.args.get("page", 1, type=int) or 1, 1)
+    per = 50
+    total = q.count()
+    rows = q.offset((page - 1) * per).limit(per).all()
+    return {"audit_rows": rows, "audit_total": total, "audit_page": page,
+            "audit_pages": max((total + per - 1) // per, 1),
+            "audit_members": members, "audit_actions": audit.ACTIONS,
+            "audit_modules": audit.MODULES, "audit_decode": audit.decode_changes,
+            "audit_args": request.args}
+
+
+@settings_bp.route("/audit-log.csv")
+@login_required
+def audit_csv():
+    """The filtered audit trail as CSV (same filters as the screen)."""
+    if not current_user.is_admin():
+        abort(403)
+    import csv
+    import io
+    from flask import Response
+    from shared import audit
+    from shared.tenancy import current_company_id
+    members = _audit_members()
+    rows = audit.search(current_company_id(), request.args, members.keys()).limit(20000).all()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["When (UTC)", "User", "Action", "Module", "Record", "Reference",
+                "Summary", "Changes", "IP"])
+    for r in rows:
+        changes = "; ".join(
+            f"{c['field']}: {c['old']} -> {c['new']}" if c["old"] is not None
+            else f"{c['field']}: {c['new']}" for c in audit.decode_changes(r))
+        w.writerow([r.created_at.strftime("%Y-%m-%d %H:%M:%S"), r.user_name or "system",
+                    r.action, r.module or "", r.entity_type or "", r.reference or "",
+                    r.summary or "", changes, r.ip_address or ""])
+    return Response(buf.getvalue(), mimetype="text/csv", headers={
+        "Content-Disposition": "attachment; filename=audit-log.csv"})
 
 
 @settings_bp.route("/members/")

@@ -687,6 +687,7 @@
         <a href="{{ url_for('superadmin.companies') }}" class="{{ 'active' if request.endpoint in ['superadmin.companies', 'superadmin.company_edit'] }}">Companies</a>
         <a href="{{ url_for('superadmin.requests') }}" class="{{ 'active' if request.endpoint in ['superadmin.requests', 'superadmin.request_action'] }}">Requests{% if pending_count > 0 %} <span style="background:var(--v2-warn-bg);color:var(--v2-warn);font-size:10px;font-weight:600;padding:1px 6px;border-radius:999px;">{{ pending_count }}</span>{% endif %}</a>
         <a href="{{ url_for('superadmin.my_companies') }}" class="{{ 'active' if request.endpoint == 'superadmin.my_companies' }}">My Books</a>
+        <a href="{{ url_for('superadmin.audit') }}" class="{{ 'active' if request.endpoint == 'superadmin.audit' }}">Audit</a>
         <a href="{{ url_for('superadmin.index') }}" class="{{ 'active' if request.endpoint == 'superadmin.index' }}">Platform</a>
       </nav>
       <div class="sa-user-section">

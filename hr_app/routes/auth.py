@@ -47,6 +47,9 @@ def login():
             # the response identical to a bad login so this form cannot be
             # used to discover which accounts are platform operators.
             if user.is_super_admin:
+                from shared.audit import record_now
+                record_now("login_failed", f"Sign-in refused for {login_id} "
+                           "(super admin must use the console)", user_id=user.id)
                 flash("Invalid email or password.", "danger")
                 return render_template("login.html")
             if not user.is_active:
@@ -55,6 +58,10 @@ def login():
             login_user(user)
             user.last_login = datetime.utcnow()
             db.session.commit()
+            from shared.audit import record_now
+            record_now("login", f"{user.full_name or user.email} signed in",
+                       company_id=None,  # sign-in is per user, not per company
+                       user_id=user.id, user_name=user.full_name or user.email)
             flash(f"Welcome back, {user.full_name or user.email}.", "success")
             next_page = safe_local_url(request.args.get("next"))
             if next_page:
@@ -62,6 +69,9 @@ def login():
             return redirect(url_for("portal.index")
                             if should_redirect_to_portal()
                             else url_for("dashboard.hub"))
+        from shared.audit import record_now
+        record_now("login_failed", f"Failed sign-in for '{login_id[:80]}'",
+                   user_id=user.id if user else None)
         flash("Invalid email or password.", "danger")
     return render_template("login.html")
 
@@ -69,6 +79,8 @@ def login():
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    from shared.audit import record_now
+    record_now("logout", f"{current_user.full_name or current_user.email} signed out")
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("auth.login"))

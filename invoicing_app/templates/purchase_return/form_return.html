@@ -137,7 +137,7 @@ textarea.inp{resize:vertical;font-family:inherit}
         <div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <div><label class="lbl">Status</label><span class="bdg bdg-{{ status }}" id="statusBadge">{{ status|title }}</span></div>
-            <div><label class="lbl">Date</label><input type="date" name="date" class="inp" id="returnDate" value="{{ return_doc.date.strftime('%Y-%m-%d') if return_doc and return_doc.date else '' }}" {{ 'disabled' if not editable else '' }}></div>
+            <div><label class="lbl">Date</label><input type="date" name="date" class="inp" id="returnDate" value="{{ return_doc.return_date.strftime('%Y-%m-%d') if return_doc and return_doc.return_date else '' }}" {{ 'disabled' if not editable else '' }}></div>
           </div>
         </div>
       </div>

@@ -73,6 +73,9 @@ class FixedAsset(db.Model):
     # Credited when the acquisition is booked (payable, cash or bank).
     acquisition_credit_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=True)
     notes = db.Column(db.Text, default="")
+    # Project label: tags the acquisition and every depreciation charge, so a
+    # project's P&L carries the depreciation of the assets it uses.
+    label_id = db.Column(db.Integer, db.ForeignKey("project_labels.id"))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

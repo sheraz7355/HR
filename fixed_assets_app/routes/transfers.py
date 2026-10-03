@@ -13,6 +13,17 @@ from shared import costing
 from ..models.asset import FixedAsset, AssetCategory
 from .depreciation import post_asset_depreciation, due_depreciation
 from shared.forms import form_float
+from shared.posting_helpers import parse_doc_date
+
+
+def _tdate(transfer):
+    """The transfer's own date — its journal, stock movement and catch-up
+    depreciation all post there, not on the day it was approved."""
+    return transfer.transfer_date or date.today()
+
+
+def _form_tdate(fallback=None):
+    return parse_doc_date(request.form.get("transfer_date"), fallback=fallback).date()
 
 
 def _capitalise_from_stock(transfer, product, qty, created_by):
@@ -30,7 +41,7 @@ def _capitalise_from_stock(transfer, product, qty, created_by):
         product_id=product.id, voucher_type="FA-CAP", voucher_id=transfer.id,
         voucher_number=transfer.voucher_number, qty=qty,
         notes=f"Capitalised as fixed asset {asset.asset_code}",
-        created_by=created_by,
+        created_by=created_by, txn_date=_tdate(transfer),
     )
     total_cost = float(total_cost)
     if not asset.fixed_asset_account_id:
@@ -42,7 +53,7 @@ def _capitalise_from_stock(transfer, product, qty, created_by):
         voucher_type="FA-CAP", voucher_id=transfer.id,
         voucher_number=transfer.voucher_number,
         description=f"Capitalise {product.name} as fixed asset {asset.asset_code}",
-        entry_date=date.today(), created_by=created_by,
+        entry_date=_tdate(transfer), created_by=created_by,
         lines=[
             {"account_id": asset.fixed_asset_account_id,
              "debit": total_cost, "credit": 0,
@@ -52,6 +63,7 @@ def _capitalise_from_stock(transfer, product, qty, created_by):
         ],
     )
     asset.purchase_cost = total_cost
+    asset.purchase_date = _tdate(transfer)
     asset.status = "active"
     asset.is_active = True
     asset.recalculate()
@@ -72,7 +84,7 @@ def _approve_transfer(transfer, asset, stock_account_id, stock_description,
     no quantity, and the inventory control account permanently adrift from the
     stock valuation.
     """
-    post_asset_depreciation(asset, date.today(), created_by)
+    post_asset_depreciation(asset, _tdate(transfer), created_by)
     db.session.flush()
     purchase_cost = asset.purchase_cost
     accum_dep = asset.posted_depreciation
@@ -96,7 +108,7 @@ def _approve_transfer(transfer, asset, stock_account_id, stock_description,
         voucher_type="FA-TRF", voucher_id=transfer.id,
         voucher_number=transfer.voucher_number,
         description=f"Transfer to inventory: {asset.name} at BV {net_book:,.0f}",
-        entry_date=date.today(), created_by=created_by, lines=lines,
+        entry_date=_tdate(transfer), created_by=created_by, lines=lines,
     )
     # The asset becomes one unit of stock carried at its net book value, so the
     # layer the costing engine opens is worth exactly what the journal debited.
@@ -106,7 +118,7 @@ def _approve_transfer(transfer, asset, stock_account_id, stock_description,
             voucher_id=transfer.id, voucher_number=transfer.voucher_number,
             qty=1, unit_cost=net_book,
             notes=f"Transferred from fixed asset {asset.asset_code}",
-            created_by=created_by,
+            created_by=created_by, txn_date=_tdate(transfer),
         )
     transfer.transfer_amount = net_book
     asset.status = "transferred"
@@ -161,7 +173,7 @@ def capitalise_from_stock():
         last = FixedAsset.query.order_by(FixedAsset.id.desc()).first()
         asset = FixedAsset(
             asset_code=f"FA-{(last.id + 1) if last else 1:04d}",
-            name=name, category_id=category.id, purchase_date=date.today(),
+            name=name, category_id=category.id, purchase_date=_form_tdate(),
             purchase_cost=0, useful_life=int(request.form.get(
                 "useful_life", type=int) or category.default_useful_life),
             depreciation_method=request.form.get(
@@ -177,6 +189,7 @@ def capitalise_from_stock():
             voucher_number=VoucherNumber.next("FA-CAP"),
             direction="to_fixed_asset", asset_id=asset.id,
             source_product_id=product.id, product_id=product.id,
+            transfer_date=_form_tdate(),
             description=request.form.get(
                 "description", f"Capitalise {product.name} as {name}"),
             status="unapproved", created_by=current_user.id,
@@ -292,6 +305,7 @@ def create_transfer():
             new_product_name=new_product_name,
             transfer_amount=net_book,
             description=request.form.get("description", f"Transfer to inventory: {stock_description}"),
+            transfer_date=_form_tdate(),
             status="unapproved",
             created_by=current_user.id,
         )
@@ -330,6 +344,7 @@ def edit_transfer(id):
         pass
     if request.method == "POST":
         transfer.description = request.form.get("description", "")
+        transfer.transfer_date = _form_tdate(transfer.transfer_date)
         transfer.new_product_name = request.form.get("new_product_name", "").strip()
         product_id = request.form.get("product_id", type=int)
         transfer.product_id = product_id

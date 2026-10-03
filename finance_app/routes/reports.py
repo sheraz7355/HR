@@ -1463,6 +1463,43 @@ def _merge_multi_period(base_items, comp_items_list, code_key="code", amount_key
     return sorted(merged.values(), key=lambda x: x["code"])
 
 
+@finance_bp.route("/label-pl")
+@login_required
+def label_pl():
+    """Profit & loss by project label — one column per label.
+
+    Every journal line carries at most one label, so each label's column is the
+    P&L of the lines tagged with it, "Unlabelled" is whatever no label claims,
+    and the columns add up to the company P&L exactly. Revenue, COGS (costed per
+    line, re-costed through back-dated corrections), consumption, scrap,
+    depreciation of labelled assets and expense vouchers all land here.
+    """
+    from datetime import date as _date
+    labels_all = ProjectLabel.query.order_by(ProjectLabel.name).all()
+    today = _date.today()
+    from_date = _parse_date(request.args.get("from", "")) or _date(today.year, 1, 1)
+    to_date = _parse_date(request.args.get("to", "")) or today
+    picked = [int(x) for x in request.args.getlist("label_id") if str(x).isdigit()]
+    labels = [l for l in labels_all if not picked or l.id in picked]
+
+    rows, net = _pl_rows(from_date, to_date)
+    lookups = [_pl_period_lookup(from_date, to_date, label_ids=[l.id]) for l in labels]
+    for row in rows:
+        if row["kind"] not in ("account", "total", "subtotal"):
+            continue
+        per = [_pl_comp_amount(row, lk) for lk in lookups]
+        row["by_label"] = per
+        row["unlabelled"] = round(float(row.get("amount", 0)) - sum(per), 2) \
+            if not picked else None
+    nets = [_pl_rows(from_date, to_date, label_ids=[l.id])[1] for l in labels]
+    return render_template("finance/label_pl.html", rows=rows, net_profit=net,
+                           labels=labels, labels_all=labels_all, picked=picked,
+                           label_nets=nets,
+                           unlabelled_net=(round(net - sum(nets), 2) if not picked else None),
+                           from_str=from_date.strftime("%Y-%m-%d"),
+                           to_str=to_date.strftime("%Y-%m-%d"))
+
+
 @finance_bp.route("/balance-sheet")
 @login_required
 def balance_sheet():

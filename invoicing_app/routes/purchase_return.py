@@ -12,7 +12,8 @@ from inventory_app.models.stock_movement import InvStockMovement
 from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posting_account, party_account
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import deny_json
-from shared.costing import record_out, reverse_voucher_stock
+from shared.costing import record_out, reverse_voucher_stock, original_receipt_cost
+from shared.posting_helpers import parse_doc_date
 
 inv_preturn_bp = Blueprint("inv_purchase_return", __name__,
                            url_prefix="/inventory/purchase-return")
@@ -149,6 +150,35 @@ def validate_return(data):
     return errors
 
 
+def _over_returned(ret, data):
+    """Server-side cap: purchased quantity less what approved returns took."""
+    bought = {}
+    for it in InvPurchaseInvoiceItem.query.filter_by(invoice_id=ret.original_invoice_id).all():
+        if it.product_id:
+            bought[it.product_id] = bought.get(it.product_id, 0.0) + float(it.quantity or 0)
+    already = {}
+    for other in InvPurchaseReturn.query.filter(
+            InvPurchaseReturn.original_invoice_id == ret.original_invoice_id,
+            InvPurchaseReturn.status == "approved",
+            InvPurchaseReturn.id != (ret.id or 0)).all():
+        for it in InvPurchaseReturnItem.query.filter_by(return_id=other.id).all():
+            if it.product_id:
+                already[it.product_id] = (already.get(it.product_id, 0.0)
+                                          + float(it.current_return_qty or 0))
+    asked = {}
+    for row in data.get("items", []):
+        pid = row.get("product_id")
+        if pid:
+            asked[int(pid)] = asked.get(int(pid), 0.0) + float(row.get("current_return_qty", 0) or 0)
+    errors = []
+    for pid, qty in asked.items():
+        room = bought.get(pid, 0.0) - already.get(pid, 0.0)
+        if qty > room + 0.0001:
+            errors.append(f"Product #{pid}: returning {qty:g} but only {room:g} "
+                          f"remain returnable on the invoice")
+    return errors
+
+
 @inv_preturn_bp.route("/save", methods=["POST"])
 @login_required
 def save_return():
@@ -179,6 +209,20 @@ def save_return():
 
     ret.original_invoice_id = data.get("original_invoice_id")
     ret.supplier_id = data.get("supplier_id")
+    # The debit note posts on its own date — and can never precede the purchase.
+    ret.return_date = parse_doc_date(data.get("date"), fallback=ret.return_date)
+    _orig = scoped_get(InvPurchaseInvoice, ret.original_invoice_id) if ret.original_invoice_id else None
+    if action == "approve":
+        if _orig is None or _orig.status != "approved":
+            return jsonify({"ok": False, "error":
+                            "A return can only be raised against an approved invoice"}), 400
+        if _orig.invoice_date and ret.return_date.date() < _orig.invoice_date.date():
+            return jsonify({"ok": False, "error":
+                            f"Return date cannot be before the invoice date "
+                            f"({_orig.invoice_date:%d %b %Y})"}), 400
+        over = _over_returned(ret, data)
+        if over:
+            return jsonify({"ok": False, "error": "; ".join(over)}), 400
     ret.notes = data.get("notes", "")
     ret.reverse_expenses = data.get("reverse_expenses", True)
     ret.gross_return_value = float(data.get("gross_return_value", 0))
@@ -198,6 +242,7 @@ def save_return():
 
     InvPurchaseReturnItem.query.filter_by(return_id=ret.id).delete()
     returned_by_product = {}
+    stock_cost_out = 0.0
     for row in data.get("items", []):
         qty = float(row.get("current_return_qty", 0))
         if qty <= 0:
@@ -249,35 +294,76 @@ def save_return():
                     notes=f"Approved return {ret.return_number}",
                     created_by=current_user.id,
                 ))
-                # Returned goods leave stock at the ORIGINAL invoice cost
-                # basis (net return value per unit), not the current average
-                # — the payable reversal must match what was booked in.
-                basis = (float(item.net_return_value or 0) / qty) if qty else 0
-                record_out(item.product_id, "PRV", ret.id, ret.return_number,
-                           qty=qty, unit_cost=basis or None,
-                           notes=f"Purchase return {ret.return_number}",
-                           created_by=current_user.id)
+                # Returned goods leave stock at the LANDED cost they came in
+                # at on the original invoice, so the inventory credit undoes
+                # exactly the inventory debit. (This used to be the return's
+                # net value per unit — tax-inclusive and net of withholding —
+                # which credited stock with tax and never reversed the input
+                # tax.) Any gap between that cost and what the supplier
+                # credits is a price difference, posted separately below.
+                basis = original_receipt_cost("PI", ret.original_invoice_id,
+                                              item.product_id)
+                _u, line_cost = record_out(
+                    item.product_id, "PRV", ret.id, ret.return_number,
+                    qty=qty, unit_cost=basis,
+                    notes=f"Purchase return {ret.return_number}",
+                    created_by=current_user.id,
+                    txn_date=ret.return_date,
+                    prefer=("PI", ret.original_invoice_id))
+                stock_cost_out += float(line_cost)
 
     if action == "approve":
+        # Mirror of the purchase posting, for the returned share:
+        #   Dr Supplier (AP)        debit note value (what they now owe back)
+        #   Dr WHT Payable          withholding no longer owed on the goods
+        #     Cr Inventory          landed cost of the stock that left
+        #     Cr Input Sales Tax    input tax no longer recoverable
+        #     Cr/Dr Price variance  supplier credit vs landed cost
         # Debit the same supplier account the original invoice credited.
+        orig = _orig
         ap_acc = party_account("supplier", ret.supplier_id,
-                               ret.supplier.name if ret.supplier else None)
+                               ret.supplier.name if ret.supplier else None,
+                               orig.party_account_id if orig else None)
         inv_acc = posting_account("inventory")
-        if ap_acc and inv_acc:
-            post_journal_entry(
-                voucher_type="PR",
-                voucher_id=ret.id,
-                voucher_number=ret.return_number,
-                description=f"Purchase Return {ret.return_number}",
-                lines=[
-                    {"account_id": ap_acc.id, "debit": float(ret.net_return_amount), "credit": 0,
-                     "description": f"AP - {ret.return_number}"},
-                    {"account_id": inv_acc.id, "debit": 0, "credit": float(ret.net_return_amount),
-                     "description": f"Inventory - {ret.return_number}"},
-                ],
-                entry_date=datetime.utcnow(),
-                created_by=current_user.id,
-            )
+        net = round(float(ret.net_return_amount or 0), 2)
+        tax = round(float(ret.total_tax or 0), 2)
+        wht = round(float(ret.gross_return_value or 0) - float(ret.total_discount or 0)
+                    + float(ret.total_expenses or 0) + tax - net, 2)
+        wht = wht if wht > 0.005 else 0.0
+        cost = round(stock_cost_out, 2)
+        diff = round(net + wht - tax - cost, 2)
+        label_id = orig.label_id if orig else None
+        lines = [{"account_id": ap_acc.id, "debit": net, "credit": 0,
+                  "label_id": label_id,
+                  "description": f"AP - {ret.return_number}"}]
+        if wht:
+            lines.append({"account_id": posting_account("wht_payable").id,
+                          "debit": wht, "credit": 0,
+                          "description": f"WHT reversal - {ret.return_number}"})
+        if cost:
+            lines.append({"account_id": inv_acc.id, "debit": 0, "credit": cost,
+                          "label_id": label_id,
+                          "description": f"Inventory - {ret.return_number}"})
+        if tax:
+            lines.append({"account_id": posting_account("input_tax").id,
+                          "debit": 0, "credit": tax,
+                          "description": f"Input tax reversal - {ret.return_number}"})
+        if abs(diff) >= 0.01:
+            var_acc = posting_account("inventory_variance")
+            lines.append({"account_id": var_acc.id,
+                          "debit": -diff if diff < 0 else 0,
+                          "credit": diff if diff > 0 else 0,
+                          "label_id": label_id,
+                          "description": f"Purchase price difference - {ret.return_number}"})
+        post_journal_entry(
+            voucher_type="PR",
+            voucher_id=ret.id,
+            voucher_number=ret.return_number,
+            description=f"Purchase Return {ret.return_number}",
+            lines=lines,
+            entry_date=ret.return_date,
+            created_by=current_user.id,
+        )
 
     if action == "approve":
         # §4.4 — crediting a posted invoice restores the order balances it
@@ -334,7 +420,7 @@ def unapprove_return(id):
     ).delete()
 
     # Remove the return's stock rows and rebuild running balances.
-    reverse_voucher_stock("PRV", ret.id)
+    reverse_voucher_stock("PRV", ret.id, created_by=current_user.id)
 
     db.session.commit()
     return jsonify({"ok": True, "status": "unapproved",

@@ -3,6 +3,10 @@
 {% block page_title %}{{ 'Edit: '+st.reference if st else 'New Stock Take' }}{% endblock %}
 {% block content %}
 <form method="POST" class="voucher-form">
+  {% if st and st.status == 'approved' %}
+  <div class="vf-locked">Approved and posted{% if st.approved_at %} on {{ st.approved_at.strftime('%d %b %Y') }}{% endif %} — read only. Unapprove to make changes.</div>
+  {% endif %}
+  <fieldset class="vf-fieldset" {{ 'disabled' if st and st.status == 'approved' else '' }}>
   <div class="card">
     <div class="card-body">
       <div class="form-row">
@@ -11,20 +15,14 @@
           <input type="text" name="location" class="form-control" value="{{ st.location if st else '' }}" required>
         </div>
       </div>
-      <div class="form-group">
-        <label>Status</label>
-        <select name="status" class="form-control">
-          <option value="in_progress" {{ 'selected' if st and st.status=='in_progress' else '' }}>In Progress</option>
-          <option value="approved" {{ 'selected' if st and st.status=='approved' else '' }}>Approved (creates adjustment)</option>
-        </select>
-      </div>
+      {% set doc = st %}{% include "vouchers/_voucher_meta.html" %}
     </div>
   </div>
 
   <div class="card">
     <div class="card-header"><strong>Items</strong> <span class="badge badge-info" style="background:var(--success);color:var(--card);">Stock Take</span></div>
     <div class="card-body">
-      <table class="table" id="items-table">
+      <div class="vf-table-wrap"><table class="table" id="items-table">
         <thead><tr><th>Product</th><th>System Qty</th><th>Physical Qty</th><th>Diff</th><th>Unit Cost</th><th></th></tr></thead>
         <tbody id="items-body">
           {% if st %}
@@ -40,24 +38,31 @@
           {% endfor %}
           {% endif %}
         </tbody>
-      </table>
+      </table></div>
       <button type="button" class="btn btn-outline" onclick="addRow()">+ Add Item</button>
     </div>
   </div>
+  </fieldset>
 
   {% if not st %}
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='in_progress'">Save as Unapproved</button>
-    <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Approve & Create Adjustment</button>
+    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save as draft</button>
+    <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Save &amp; approve</button>
     <a href="{{ url_for('inv_vouchers.stock_take_list') }}" class="btn btn-outline">Cancel</a>
+  </div>
+  {% elif st.status == 'approved' %}
+  <div class="form-actions">
+    
+    <a href="{{ url_for('inv_vouchers.stock_take_list') }}" class="btn btn-outline">Back</a>
   </div>
   {% else %}
   <div class="form-actions">
-    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='in_progress'">Edit</button>
-    {% if st.status != 'approved' %}
+    <button type="submit" class="btn btn-primary" onclick="this.form.status.value='unapproved'">Save</button>
     <button type="submit" class="btn btn-success" onclick="this.form.status.value='approved'">Approve</button>
-    {% endif %}
-    <a href="{{ url_for('inv_vouchers.stock_take_delete', id=st.id) }}" class="btn btn-danger" onclick="return confirm('Delete this stock take voucher?')">Delete</a>
+    
+    <button type="submit" class="btn btn-danger" formnovalidate
+            formaction="{{ url_for('inv_vouchers.stock_take_delete', id=st.id) }}"
+            onclick="return confirm('Delete {{ st.reference }}?')">Delete</button>
     <a href="{{ url_for('inv_vouchers.stock_take_list') }}" class="btn btn-outline">Cancel</a>
   </div>
   {% endif %}

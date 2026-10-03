@@ -22,7 +22,10 @@ from shared.models.invoice_template import (
     items_table_metrics)
 from shared.formatting import format_amount as _m
 from shared.permissions import deny_json, deny_page
-from shared.costing import record_out, reverse_voucher_stock
+from shared.costing import record_out, reverse_voucher_stock, NegativeStockError
+from shared.periods import ClosedPeriodError
+from shared.posting_helpers import (parse_doc_date, DocumentDateError,
+                                    label_weights, split_by_label)
 
 inv_inv_bp = Blueprint("inv_invoices", __name__, url_prefix="/inventory/invoices")
 
@@ -253,6 +256,16 @@ def save_invoice():
         inv.label_id = data.get("label_id") or _default_lid
         inv.sales_order_id = data.get("sales_order_id") or None
         inv.due_date = datetime.strptime(data.get("due_date"), "%Y-%m-%d") if data.get("due_date") else None
+        # The invoice posts — journal and stock — on ITS date, so a back-dated
+        # invoice lands in its own period and is costed where it sits in time.
+        try:
+            inv.invoice_date = parse_doc_date(data.get("invoice_date"),
+                                              fallback=inv.invoice_date)
+        except DocumentDateError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+        if inv.due_date and inv.due_date < inv.invoice_date:
+            return jsonify({"ok": False,
+                            "error": "Due date cannot be before the invoice date"}), 400
         inv.discount_mode = data.get("discount_mode", "general")
         inv.charges_mode = data.get("charges_mode", "general")
         inv.tax_mode = data.get("tax_mode", "general")
@@ -285,6 +298,7 @@ def save_invoice():
         db.session.flush()
     
         total_cogs = Decimal("0")
+        cogs_by_label = {}
         InvInvoiceItem.query.filter_by(invoice_id=inv.id).delete()
         for row in data.get("items", []):
             item = InvInvoiceItem(
@@ -324,8 +338,11 @@ def save_invoice():
                         item.product_id, "SI", inv.id, inv.voucher_number,
                         qty=item.quantity,
                         notes=f"Sale {inv.invoice_number}",
-                        created_by=current_user.id)
+                        created_by=current_user.id,
+                        txn_date=inv.invoice_date)
                     total_cogs += line_cogs
+                    cogs_by_label[item.label_id] = (
+                        cogs_by_label.get(item.label_id, Decimal("0")) + line_cogs)
     
         if action == "approve":
             from shared.order_linkage import apply_writeback
@@ -376,35 +393,42 @@ def save_invoice():
             # Pooled economic lines take the FIRST item's label — items
             # already fell back to "party label, else default" on save, so a
             # single-label invoice posts 1:1 to that project.
-            _first_item = InvInvoiceItem.query.filter_by(
-                invoice_id=inv.id).order_by(InvInvoiceItem.id).first()
-            llid = _first_item.label_id if _first_item else plid
+            # Pooled economic lines (revenue, discount, charges) are split by
+            # each item label's share of the goods value, so a multi-project
+            # invoice reports each project's revenue — not all of it under the
+            # first line's label. COGS is exact per label (costed per line).
+            _items = InvInvoiceItem.query.filter_by(
+                invoice_id=inv.id).order_by(InvInvoiceItem.id).all()
+            weights = label_weights(
+                (it.label_id or plid,
+                 float(it.total_after_discount or 0)
+                 or float(it.quantity or 0) * float(it.unit_price or 0))
+                for it in _items) or {plid: Decimal("1")}
+
+            def _split(account_id, debit, credit, text):
+                amt = debit or credit
+                for lid, share in split_by_label(amt, weights):
+                    lines.append({"account_id": account_id,
+                                  "debit": float(share) if debit else 0,
+                                  "credit": float(share) if credit else 0,
+                                  "label_id": lid, "description": text})
+
             lines = [
                 {"account_id": ar_acc.id, "debit": t["net_receivable"], "credit": 0,
                  "label_id": plid,
                  "description": f"AR - {inv.invoice_number}"},
             ]
             for account_id, amount in _revenue_splits(inv, t["effective_subtotal"]):
-                lines.append(
-                    {"account_id": account_id or rev_acc.id, "debit": 0, "credit": amount,
-                     "label_id": llid,
-                     "description": f"Revenue - {inv.invoice_number}"},
-                )
+                _split(account_id or rev_acc.id, 0, amount,
+                       f"Revenue - {inv.invoice_number}")
             if t["discount"] > 0:
                 disc_acc = ChartOfAccount.query.filter_by(code="4-02-02-01-0001").first() \
                     or posting_account("sales_returns")
-                lines.append(
-                    {"account_id": disc_acc.id, "debit": t["discount"], "credit": 0,
-                     "label_id": llid,
-                     "description": f"Discount allowed - {inv.invoice_number}"},
-                )
+                _split(disc_acc.id, t["discount"], 0,
+                       f"Discount allowed - {inv.invoice_number}")
             for row in t["pools"]["billed_rows"]:
-                lines.append(
-                    {"account_id": row.charge_account_id, "debit": 0,
-                     "credit": round(float(row.amount), 2),
-                     "label_id": llid,
-                     "description": f"{row.description or 'Charge'} - {inv.invoice_number}"},
-                )
+                _split(row.charge_account_id, 0, round(float(row.amount), 2),
+                       f"{row.description or 'Charge'} - {inv.invoice_number}")
             if t["sales_tax"] > 0 and out_tax_acc:
                 for account_id, amount in _output_tax_splits(inv, t["sales_tax"]):
                     lines.append(
@@ -431,33 +455,34 @@ def save_invoice():
             for row in t["pools"]["expense_rows"]:
                 amt = round(float(row.amount), 2)
                 accrued_acc = posting_account("accrued")
-                lines.append(
-                    {"account_id": row.charge_account_id, "debit": amt, "credit": 0,
-                     "label_id": llid,
-                     "description": f"{row.description or 'Charge'} (absorbed cost) - {inv.invoice_number}"},
-                )
+                _split(row.charge_account_id, amt, 0,
+                       f"{row.description or 'Charge'} (absorbed cost) - {inv.invoice_number}")
                 lines.append(
                     {"account_id": accrued_acc.id, "debit": 0, "credit": amt,
                      "description": f"{row.description or 'Charge'} accrued - {inv.invoice_number}"},
                 )
             if total_cogs > 0 and cogs_acc and inv_acc:
-                lines.append(
-                    {"account_id": cogs_acc.id, "debit": float(total_cogs), "credit": 0,
-                     "label_id": llid,
-                     "description": f"COGS - {inv.invoice_number}"},
-                )
-                lines.append(
-                    {"account_id": inv_acc.id, "debit": 0, "credit": float(total_cogs),
-                     "label_id": llid,
-                     "description": f"Inventory - {inv.invoice_number}"},
-                )
+                for lid, cogs in cogs_by_label.items():
+                    if not cogs:
+                        continue
+                    lid = lid or plid
+                    lines.append(
+                        {"account_id": cogs_acc.id, "debit": float(cogs), "credit": 0,
+                         "label_id": lid,
+                         "description": f"COGS - {inv.invoice_number}"},
+                    )
+                    lines.append(
+                        {"account_id": inv_acc.id, "debit": 0, "credit": float(cogs),
+                         "label_id": lid,
+                         "description": f"Inventory - {inv.invoice_number}"},
+                    )
             post_journal_entry(
                 voucher_type="SI",
                 voucher_id=inv.id,
                 voucher_number=inv.voucher_number,
                 description=f"Sales Invoice {inv.invoice_number} - {inv.customer.name if inv.customer else ''}",
                 lines=lines,
-                entry_date=datetime.utcnow(),
+                entry_date=inv.invoice_date,
                 created_by=current_user.id,
             )
     
@@ -477,7 +502,12 @@ def save_invoice():
                         "payment_status": inv.payment_status,
                         "number": inv.invoice_number, "voucher": inv.voucher_number,
                         "message": f"Invoice {msg}"})
+    except (NegativeStockError, ClosedPeriodError, DocumentDateError) as e:
+        # A business refusal, not a crash: nothing was committed.
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 400
     except Exception as e:
+        db.session.rollback()
         _tb.print_exc()
         return jsonify({"ok": False, "error": f"Server error: {e}"}), 500
 
@@ -491,8 +521,22 @@ def unapprove_invoice(id):
     inv = scoped_get_404(InvInvoice, id)
     if inv.voucher_status != "approved":
         return jsonify({"ok": False, "error": "Only approved invoices can be unapproved"}), 400
+    # A posted return credits this invoice; un-posting the invoice under it
+    # would leave the customer credited for a sale that no longer exists.
+    from inventory_app.models.sales_return import InvSalesReturn
+    returns = InvSalesReturn.query.filter_by(original_invoice_id=inv.id,
+                                             status="approved").all()
+    if returns:
+        return jsonify({"ok": False, "error": (
+            "Cannot unapprove: approved sales return(s) "
+            + ", ".join(r.return_number for r in returns)
+            + " credit this invoice. Unapprove them first.")}), 400
 
-    reverse_journal_entry("SI", inv.id, current_user.id)
+    try:
+        reverse_journal_entry("SI", inv.id, current_user.id)
+    except ClosedPeriodError as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 400
 
     # §4.4: un-posting gives the quantities back to the source orders, which
     # reopen (Fully -> Partially -> Open) as their balances are restored.
@@ -509,9 +553,9 @@ def unapprove_invoice(id):
         reference_type="sales_invoice", reference_id=inv.id
     ).delete()
 
-    # Remove this invoice's issues from the cost history and rebuild each
-    # product's running balances (also re-syncs current_stock).
-    reverse_voucher_stock("SI", inv.id)
+    # Remove this invoice's issues from the cost history. Later issues of the
+    # same products are re-costed in date order and any change is journalled.
+    reverse_voucher_stock("SI", inv.id, created_by=current_user.id)
 
     db.session.commit()
     # An unapproved invoice owes nothing, so anything assigned to it stops
