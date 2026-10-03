@@ -1292,6 +1292,16 @@ def _seed_all_data(app):
         # default company so all subsequent seeding is scoped to it.
         _bootstrap_default_company(db)
 
+        # Demo catalogue (sample users, products with stock, suppliers,
+        # customers) only goes into a brand-new database — or when
+        # SEED_DEMO_DATA=1 asks for it. On a live database it would inject
+        # demo stock into a real company (with opening value but no journal),
+        # and demo logins with well-known passwords. Required setup (roles,
+        # the system administrator, chart, settings, templates, backfills)
+        # always runs.
+        seed_demo = (os.environ.get("SEED_DEMO_DATA") == "1"
+                     or User.query.count() == 0)
+
         Role.seed()
         admin_role = Role.query.filter_by(name=Role.ADMIN).first()
         mgr_role = Role.query.filter_by(name=Role.MANAGER).first()
@@ -1396,8 +1406,15 @@ def _seed_all_data(app):
             ("EMP001", "emp@solarkon.com", "Employee User", emp_role.id, "emp123", True, False, "Employee"),
             ("EMP002", "john.doe@solarkon.com", "John Doe", emp_role.id, "emp123", True, False, "Employee"),
         ]
+        if not seed_demo:
+            seed_users = [u for u in seed_users if u[0] == "SYSADMIN"]
         for code, email, name, rid, pw, hr, inv, desig in seed_users:
-            u = User.query.filter_by(email=email).first()
+            # Skip when EITHER the email or the employee code is taken: codes
+            # are globally unique, and a real user holding "EMP001" under
+            # another email made this insert fail on every cold start —
+            # aborting the rest of seeding (seen on Neon production).
+            u = User.query.filter(db.or_(User.email == email,
+                                         User.employee_code == code)).first()
             if not u:
                 u = User(employee_code=code, email=email, full_name=name, role_id=rid,
                          has_hr_access=hr, has_inventory_access=inv, is_active=True, designation=desig)
@@ -1442,7 +1459,7 @@ def _seed_all_data(app):
                 db.session.add(InvUnit(name=name, abbreviation=abbr, explanation=expl))
         db.session.flush()
 
-        for sku, name, cat, price, cost, stock, reorder in [
+        for sku, name, cat, price, cost, stock, reorder in [] if not seed_demo else [
             ("SOL-MONO-450", "Monocrystalline Solar Panel 450W", cat_names[0], 32000, 28000, 50, 10),
             ("SOL-MONO-550", "Monocrystalline Solar Panel 550W", cat_names[0], 42000, 37000, 30, 5),
             ("SOL-POLY-330", "Polycrystalline Solar Panel 330W", cat_names[0], 22000, 18500, 40, 8),
@@ -1473,7 +1490,7 @@ def _seed_all_data(app):
                               unit="pcs", is_active=True)
                 db.session.add(p)
 
-        for name, contact, email, phone, addr, city in [
+        for name, contact, email, phone, addr, city in [] if not seed_demo else [
             ("Longi Solar Pakistan", "Mr. Ahmed", "ahmed@longi.pk", "021-34567890", "PLOT 12, SITE AREA", "Karachi"),
             ("JA Solar Technologies", "Mr. Usman", "usman@jasolar.com", "042-35678901", "23-G, Gulberg III", "Lahore"),
             ("BYD Energy Solutions", "Mr. Kamran", "kamran@byd.com", "021-36789012", "Business Bay, Clifton", "Karachi"),
@@ -1486,7 +1503,7 @@ def _seed_all_data(app):
                                address=addr, city=city, is_active=True)
                 db.session.add(s)
 
-        for name, email, phone, addr, city, cl in [
+        for name, email, phone, addr, city, cl in [] if not seed_demo else [
             ("SolarTech Solutions", "imran@solartech.com", "0300-1111111", "7-A, Johar Town", "Lahore", 1000000),
             ("Green Energy Pakistan", "fatima@greenenergy.com", "0300-2222222", "15-B, Phase 2, DHA", "Karachi", 2000000),
             ("BuildRight Construction", "ali@buildright.com", "0300-3333333", "3rd Floor, Al-Falah Plaza", "Islamabad", 1500000),

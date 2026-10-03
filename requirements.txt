@@ -1,5 +1,9 @@
 flask==3.1.1
 flask-sqlalchemy==3.1.1
+# Pinned: SQLAlchemy 2.1 switched the default Postgres driver to psycopg 3,
+# which is not installed, and unpinned Vercel builds took 2.1 and failed to
+# start (ModuleNotFoundError: psycopg). 2.0.51 is the tested version.
+SQLAlchemy==2.0.51
 flask-login==0.6.3
 flask-wtf==1.2.2
 reportlab==4.3.1

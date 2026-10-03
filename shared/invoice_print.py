@@ -257,7 +257,10 @@ def render_sales_print_html(invoice):
         "company_bank_account_number": _e(company.bank_account_number),
         "invoice_no": _e(invoice.voucher_number),
         "invoice_date": invoice.invoice_date.strftime("%d-%b-%Y") if invoice.invoice_date else "",
-        "due_date": invoice.due_date.strftime("%d-%b-%Y") if invoice.due_date else "",
+        # Purchase invoices carry no due date column; reading it unguarded
+        # crashed every purchase invoice page once a print template was set.
+        "due_date": (invoice.due_date.strftime("%d-%b-%Y")
+                     if getattr(invoice, "due_date", None) else ""),
         "status": ("Approved" if invoice.approved_at else "Unapproved"),
         "party_name": _e(party.name) if party else "",
         "party_address": _e(party.address) if party and party.address else "",
@@ -466,7 +469,10 @@ def render_purchase_print_html(invoice):
         "company_bank_account_number": _e(company.bank_account_number),
         "invoice_no": _e(invoice.voucher_number),
         "invoice_date": invoice.invoice_date.strftime("%d-%b-%Y") if invoice.invoice_date else "",
-        "due_date": invoice.due_date.strftime("%d-%b-%Y") if invoice.due_date else "",
+        # Purchase invoices carry no due date column; reading it unguarded
+        # crashed every purchase invoice page once a print template was set.
+        "due_date": (invoice.due_date.strftime("%d-%b-%Y")
+                     if getattr(invoice, "due_date", None) else ""),
         "status": ("Approved" if invoice.approved_at else "Unapproved"),
         "party_name": _e(party.name) if party else "",
         "party_address": _e(party.address) if party and party.address else "",

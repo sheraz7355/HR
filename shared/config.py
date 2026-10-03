@@ -1,11 +1,36 @@
 import os
 
 
+def normalize_database_url(url):
+    """Any Postgres URL form -> the psycopg2 driver this app ships with.
+
+    Neon / Vercel hand out ``postgres://``, ``postgresql://`` and
+    ``postgresql+psycopg://`` (psycopg 3) URLs. Only psycopg2 is installed
+    (requirements.txt), and a ``+psycopg`` URL made SQLAlchemy import the
+    missing ``psycopg`` package and the whole app fail to start. Quotes and
+    whitespace pasted into the environment variable are stripped too.
+    """
+    url = (url or "").strip().strip('"').strip("'")
+    if not url:
+        return url
+    for prefix in ("postgres://", "postgresql://", "postgresql+psycopg://",
+                   "postgresql+psycopg2://", "postgresql+pg8000://",
+                   "postgresql+asyncpg://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg2://" + url[len(prefix):]
+    return url
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", os.urandom(24).hex())
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///erp.db")
-    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
-        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
+    SQLALCHEMY_DATABASE_URI = (normalize_database_url(os.environ.get("DATABASE_URL"))
+                               or "sqlite:///erp.db")
+    # Neon closes idle connections; a warm serverless instance would otherwise
+    # hand the next request a dead one ("SSL connection has been closed
+    # unexpectedly"). Ping before use and recycle well inside Neon's timeout.
+    if SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
+        SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 280,
+                                     "pool_size": 5, "max_overflow": 5}
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
