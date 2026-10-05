@@ -1,5 +1,6 @@
 from datetime import datetime
 from shared.extensions import db
+from shared.models.money import Money
 
 
 class AssetTransfer(db.Model):
@@ -16,7 +17,7 @@ class AssetTransfer(db.Model):
     product_id = db.Column(db.Integer, nullable=True)
     new_product_name = db.Column(db.String(200), default="")
     source_product_id = db.Column(db.Integer, nullable=True)
-    transfer_amount = db.Column(db.Float, default=0)
+    transfer_amount = db.Column(Money, default=0)
     description = db.Column(db.Text, default="")
     # Date the transfer happens: its journal and stock movement post here.
     transfer_date = db.Column(db.Date)

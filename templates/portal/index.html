@@ -102,6 +102,7 @@
   <span class="brand"><span class="mark">A</span> Accountix ERP</span>
   <div class="top-actions">
     <span class="who">{{ current_user.full_name or current_user.email }}</span>
+    {% include "partials/_theme_toggle.html" %}
     <a class="btn btn-line btn-sm" href="{{ url_for('auth.logout') }}">Logout</a>
   </div>
 </div>
@@ -202,5 +203,6 @@
     {% endif %}
   </div>
 </div>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>

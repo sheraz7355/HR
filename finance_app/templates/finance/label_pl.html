@@ -2,7 +2,8 @@
 {% block title %}P&amp;L by Label{% endblock %}
 {% block heading %}Profit &amp; Loss by Project Label{% endblock %}
 {% block actions %}
-<button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
+{% from "partials/export.html" import export_buttons %}
+{{ export_buttons(("excel", "pdf", "csv")) }}
 {% endblock %}
 {% block content %}
 <style>

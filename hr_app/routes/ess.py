@@ -1,8 +1,10 @@
-import os
+from io import BytesIO
 from datetime import datetime, date
-from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, send_file, current_app
+from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, send_file
 from flask_login import login_required, current_user
 from ..extensions import db
+from werkzeug.utils import secure_filename
+from shared import file_store
 from shared.tenancy import scoped_get_404, get_member, current_company_id
 from ..models.user import User
 from ..models.change_request import ChangeRequest
@@ -66,28 +68,11 @@ def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def _avatar_dir():
-    """Per-company avatar folder: uploads/<company_id>/avatars/.
-
-    Isolated per company so one tenant can never address another's images;
-    the serve route falls back to the legacy flat uploads/avatars/ folder
-    for pre-multi-company files.
-    """
-    cid = current_company_id()
-    if cid is None:
-        raise RuntimeError("No active company for avatar upload")
-    d = os.path.join(current_app.config["UPLOAD_FOLDER"], str(cid), "avatars")
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def _avatar_candidates(filename):
-    """(new per-company path, legacy path) for an avatar filename."""
-    cid = current_company_id()
-    if cid:
-        yield os.path.join(current_app.config["UPLOAD_FOLDER"],
-                           str(cid), "avatars", filename)
-    yield os.path.join(current_app.config["UPLOAD_FOLDER"], "avatars", filename)
+def _avatar_key(filename):
+    """Storage key of an avatar inside the active company (file_store keeps
+    it in the database; legacy uploads/<company_id>/avatars/ and the flat
+    uploads/avatars/ folder are still read for pre-existing pictures)."""
+    return f"avatars/{filename}"
 
 
 @ess_bp.route("/upload-picture", methods=["POST"])
@@ -102,13 +87,12 @@ def upload_picture():
         return redirect(url_for("ess.index"))
     ext = file.filename.rsplit(".", 1)[1].lower()
     filename = f"avatar_{current_user.id}_{int(datetime.utcnow().timestamp())}.{ext}"
-    upload_dir = _avatar_dir()
-    file.save(os.path.join(upload_dir, filename))
-    # Delete old avatar from disk (per-company folder, then legacy folder)
-    if current_user.profile_image:
-        for old in _avatar_candidates(current_user.profile_image):
-            if os.path.exists(old):
-                os.remove(old)
+    if current_company_id() is None:
+        flash("Open a company before uploading a picture.", "danger")
+        return redirect(url_for("ess.index"))
+    file_store.save(_avatar_key(filename), file.read(), file.mimetype)
+    if current_user.profile_image and current_user.profile_image != filename:
+        file_store.delete(_avatar_key(current_user.profile_image))
     current_user.profile_image = filename
     db.session.commit()
     flash("Profile picture updated.", "success")
@@ -188,16 +172,11 @@ def slips():
 @ess_bp.route("/avatar/<filename>")
 @login_required
 def avatar(filename):
-    for path in _avatar_candidates(filename):
-        if os.path.isfile(path):
-            try:
-                import mimetypes
-                return send_file(
-                    path,
-                    mimetype=mimetypes.guess_type(path)[0] or "image/png")
-            except Exception:
-                return "", 404
-    return "", 404
+    stored = file_store.read(_avatar_key(secure_filename(filename)))
+    if stored is None:
+        return "", 404
+    data, content_type = stored
+    return send_file(BytesIO(data), mimetype=content_type or "image/png")
 
 
 @ess_bp.route("/performance")

@@ -28,9 +28,17 @@ class Config:
     # Neon closes idle connections; a warm serverless instance would otherwise
     # hand the next request a dead one ("SSL connection has been closed
     # unexpectedly"). Ping before use and recycle well inside Neon's timeout.
+    #
+    # Pool size: a Vercel instance serves one request at a time, so it needs
+    # one connection for the request plus one for the audit log's
+    # record_now() (its own connection, so refused postings survive the
+    # rollback). Five idle connections per instance, times every warm
+    # instance, only ate into Neon's connection limit.
     if SQLALCHEMY_DATABASE_URI.startswith("postgresql"):
+        _serverless = bool(os.environ.get("VERCEL"))
         SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 280,
-                                     "pool_size": 5, "max_overflow": 5}
+                                     "pool_size": 2 if _serverless else 5,
+                                     "max_overflow": 2 if _serverless else 5}
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024

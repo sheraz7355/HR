@@ -1,15 +1,16 @@
 from datetime import datetime, date
 from ..extensions import db
+from shared.models.money import Money
 
 
 class ProvidentFundConfig(db.Model):
     __tablename__ = "pf_config"
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
-    employee_contribution_pct = db.Column(db.Float, default=5.0)
-    employer_contribution_pct = db.Column(db.Float, default=5.0)
-    max_loan_percentage = db.Column(db.Float, default=50.0)
-    interest_rate = db.Column(db.Float, default=0.0)
+    employee_contribution_pct = db.Column(Money, default=5.0)
+    employer_contribution_pct = db.Column(Money, default=5.0)
+    max_loan_percentage = db.Column(Money, default=50.0)
+    interest_rate = db.Column(Money, default=0.0)
     min_service_months_for_loan = db.Column(db.Integer, default=12)
     is_active = db.Column(db.Boolean, default=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -22,9 +23,9 @@ class PFContribution(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
-    employee_amount = db.Column(db.Float, default=0.0)
-    employer_amount = db.Column(db.Float, default=0.0)
-    total_amount = db.Column(db.Float, default=0.0)
+    employee_amount = db.Column(Money, default=0.0)
+    employer_amount = db.Column(Money, default=0.0)
+    total_amount = db.Column(Money, default=0.0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref="pf_contributions")
@@ -42,9 +43,9 @@ class PFLedger(db.Model):
     transaction_date = db.Column(db.Date, default=date.today, nullable=False)
     transaction_type = db.Column(db.String(30), nullable=False)
     description = db.Column(db.Text)
-    debit = db.Column(db.Float, default=0.0)
-    credit = db.Column(db.Float, default=0.0)
-    balance = db.Column(db.Float, default=0.0)
+    debit = db.Column(Money, default=0.0)
+    credit = db.Column(Money, default=0.0)
+    balance = db.Column(Money, default=0.0)
     reference_id = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -56,7 +57,7 @@ class PFWithdrawalRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(Money, nullable=False)
     reason = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(20), default="pending")
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -73,14 +74,14 @@ class PFLoanRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(Money, nullable=False)
     installment_months = db.Column(db.Integer, default=12)
     purpose = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(20), default="pending")
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     approved_at = db.Column(db.DateTime)
-    monthly_installment = db.Column(db.Float)
-    remaining_amount = db.Column(db.Float)
+    monthly_installment = db.Column(Money)
+    remaining_amount = db.Column(Money)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", foreign_keys=[user_id], backref="pf_loans")

@@ -4,8 +4,8 @@
 {% set is_draft = vstatus == 'unapproved' %}
 {% set is_approved = vstatus == 'approved' %}
 {% set editable = not is_approved %}
-{% block title %}{{ 'Approved' if is_approved else 'Unapproved' }} Sales Invoice{% endblock %}
-{% block page_title %}{{ 'Approved' if is_approved else 'Unapproved' }} Sales Invoice{% endblock %}
+{% block title %}{{ invoice.invoice_number ~ ' · ' if invoice else '' }}Sales Invoice{% endblock %}
+{% block page_title %}Sales Invoice{% endblock %}
 {% block extra_css %}
 <style>
 
@@ -571,10 +571,11 @@ body{background:var(--card);font-size:10px}
 .hdr-g{display:grid;grid-template-columns:1.6fr 1.2fr 1fr;gap:20px;align-items:start}
 
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/doc_form.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="wrap">
+<div class="wrap{{ ' is-locked' if is_approved else '' }}" id="docWrap">
   {% with doc_title = ('Approved ' if is_approved else '') + 'Sales Invoice' %}{% include '_print_header.html' %}{% endwith %}
   {% if rendered_template %}
   <div class="rendered-template">{{ rendered_template|safe }}</div>
@@ -587,18 +588,18 @@ body{background:var(--card);font-size:10px}
   {% set editable = not is_approved %}
 
   {% if is_approved %}
-  <div class="ap-b"><span class="ap-t">&#10003; APPROVED</span><span>{{ invoice.approver.full_name if invoice.approver else '' }} @ {{ invoice.approved_at.strftime('%Y-%m-%d %H:%M') if invoice.approved_at else '' }}</span></div>
+  <div class="ap-b"><span class="ap-t">&#128274; Approved and locked</span><span>Posted to the ledger{% if invoice.approver %} by {{ invoice.approver.full_name }}{% endif %}{% if invoice.approved_at %} on {{ invoice.approved_at.strftime('%d %b %Y, %H:%M') }}{% endif %}. Unapprove from <b>More</b> to make changes.</span></div>
   {% endif %}
 
   <!-- PAGE HEADER (template: title + "SI-… • Draft" left, actions right) -->
   <div class="pg-h">
-    <div>
-      <h1 class="pg-t">Sales Invoice</h1>
-      <p class="pg-s">
-        <span class="pg-num">{{ invoice.invoice_number if invoice else 'New' }}</span>
-        <span class="pg-dot">&bull;</span>
-        <span>{{ 'Approved' if is_approved else ('Draft' if is_draft else vstatus|title) }}</span>
-      </p>
+    <div class="pg-id">
+      <a class="pg-back" href="{{ url_for('inv_invoices.list_invoices') }}" id="backLink">&larr; Sales invoices</a>
+      <h1 class="pg-t"><span id="docTitle">{{ invoice.invoice_number if invoice else 'New sales invoice' }}</span>
+        <span class="bdg bdg-{{ vstatus }}" id="statusBadge">{{ 'Approved' if is_approved else 'Draft' }}</span>
+        <span class="bdg bdg-{{ pstatus }}" id="paymentBadge" {{ '' if is_approved else 'hidden' }}>{{ pstatus|title }}</span>
+      </h1>
+      <p class="pg-s" id="docMeta">{% if invoice %}{{ invoice.customer.name if invoice.customer else '' }}{% else %}Fill in the customer and lines, then save as a draft or approve.{% endif %}</p>
     </div>
     <div class="pg-a" id="pageActions"></div>
   </div>
@@ -614,33 +615,39 @@ body{background:var(--card);font-size:10px}
       <div class="fsec-h">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
         <span>Customer details</span>
-        <span class="fsec-aside">
-          <span class="bdg bdg-{{ vstatus }}" id="statusBadge">{{ vstatus|title }}</span>
-          <span class="bdg bdg-{{ pstatus }}" id="paymentBadge">{{ pstatus|title }}</span>
-        </span>
       </div>
       <div class="frow frow-5">
         <div class="ffield ac-wrap">
-          <label class="lbl" for="customerSearch">Customer <span style="color:var(--danger);">*</span></label>
+          <label class="lbl" for="customerSearch">Customer <span class="req" aria-hidden="true">*</span></label>
           <input type="text" class="inp inp-sm" id="customerSearch" placeholder="Search or press Space..." value="{{ invoice.customer.name if invoice else '' }}" autocomplete="off" {{ 'disabled' if not editable else '' }}>
           <input type="hidden" id="customerId" value="{{ invoice.customer_id if invoice else '' }}">
           <div class="ac-dd" id="customerDropdown"></div>
         </div>
-        <div class="ffield"><label class="lbl" for="invNumber">Document #</label>
-          <input type="text" class="inp inp-sm inp-plain" readonly id="invNumber" value="{{ invoice.invoice_number if invoice else '(auto)' }}">
-          <input type="hidden" id="invVoucher" value="{{ invoice.voucher_number if invoice else '' }}"></div>
         <div class="ffield"><label class="lbl" for="invDate">Invoice date</label>
           <input type="date" class="inp inp-sm" id="invDate" value="{{ (invoice.invoice_date or invoice.created_at).strftime('%Y-%m-%d') if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
+        <div class="ffield"><label class="lbl" for="payTerms">Payment terms</label>
+          <select id="payTerms" class="inp inp-sm" title="Sets the due date from the invoice date" {{ 'disabled' if not editable else '' }}>
+            <option value="">Custom date</option>
+            <option value="0">Due on receipt</option>
+            <option value="7">Net 7 days</option>
+            <option value="15">Net 15 days</option>
+            <option value="30">Net 30 days</option>
+            <option value="45">Net 45 days</option>
+            <option value="60">Net 60 days</option>
+            <option value="90">Net 90 days</option>
+          </select>
+          <input type="hidden" id="invNumber" value="{{ invoice.invoice_number if invoice else '(auto)' }}">
+          <input type="hidden" id="invVoucher" value="{{ invoice.voucher_number if invoice else '' }}"></div>
         <div class="ffield"><label class="lbl" for="dueDate">Due date</label>
           <input type="date" class="inp inp-sm" id="dueDate" value="{{ invoice.due_date.strftime('%Y-%m-%d') if invoice and invoice.due_date else '' }}" {{ 'disabled' if not editable else '' }}></div>
-        <div class="ffield"><label class="lbl" for="invLabelSearch">Party label</label>
+        <div class="ffield"><label class="lbl" for="invLabelSearch" title="Tags the whole invoice for P&amp;L by label">Project label</label>
           <select id="invLabel" class="inp inp-sm" {{ 'disabled' if not editable else '' }} style="display:none" aria-hidden="true">
             <option value="">&mdash; None &mdash;</option>
             {% for l in project_labels|default([]) %}
             <option value="{{ l.id }}" {{ 'selected' if invoice and invoice.label_id and invoice.label_id == l.id else '' }}>{{ l.name }}</option>
             {% endfor %}
           </select>
-          <input type="text" id="invLabelSearch" class="inp inp-sm" placeholder="Search..." autocomplete="off" {{ 'disabled' if not editable else '' }}></div>
+          <input type="text" id="invLabelSearch" class="inp inp-sm" placeholder="None" autocomplete="off" {{ 'disabled' if not editable else '' }}></div>
       </div>
       {% if party_mode == 'all' %}
       <div class="frow frow-1" style="margin-top:12px;">
@@ -763,7 +770,7 @@ body{background:var(--card);font-size:10px}
         <button type="button" class="bsm bsm-d" id="clearAllBtn">&#10005; Clear all lines</button>
         {% endif %}
         <span style="flex:1;"></span>
-        <span style="font-size:11px;color:var(--muted);">Space to search &bull; Enter = next field &bull; Ctrl+S save</span>
+        <span class="ga-hint">Space opens the list &middot; Enter moves to the next cell &middot; Ctrl+S saves</span>
       </div>
     </div>
   </div>
@@ -773,11 +780,11 @@ body{background:var(--card);font-size:10px}
     <div class="card-b" style="padding:0;">
       <div class="btm">
         <div class="btm-l">
-          <label class="lbl">Notes / Comments</label>
-          <textarea id="invoiceNotes" class="inp" rows="5" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
+          <label class="lbl" for="invoiceNotes">Notes</label>
+          <textarea id="invoiceNotes" class="inp" rows="5" placeholder="Delivery instructions, bank details, terms…" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
         </div>
         <div class="btm-r">
-          <div class="sl"><span class="sll">Subtotal (sum of line Amounts) <span class="mbadge mb-c">computed</span></span><span class="slv" id="summarySubtotal">0.00</span></div>
+          <div class="sl"><span class="sll">Subtotal</span><span class="slv" id="summarySubtotal">0.00</span></div>
           <div class="sl sl-memo" id="absorbMemoRow" style="display:none;"><span class="sll">Absorbed charges (in item values) &mdash; memo</span><span class="slv" id="summaryAbsorb" style="width:70px;text-align:right;min-width:auto;">0.00</span></div>
           <div class="sl">
             <span class="sll">Total discount <span class="mbadge" id="badgeDiscount"></span></span>
@@ -789,7 +796,7 @@ body{background:var(--card);font-size:10px}
             </span>
           </div>
           <div class="sl" style="border-top:1px dashed var(--border);padding-top:6px;margin-top:2px;align-items:flex-start;">
-            <span class="sll" style="font-weight:700;">Taxable value <span class="mbadge mb-c">computed</span>
+            <span class="sll" style="font-weight:700;">Taxable value
               <!-- Figure 6 spells the derivation out under the row rather than
                    hiding it in a tooltip — it is the number everything keys off. -->
               <span class="sl-formula" id="taxableFormula"></span></span>
@@ -819,7 +826,7 @@ body{background:var(--card);font-size:10px}
               <span class="slv" id="summaryWithholdingTax" style="color:var(--danger);width:70px;text-align:right;min-width:auto;">-0.00</span>
             </span>
           </div>
-          <div class="sl sl-net"><span class="sll">Net Receivable</span><span class="slv" id="summaryNetTotal">0.00</span></div>
+          <div class="sl sl-net"><span class="sll">Total due</span><span class="slv" id="summaryNetTotal">0.00</span></div>
         </div>
       </div>
     </div>
@@ -829,34 +836,7 @@ body{background:var(--card);font-size:10px}
          Ctrl+S save · Ctrl+Shift+S save & approve · Ctrl+P print (saved docs)
          Alt+N new invoice · Alt+C back to the list. New/Cancel route through
          the unsaved-changes guard (see the shortcuts script). -->
-    <div class="ab">
-      {% set can_approve = current_user.is_admin() or current_user.is_manager() %}
-      {% if vstatus == 'unapproved' %}
-        <button type="button" class="btn btn-p" id="saveBtn" title="Save draft — Ctrl+S">Save<span class="kbd">Ctrl S</span></button>
-        {% if can_approve %}
-        <button type="button" class="btn btn-s" id="saveApproveBtn" title="Save and approve — Ctrl+Shift+S">Save &amp; Approve<span class="kbd">Ctrl ⇧ S</span></button>
-        {% endif %}
-        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
-        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list without saving — Alt+C">Cancel<span class="kbd">Alt C</span></a>
-      {% elif not is_approved and vstatus != 'unapproved' %}
-        <button type="button" class="btn btn-p" id="saveBtn" disabled>Save<span class="kbd">Ctrl S</span></button>
-        {% if can_approve %}
-        <button type="button" class="btn btn-s" id="approveBtn" title="Approve — Ctrl+Shift+S">Approve<span class="kbd">Ctrl ⇧ S</span></button>
-        {% endif %}
-        <button type="button" class="btn btn-o" onclick="doPrint()" title="Print — Ctrl+P">Print<span class="kbd">Ctrl P</span></button>
-        <button type="button" class="btn btn-d" id="deleteBtn" onclick="showConfirm('Delete Invoice','Are you sure you want to delete this invoice?',deleteInvoice)">Delete</button>
-        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
-        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list — Alt+C">Cancel<span class="kbd">Alt C</span></a>
-      {% elif is_approved %}
-        <button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button>
-        <button type="button" class="btn btn-info" id="validateFbrBtn">Validate FBR</button>
-        <button type="button" class="btn btn-accent" id="submitFbrBtn">Send to FBR</button>
-        <button type="button" class="btn btn-o" onclick="doPrint()" title="Print — Ctrl+P">Print<span class="kbd">Ctrl P</span></button>
-        <a href="{{ url_for('inv_invoices.invoice_form') }}" class="btn btn-o" id="newBtn" title="Start a new invoice — Alt+N">New<span class="kbd">Alt N</span></a>
-        <!-- "Back to list", not "Cancel": nothing is pending on an approved
-             document. Every state keeps a way back to the list. -->
-        <a href="{{ url_for('inv_invoices.list_invoices') }}" class="btn btn-o" id="cancelBtn" title="Back to the list — Alt+C">Back to list<span class="kbd">Alt C</span></a>
-      {% endif %}
+    <div class="ab" data-state="{{ 'approved' if is_approved else ('draft' if invoice else 'new') }}"></div>
     </div>
   </div>
 </div>
@@ -1134,7 +1114,7 @@ body{background:var(--card);font-size:10px}
     <p id="confirmMsg" style="color:var(--muted);font-size:14px;margin:0 0 16px;"></p>
     <div class="modal-acts">
       <button type="button" class="btn btn-o" onclick="closeConfirm()">Cancel</button>
-      <button type="button" class="btn btn-p" id="confirmOkBtn">Yes, Continue</button>
+      <button type="button" class="btn btn-s" id="confirmOkBtn">Yes, continue</button>
     </div>
   </div>
 </div>
@@ -1353,7 +1333,7 @@ if(pai){(function(){
 // open, Enter belongs to the picker — navigation stands down.
 (function(){
   var strip=document.querySelector('.hdr-strip');if(!strip)return;
-  var LANE='#customerSearch,#partyAccountSearch,#invDate,#dueDate,#invLabelSearch,#settingsTransportMode,#settingsTransporter,#settingsTransportDoc,#refSO';
+  var LANE='#customerSearch,#partyAccountSearch,#invDate,#payTerms,#dueDate,#invLabelSearch,#settingsTransportMode,#settingsTransporter,#settingsTransportDoc,#refSO';
   strip.addEventListener('keydown',function(e){
     if(e.key!=='Enter'||e.ctrlKey||e.altKey||e.metaKey)return;
     var t=e.target;
@@ -1413,7 +1393,7 @@ drop.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');i
 var PER_LINE = {{ 'true' if per_line_labeling else 'false' }};
 function rowLabelOptions(){var s=document.getElementById('invLabel');var h='<option value="">&mdash;</option>';for(var i=1;i<s.options.length;i++){var o=s.options[i];h+='<option value="'+o.value+'">'+esc(o.text)+'</option>'}return h}
 function addRow(data,noFocus){var tbody=document.getElementById('itemsBody'),tr=document.createElement('tr');rowCount++;var d=getMode('discount'),c=getMode('charges'),t=getMode('tax'),id=d==='individual',ic=c==='individual',it=t==='individual',dis=editable?'':'disabled';var byPct=discMethod()==='pct';tr.dataset.productId=(data&&data.product_id)||'';tr.dataset.weight=(data&&data.weight)||0;
-tr.innerHTML='<td class="rn">'+rowCount+'</td><td class="c-ord" style="'+(loadedOrderIds.length?'':'display:none;')+'"><span class="ri rc" data-col="order_ref" style="font-size:10px;color:var(--muted);">'+esc((data&&data.order_ref)||'')+'</span></td><td><input type="text" class="ri ac-code" data-col="code" placeholder="SKU" value="'+((data&&data.product&&data.product.sku)||'')+'" '+dis+'></td><td><div class="ac-wrap"><textarea class="ri ac-desc-input" data-col="description" placeholder="Search or Space..." rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(data&&data.description||'')+'</textarea><div class="ac-dd"></div><div class="info-badge" style="font-size:10px;color:var(--light);"></div></div></td><td><input type="number" class="ri num" data-col="quantity" value="'+((data&&data.quantity)||1)+'" min="0.01" step="any" '+dis+'></td><td><span class="ri rc ac-unit">'+((data&&data.unit)||'pcs')+'</span></td><td><input type="number" class="ri num" data-col="unit_price" value="'+((data&&data.unit_price)||0)+'" step="0.01" min="0" '+dis+'></td><td><input type="text" class="ri rc num" data-col="amount" value="0" readonly></td><td class="c-disc c-disc-pct" style="'+((id&&byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_pct" value="'+((data&&data.discount_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&id?'':'disabled')+'></div></td><td class="c-disc c-disc-amt" style="'+((id&&!byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_amount" value="'+((data&&data.discount_amount)||0)+'" step="0.01" min="0" '+(editable&&id?'':'disabled')+'></div></td><td class="c-chg num" style="'+(ic?'':'display:none;')+'"><span class="ri rc num chg-cell zero" data-col="addcharges" title="Click for breakdown" onclick="openChgPopover(this)">0.00</span></td><td class="c-tax" style="'+(it?'':'display:none;')+'"><div class="row-tax"><input type="number" class="ri num" data-col="sales_tax_pct" value="'+((data&&data.sales_tax_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&it?'':'disabled')+'></div></td><td class="c-net" style="'+((id||ic)?'':'display:none;')+'"><input type="text" class="ri rc num" data-col="net_amount" value="0" readonly></td><td><div class="ra"><button type="button" onclick="removeRow(this)">&times;</button><button type="button" class="del" onclick="addRowAfter(this)" title="Duplicate this row">+</button></div></td>';tbody.appendChild(tr);var di=tr.querySelector('.ac-desc-input');if(di)setupDescInput(di);tr.querySelectorAll('input[data-col]').forEach(function(inp){inp.addEventListener('input',function(){recalcRow(tr);recalc()});inp.addEventListener('change',function(){recalcRow(tr);recalc()})})
+tr.innerHTML='<td class="rn">'+rowCount+'</td><td class="c-ord" style="'+(loadedOrderIds.length?'':'display:none;')+'"><span class="ri rc" data-col="order_ref" style="font-size:10px;color:var(--muted);">'+esc((data&&data.order_ref)||'')+'</span></td><td><input type="text" class="ri ac-code" data-col="code" placeholder="SKU" value="'+((data&&data.product&&data.product.sku)||'')+'" '+dis+'></td><td><div class="ac-wrap"><textarea class="ri ac-desc-input" data-col="description" placeholder="Search or Space..." rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(data&&data.description||'')+'</textarea><div class="ac-dd"></div><div class="info-badge" style="font-size:10px;color:var(--light);"></div></div></td><td><input type="number" class="ri num" data-col="quantity" value="'+((data&&data.quantity)||1)+'" min="0.01" step="any" '+dis+'></td><td><span class="ri rc ac-unit">'+((data&&data.unit)||'pcs')+'</span></td><td><input type="number" class="ri num" data-col="unit_price" value="'+((data&&data.unit_price)||0)+'" step="0.01" min="0" '+dis+'></td><td><input type="text" class="ri rc num" data-col="amount" value="0" readonly></td><td class="c-disc c-disc-pct" style="'+((id&&byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_pct" value="'+((data&&data.discount_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&id?'':'disabled')+'></div></td><td class="c-disc c-disc-amt" style="'+((id&&!byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_amount" value="'+((data&&data.discount_amount)||0)+'" step="0.01" min="0" '+(editable&&id?'':'disabled')+'></div></td><td class="c-chg num" style="'+(ic?'':'display:none;')+'"><span class="ri rc num chg-cell zero" data-col="addcharges" title="Click for breakdown" onclick="openChgPopover(this)">0.00</span></td><td class="c-tax" style="'+(it?'':'display:none;')+'"><div class="row-tax"><input type="number" class="ri num" data-col="sales_tax_pct" value="'+((data&&data.sales_tax_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&it?'':'disabled')+'></div></td><td class="c-net" style="'+((id||ic)?'':'display:none;')+'"><input type="text" class="ri rc num" data-col="net_amount" value="0" readonly></td><td class="c-act"><div class="ra"><button type="button" class="dup" onclick="addRowAfter(this)" title="Add a line with this product" aria-label="Add a line with this product">+</button><button type="button" class="del" onclick="removeRow(this)" title="Remove this line" aria-label="Remove this line">&times;</button></div></td>';tbody.appendChild(tr);var di=tr.querySelector('.ac-desc-input');if(di)setupDescInput(di);tr.querySelectorAll('input[data-col]').forEach(function(inp){inp.addEventListener('input',function(){recalcRow(tr);recalc()});inp.addEventListener('change',function(){recalcRow(tr);recalc()})})
 if(PER_LINE){var _sel=document.createElement('select');_sel.className='ri rc row-lbl-sel';_sel.setAttribute('aria-label','Project label');_sel.style.maxWidth='110px';_sel.style.fontSize='11px';_sel.style.padding='4px 6px';_sel.innerHTML=rowLabelOptions();_sel.value=(data&&data.label_id)?String(data.label_id):(document.getElementById('invLabel').value||'');if(!editable)_sel.disabled=true;var _td=document.createElement('td');_td.className='c-lab';_td.appendChild(_sel);tr.insertBefore(_td,tr.lastElementChild)}
 var ci=tr.querySelector('.ac-code');if(ci){ci.addEventListener('input',async function(){var v=this.value.trim().toLowerCase();if(v.length===1)autoAddCheck();var m=allProducts.find(function(p){return p.sku.toLowerCase()===v});
 // The preloaded cache holds only the first 20 products, so an exact SKU that
@@ -2490,4 +2470,22 @@ window.addEventListener('beforeunload',function(e){
 // an approved invoice never hides its own waybill behind a click.
 (function(){if(window.__logisticsAutoExpand)window.__logisticsAutoExpand()})();
 </script>
+<script>
+// Configuration for the shared document UI layer (static/js/doc_form.js).
+window.DOC = {
+  title: 'Sales Invoice', noun: 'invoice',
+  partyKey: 'customer_id', partySearch: 'customerSearch', partyNoun: 'customer',
+  listUrl: "{{ url_for('inv_invoices.list_invoices') }}",
+  newUrl: "{{ url_for('inv_invoices.invoice_form') }}",
+  viewBase: "{{ url_for('inv_invoices.invoice_form') }}",
+  saveUrl: '/inventory/invoices/save',
+  unapproveBase: '/inventory/invoices/unapprove/',
+  editable: {{ 'false' if is_approved else 'true' }},
+  canApprove: {{ 'true' if current_user.is_admin() or current_user.is_manager() else 'false' }},
+  fbr: true,
+  approveMsg: 'Save and approve this invoice? It is posted to the ledger, stock is deducted and the invoice is locked.',
+  unapproveMsg: 'Unapprove this invoice? Its journal is reversed, stock is restored and it becomes editable again.'
+};
+</script>
+<script src="{{ url_for('static', filename='js/doc_form.js') }}"></script>
 {% endblock %}

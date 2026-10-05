@@ -13,3 +13,7 @@ email-validator==2.2.0
 python-dateutil==2.9.0
 psycopg2-binary==2.9.10
 requests==2.33.1
+# Versioned schema migrations, run at boot (shared/db_migrate.py).
+alembic==1.14.1
+# Error tracking; only switched on when SENTRY_DSN is set.
+sentry-sdk[flask]==2.71.0

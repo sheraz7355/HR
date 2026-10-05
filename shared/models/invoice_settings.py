@@ -1,14 +1,15 @@
 from shared.extensions import db
+from shared.models.money import Money
 
 
 class InvoiceSettings(db.Model):
     __tablename__ = "invoice_settings"
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
-    default_sales_tax_pct = db.Column(db.Float, default=0)
-    default_further_tax_pct = db.Column(db.Float, default=0)
-    default_withholding_tax_pct = db.Column(db.Float, default=0)
-    default_discount_pct = db.Column(db.Float, default=0)
+    default_sales_tax_pct = db.Column(Money, default=0)
+    default_further_tax_pct = db.Column(Money, default=0)
+    default_withholding_tax_pct = db.Column(Money, default=0)
+    default_discount_pct = db.Column(Money, default=0)
     default_charges_mode = db.Column(db.String(20), default="general")
     default_discount_mode = db.Column(db.String(20), default="general")
     default_tax_mode = db.Column(db.String(20), default="general")
@@ -21,7 +22,7 @@ class InvoiceSettings(db.Model):
     default_party_mode = db.Column(db.String(10), default="relevant")
 
     # §11.2 — tax application defaults, tolerance, withholding base
-    over_invoice_tolerance_pct = db.Column(db.Float, default=0)
+    over_invoice_tolerance_pct = db.Column(Money, default=0)
     withholding_base = db.Column(db.String(10), default="taxable")  # taxable | gross
 
     # §11.3 — form-field visibility (hiding a control forces its behaviour)
@@ -130,7 +131,7 @@ class TaxRateAccount(db.Model):
     )
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
-    rate_pct = db.Column(db.Float, nullable=False)
+    rate_pct = db.Column(Money, nullable=False)
     account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"),
                            nullable=False)
 

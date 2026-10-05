@@ -82,12 +82,12 @@
   <div class="card-body reg-title">
     <strong>{{ title }}</strong><span>{{ f.label }}{% if status %} &middot; {{ status|title }}{% endif %}</span>
     <span class="reg-actions no-print" id="regActions">
-      <a href="{{ url_for('inv_registers.documents') }}?{{ request.query_string.decode() }}" class="btn btn-primary btn-sm" id="actDocs"><i class="fas fa-print"></i> Print Invoices</a>
+      <a href="{{ url_for('inv_registers.documents') }}?{{ request.query_string.decode() }}" class="btn btn-primary btn-sm" id="actDocs">Print Invoices</a>
       {% set _qx = request.args.to_dict() %}{% set _ = _qx.update({'fmt': 'excel'}) %}
       {% set _qp = request.args.to_dict() %}{% set _ = _qp.update({'fmt': 'pdf'}) %}
-      <a href="{{ url_for('inv_registers.export') }}?{{ _qx|urlencode }}" class="btn btn-outline btn-sm" id="actExcel"><i class="fas fa-file-excel"></i> Excel</a>
-      <a href="{{ url_for('inv_registers.export') }}?{{ _qp|urlencode }}" class="btn btn-outline btn-sm" id="actPdf"><i class="fas fa-file-pdf"></i> PDF</a>
-      <button onclick="window.print()" class="btn btn-outline btn-sm"><i class="fas fa-print"></i> Print</button>
+      <a href="{{ url_for('inv_registers.export') }}?{{ _qx|urlencode }}" class="btn btn-outline btn-sm" id="actExcel">Excel</a>
+      <a href="{{ url_for('inv_registers.export') }}?{{ _qp|urlencode }}" class="btn btn-outline btn-sm" id="actPdf">PDF</a>
+      <button onclick="window.print()" class="btn btn-outline btn-sm">Print</button>
     </span>
   </div>
   <div class="table-responsive">

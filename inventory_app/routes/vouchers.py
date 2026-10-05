@@ -751,6 +751,10 @@ def product_ledger():
     adjustments = (StockCostAdjustment.query.filter_by(product_id=product_id)
                    .order_by(StockCostAdjustment.id.desc()).all()
                    if product_id else [])
+    fmt = request.args.get("format")
+    if fmt and product:
+        from ..routes.reports import export_stock_ledger
+        return export_stock_ledger(fmt, product, entries, adjustments)
     return render_template("vouchers/product_ledger.html",
                            products=products, product=product,
                            entries=entries, selected_id=product_id,
@@ -773,6 +777,18 @@ def product_ledger_list():
             "value": round(float(bal[1]), 2),
             "unit": p.unit
         })
+    fmt = request.args.get("format")
+    if fmt:
+        from datetime import date
+        from shared import report_export as rx
+        data = [[r["sku"], r["name"], r["unit"] or "", r["qty"], r["cost"], r["value"]]
+                for r in rows]
+        data.append(["", "Total", "", "", "", round(sum(r["value"] for r in rows), 2)])
+        return rx.export_table(fmt, "Product Sub-Ledgers",
+                               ["SKU", "Product", "Unit", "Qty", "Avg Cost", "Value"],
+                               data, period=f"Balances as at {date.today():%d %b %Y}",
+                               row_kinds=["plain"] * len(rows) + ["grand"],
+                               col_formats={3: rx.QTY_FMT}, file_period=date.today())
     return render_template("vouchers/product_ledger_list.html", rows=rows)
 
 

@@ -1,13 +1,12 @@
-import io
-import csv
 from datetime import datetime, date, timedelta
-from flask import Blueprint, render_template, request, jsonify, send_file
+from flask import Blueprint, render_template, request, jsonify
 from flask_login import login_required, current_user
 from sqlalchemy import func, extract, case
 from sqlalchemy import text
 from ..extensions import db
 from shared.tenancy import get_member
 from ..models.user import User
+from shared import report_export as rx
 from ..models.attendance import Attendance
 from ..models.leave import LeaveRequest, LeaveType, LeaveQuota
 from ..models.timesheet import TimesheetWeek, TimesheetEntry
@@ -41,7 +40,8 @@ def index():
     if not _require_admin():
         return render_template("dashboard/index.html")
     employees = User.employees().filter(User.is_active.is_(True)).all()
-    return render_template("reports/index.html", employees=employees)
+    return render_template("reports/index.html", employees=employees,
+                           today=date.today())
 
 
 @reports_bp.route("/dashboard")
@@ -171,44 +171,47 @@ def query():
     return jsonify({"results": results})
 
 
+COLUMN_TITLES = {"pf_balance": "PF Balance", "loan_balance": "Loan Balance",
+                 "sick_days": "Sick Days", "late_days": "Late Days",
+                 "present_days": "Present Days"}
+
+
 @reports_bp.route("/export-excel", methods=["POST"])
 @login_required
 def export_excel():
+    """The custom report builder's result, as the shared report workbook
+    (heading, frozen titles, filters, number formats, print setup)."""
     if not _require_admin():
         return jsonify({"error": "Access denied"}), 403
-    try:
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment
-        from openpyxl.utils import get_column_letter
-    except ImportError:
-        return jsonify({"error": "openpyxl not installed"}), 500
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "No data supplied for export."}), 400
     rows = data.get("rows", [])
     columns = data.get("columns", [])
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Report"
-    header_font = Font(bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill(start_color="1A237E", end_color="1A237E", fill_type="solid")
-    for col_idx, col_name in enumerate(columns, 1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name.replace("_", " ").title())
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center")
-    for row_idx, row_data in enumerate(rows, 2):
-        for col_idx, col_name in enumerate(columns, 1):
-            val = row_data.get(col_name, "")
-            cell = ws.cell(row=row_idx, column=col_idx, value=val)
-            cell.alignment = Alignment(horizontal="center")
-    for col_idx in range(1, len(columns) + 1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = 20
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return send_file(buf, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                     as_attachment=True, download_name=f"hr_report_{date.today().isoformat()}.xlsx")
+    if not columns:
+        return jsonify({"error": "No columns to export."}), 400
+    fmt = (data.get("format") or "excel").lower()
+
+    def _val(v):
+        if isinstance(v, str):
+            t = v.strip().replace(",", "")
+            try:
+                return float(t) if t else v
+            except ValueError:
+                return v
+        return v
+
+    headers = [COLUMN_TITLES.get(c, c.replace("_", " ").title()) for c in columns]
+    body = [[_val(r.get(c, "")) for c in columns] for r in rows]
+    period = ""
+    if data.get("date_from") or data.get("date_to"):
+        period = f"{data.get('date_from') or 'start'} to {data.get('date_to') or 'today'}"
+    count_cols = {i: "0" for i, c in enumerate(columns)
+                  if c.endswith("_days") or c == "leaves"}
+    return rx.export_table(fmt if fmt in ("excel", "pdf", "csv") else "excel",
+                           "HR Report", headers, body, period=period,
+                           filters=[f"{len(body)} employees"], col_formats=count_cols,
+                           file_period=date.today())
 
 
 @reports_bp.route("/export-attendance")
@@ -222,22 +225,19 @@ def export_attendance():
         extract("month", Attendance.date) == month,
         extract("year", Attendance.date) == year,
     ).order_by(Attendance.date).all()
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["Date", "Employee", "Department", "Clock In", "Clock Out", "Status", "Late", "Half Day"])
-    for att, usr in records:
-        w.writerow([
-            att.date, usr.full_name, usr.department,
-            att.clock_in.strftime("%H:%M") if att.clock_in else "",
-            att.clock_out.strftime("%H:%M") if att.clock_out else "",
-            att.status, "Yes" if att.is_late else "No", "Yes" if att.is_half_day else "No"
-        ])
-    buf.seek(0)
-    return send_file(
-        io.BytesIO(buf.getvalue().encode("utf-8-sig")),
-        mimetype="text/csv", as_attachment=True,
-        download_name=f"attendance_{year}_{month:02d}.csv"
-    )
+    rows = [[att.date, usr.full_name, usr.department or "",
+             att.clock_in.strftime("%H:%M") if att.clock_in else "",
+             att.clock_out.strftime("%H:%M") if att.clock_out else "",
+             (att.status or "").replace("_", " ").title(),
+             "Yes" if att.is_late else "No", "Yes" if att.is_half_day else "No"]
+            for att, usr in records]
+    late = sum(1 for r in rows if r[6] == "Yes")
+    return rx.export_table(request.args.get("format", "csv"), "Attendance Report",
+                           ["Date", "Employee", "Department", "Clock In", "Clock Out",
+                            "Status", "Late", "Half Day"], rows,
+                           period=date(year, month, 1).strftime("%B %Y"),
+                           filters=[f"{len(rows)} records", f"{late} late"],
+                           file_period=f"{year}-{month:02d}")
 
 
 @reports_bp.route("/export-leaves")
@@ -249,14 +249,13 @@ def export_leaves():
     records = db.session.query(LeaveRequest, User, LeaveType).join(User).join(LeaveType).filter(
         extract("year", LeaveRequest.start_date) == year
     ).order_by(LeaveRequest.start_date).all()
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["Employee", "Type", "Start", "End", "Days", "Status", "Reason"])
-    for lr, usr, lt in records:
-        w.writerow([usr.full_name, lt.name, lr.start_date, lr.end_date, lr.total_days, lr.status, lr.reason])
-    buf.seek(0)
-    return send_file(
-        io.BytesIO(buf.getvalue().encode("utf-8-sig")),
-        mimetype="text/csv", as_attachment=True,
-        download_name=f"leaves_{year}.csv"
-    )
+    rows = [[usr.full_name, lt.name, lr.start_date, lr.end_date,
+             float(lr.total_days or 0), (lr.status or "").title(), lr.reason or ""]
+            for lr, usr, lt in records]
+    approved = sum(r[4] for r in rows if r[5] == "Approved")
+    return rx.export_table(request.args.get("format", "csv"), "Leave Report",
+                           ["Employee", "Type", "Start", "End", "Days", "Status",
+                            "Reason"], rows, period=f"Calendar year {year}",
+                           filters=[f"{len(rows)} requests",
+                                    f"{approved:g} approved days"],
+                           col_formats={4: "0.#"}, file_period=str(year))

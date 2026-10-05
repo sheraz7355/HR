@@ -33,19 +33,15 @@ finance_bp = Blueprint("finance", __name__, url_prefix="/finance")
 ACCOUNT_TYPES = {"asset": "Asset", "liability": "Liability",
                  "equity": "Equity", "revenue": "Revenue", "expense": "Expense"}
 
-THIN = Border(
-    left=Side(style="thin"), right=Side(style="thin"),
-    top=Side(style="thin"), bottom=Side(style="thin"),
-)
-HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
-HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
-TITLE_FONT = Font(bold=True, size=16, color="1F4E79")
-SUBTITLE_FONT = Font(bold=True, size=10, color="555555")
-DATA_FONT = Font(size=10)
-BOLD_FONT = Font(bold=True, size=10)
-CENTER = Alignment(horizontal="center", vertical="center")
-RIGHT = Alignment(horizontal="right", vertical="center")
-LEFT_ALIGN = Alignment(horizontal="left", vertical="center")
+# Styling and the builders themselves live in shared/report_export.py, shared
+# with every other module's exports; these names stay for the routes below.
+from shared.report_export import (  # noqa: E402,F401
+    THIN, HEADER_FILL, HEADER_FONT, TITLE_FONT, SUBTITLE_FONT, DATA_FONT,
+    BOLD_FONT, CENTER, RIGHT, LEFT_ALIGN, SHEET_FIRST_ROW, XLSX_MIMETYPE,
+    PDF_HEAD_BG, PDF_RULE, PDF_SECTION_BG, PDF_SECTION_FG, PDF_SECTION_RULE,
+    PDF_TOTAL_BG, PDF_TOTAL_RULE, PDF_PROFIT_BG, PDF_NEG_BG, PDF_NEG_FG,
+    ROW_KINDS as PDF_ROW_KINDS, style_row, send_export)
+from shared import report_export as _rx  # noqa: E402
 
 
 def _parse_date(d):
@@ -386,426 +382,68 @@ def _period_line(from_date=None, to_date=None, as_of=None):
     return ""
 
 
+def _export_dates(from_date, to_date):
+    """An export asked for without a period gets the current one (the screen
+    shows that period by default) instead of crashing or returning the page."""
+    if from_date is not None and to_date is not None:
+        return from_date, to_date
+    p = _default_period()
+    if p:
+        return p.start_date, p.end_date
+    today = date.today()
+    return date(today.year, 1, 1), today
+
+
+def _file_period(from_date=None, to_date=None, as_of=None):
+    """The date part of an export's file name."""
+    if from_date and to_date:
+        return f"{from_date:%Y-%m-%d}_to_{to_date:%Y-%m-%d}"
+    if as_of:
+        return f"as_at_{as_of:%Y-%m-%d}"
+    return None
+
+
 def _company_name():
-    try:
-        from shared.models.company_settings import CompanyInfo
-        info = CompanyInfo.get()
-        return (info.company_name or "").strip() if info else ""
-    except Exception:
-        return ""
-
-
-# Rows 1-3 of every exported sheet, then a blank row: content starts at 5.
-SHEET_FIRST_ROW = 5
+    return _rx.company_name()
 
 
 def _write_sheet_heading(ws, ncols, title, from_date=None, to_date=None,
-                         as_of=None, period=None):
-    """Company / title / period, the same three lines the screen shows.
-
-    The exports used to carry a single squashed line with ISO dates and no
-    company — "Profit & Loss (2026-07-01 to 2027-06-30)" against a screen
-    reading "HEAT WAVE / Profit & Loss Statement / For the period 01 July,
-    2026 to 30 June, 2027". Returns the first row free for content.
-    """
-    lines = [(_company_name(), SUBTITLE_FONT),
-             (title, TITLE_FONT),
-             (period or _period_line(from_date, to_date, as_of), SUBTITLE_FONT)]
-    for r, (text, font) in enumerate(lines, 1):
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=max(ncols, 1))
-        c = ws.cell(row=r, column=1, value=text)
-        c.font = font
-        c.alignment = Alignment(horizontal="center")
-    return SHEET_FIRST_ROW
+                         as_of=None, period=None, filters=None):
+    """Company / title / period (worded as the screen words it), then the
+    filters + generated note. Returns the column-header row."""
+    return _rx.write_sheet_heading(
+        ws, ncols, title, period=period or _period_line(from_date, to_date, as_of),
+        filters=filters)
 
 
-def _looks_numeric(v):
-    """Is this cell a figure, whoever formatted it?
-
-    Several reports hand the PDF builder money already rendered — "1,234.50",
-    "(9,876.50)". Judging a column only by its Python type classified those as
-    text and left-aligned them, so the decimal points stopped lining up. A
-    column is numeric if every value in it reads as a number, formatted or not.
-    """
-    if isinstance(v, bool):
-        return False
-    if isinstance(v, (int, float, Decimal)):
-        return True
-    if not isinstance(v, str):
-        return False
-    s = v.strip().replace(",", "")
-    if s.startswith("(") and s.endswith(")"):
-        s = s[1:-1]
-    if s.endswith("%"):
-        s = s[:-1]
-    if not s:
-        return False
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
+_looks_numeric = _rx.looks_numeric
+_cell_text = _rx.cell_text
 
 
-def _cell_text(v):
-    """What Excel will actually display, which is what a column has to be wide
-    enough for. Sizing from str(1234.5) budgets six characters for the eight
-    that get drawn, and the column shows ###### instead."""
-    if isinstance(v, bool) or v is None:
-        return "" if v is None else str(v)
-    if isinstance(v, (int, float, Decimal)):
-        # Measured through the same formatter the sheet is set to use, so a
-        # bracketed or Indian-grouped figure gets the width it really needs.
-        return format_amount(v)
-    return str(v)
-
-
-def _finish_sheet(ws, ncols, first_row=3):
-    money_fmt = excel_money_format()
-    """Money format and column widths for a hand-built sheet.
-
-    The five export routes each grew their own copy of the width loop and none
-    of them set a number format, so the figures came out unformatted and the
-    columns too narrow for them. One pass, applied everywhere.
-    """
-    for row in ws.iter_rows(min_row=first_row, max_col=ncols):
-        for c in row:
-            if isinstance(c.value, (int, float, Decimal)) and not isinstance(c.value, bool):
-                if c.number_format in (None, "General"):
-                    c.number_format = money_fmt
-    # A section label written into a merged row spans the whole table, so
-    # measuring it would size the narrow Code column to "Less: Selling &
-    # Distribution Expenses". Those cells are skipped.
-    merged = set()
-    for rng in ws.merged_cells.ranges:
-        if rng.max_col > rng.min_col:
-            for r in range(rng.min_row, rng.max_row + 1):
-                for c in range(rng.min_col, rng.max_col + 1):
-                    merged.add((r, c))
-
-    for ci in range(1, ncols + 1):
-        max_len = 0
-        for row in ws.iter_rows(min_row=first_row, min_col=ci, max_col=ci):
-            cell = row[0]
-            if (cell.row, ci) in merged:
-                continue
-            max_len = max(max_len, len(_cell_text(cell.value)))
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = \
-            min(max(max_len + 2, 8), 60)
+def _finish_sheet(ws, ncols, first_row=3, title=None):
+    """Money format, widths, frozen headers and print setup for a sheet a
+    route built by hand."""
+    _rx.finish_sheet(ws, ncols, first_row=first_row, title=title)
 
 
 def _build_excel_wb(title, headers, rows, col_widths=None,
                     bold_rows=None, number_format=None,
                     sheet_title=None, from_date=None, to_date=None, as_of=None,
-                    period=None):
-    if number_format is None:
-        number_format = excel_money_format()
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = (sheet_title or title)[:31]
-
-    hdr_row = _write_sheet_heading(ws, len(headers), title,
-                                   from_date=from_date, to_date=to_date,
-                                   as_of=as_of, period=period)
-    for ci, h in enumerate(headers, 1):
-        c = ws.cell(row=hdr_row, column=ci, value=h)
-        c.font = HEADER_FONT
-        c.fill = HEADER_FILL
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        c.border = THIN
-
-    bold_rows = set(bold_rows or ())
-    for ri, row in enumerate(rows, hdr_row + 1):
-        emphasised = (ri - hdr_row - 1) in bold_rows
-        for ci, val in enumerate(row, 1):
-            c = ws.cell(row=ri, column=ci, value=val)
-            c.font = BOLD_FONT if emphasised else DATA_FONT
-            c.border = THIN
-            numeric = isinstance(val, (int, float, Decimal))
-            c.alignment = RIGHT if numeric else LEFT_ALIGN
-            if numeric and number_format:
-                c.number_format = number_format
-
-    if col_widths is None:
-        col_widths = []
-        for ci in range(len(headers)):
-            max_len = len(str(headers[ci]))
-            for row in rows:
-                # Width has to cover the formatted figure, not the raw float.
-                cell_val = _cell_text(row[ci]) if ci < len(row) else ""
-                max_len = max(max_len, len(cell_val))
-            col_widths.append(min(max(max_len + 2, 8), 60))
-
-    for ci, w in enumerate(col_widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
-
-    out = BytesIO()
-    wb.save(out)
-    out.seek(0)
-    return out
-
-
-# The statement styling the screen uses, in one place so the PDF can copy it
-# rather than invent its own. Mirrors finance/layouts/base.html:33-68.
-PDF_HEAD_BG = colors.HexColor("#1E293B")      # table header, grand total
-PDF_RULE = colors.HexColor("#E2E8F0")         # ordinary row underline
-PDF_SECTION_BG = colors.HexColor("#F1F5F9")   # section band
-PDF_SECTION_FG = colors.HexColor("#334155")
-PDF_SECTION_RULE = colors.HexColor("#CBD5E1")
-PDF_TOTAL_BG = colors.HexColor("#FAFAFA")
-PDF_TOTAL_RULE = colors.HexColor("#94A3B8")
-PDF_PROFIT_BG = colors.HexColor("#EFF6FF")
-PDF_NEG_BG = colors.HexColor("#FEF2F2")
-PDF_NEG_FG = colors.HexColor("#B91C1C")
-
-# Row kinds a report may tag its rows with. Anything else renders plain.
-PDF_ROW_KINDS = {"section", "account", "total", "subtotal", "grand", "spacer", "plain"}
+                    period=None, row_kinds=None, filters=None):
+    return _rx.build_excel(
+        title, headers, rows, col_widths=col_widths, bold_rows=bold_rows,
+        number_format=number_format, sheet_title=sheet_title,
+        period=period or _period_line(from_date, to_date, as_of),
+        row_kinds=row_kinds, filters=filters)
 
 
 def _build_pdf(title, headers, rows, col_widths=None, bold_rows=None,
                subtitle=None, company=None, row_kinds=None, indent_col=None,
-               mono_col=None):
-    from reportlab.pdfbase.pdfmetrics import stringWidth
-    from reportlab.lib.styles import ParagraphStyle
-
-    ncols = len(headers)
-    is_landscape = ncols > 5
-    pagesize = landscape(A4) if is_landscape else A4
-    buf = BytesIO()
-
-    def add_page_number(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        # The page width of the sheet actually in use. A4[0] is the portrait
-        # width, so on the landscape reports — anything over five columns —
-        # the number was drawn 87mm in from the right, on top of the table.
-        canvas.drawRightString(pagesize[0] - 20*mm, 10*mm, f"Page {doc.page}")
-        canvas.restoreState()
-
-    doc = SimpleDocTemplate(buf, pagesize=pagesize,
-                            rightMargin=10*mm, leftMargin=10*mm,
-                            topMargin=15*mm, bottomMargin=15*mm)
-    styles = getSampleStyleSheet()
-    elements = []
-
-    # Company / title / period — the screen's heading block, in the same
-    # order and the same wording, centred over the table.
-    centred = ParagraphStyle("hdr", parent=styles["Normal"], alignment=1,
-                             textColor=colors.HexColor("#555555"))
-    if company is None:
-        company = _company_name()
-    if company:
-        elements.append(Paragraph(company, centred))
-    elements.append(Paragraph(title, styles["Title"]))
-    if subtitle:
-        elements.append(Paragraph(subtitle, centred))
-    elements.append(Spacer(1, 6*mm))
-    elements.append(Paragraph(f"Generated: {datetime.now():%Y-%m-%d %H:%M}",
-                              styles["Normal"]))
-    elements.append(Spacer(1, 4*mm))
-
-    kinds = list(row_kinds or [])
-    kinds += ["plain"] * (len(rows) - len(kinds))
-
-    # Every row must have exactly the header count: a ragged row used to
-    # IndexError the width loop below (a totals row with one cell too many
-    # turned an export into a 500). Pad short rows, trim long ones.
-    rows = [list(r[:ncols]) + [""] * (ncols - len(r)) for r in rows]
-
-    # A section band spans the table, so its label has to sit in the first
-    # cell. Reports write it wherever their column layout puts it; move it.
-    body = []
-    for row, kind in zip(rows, kinds):
-        cells = [format_amount(c) if isinstance(c, (int, float, Decimal))
-                 and not isinstance(c, bool) else ("" if c is None else str(c))
-                 for c in row]
-        if kind == "section":
-            label = next((c for c in cells if c.strip()), "")
-            cells = [label] + [""] * (len(cells) - 1)
-        body.append(cells)
-    data = [list(headers)] + body
-    available_width = doc.width
-
-    # Which columns hold money. Decided from the values before they were turned
-    # into strings, so a numeric column is right-aligned and a text one is not
-    # — everything but the first column used to be forced right, which threw
-    # account names and descriptions against their column edge.
-    numeric_cols = set()
-    for ci in range(ncols):
-        seen = False
-        for row in rows:
-            if ci >= len(row) or row[ci] in (None, ""):
-                continue
-            if not _looks_numeric(row[ci]):
-                seen = False
-                break
-            seen = True
-        if seen:
-            numeric_cols.add(ci)
-
-    base_font = 8
-    header_font_size = base_font + 1
-    # Reportlab pads each cell 6pt left and right by default. The old budget of
-    # +10pt for a whole column was less than that 12pt, so every column came
-    # out narrower than its own widest word and the text broke mid-word —
-    # "Vouche/r", "Balanc/e", "2026-07-0/1". Pad explicitly and budget for it.
-    pad_x = 4
-    if col_widths is None:
-        max_widths = [0] * ncols
-        for ri, row in enumerate(data):
-            # The header row is set larger and bold, so it needs measuring at
-            # its own size or a long heading overflows its column.
-            fname = "Helvetica-Bold" if ri == 0 else "Helvetica"
-            fsize = header_font_size if ri == 0 else base_font
-            for ci, val in enumerate(row):
-                w = stringWidth(str(val), fname, fsize)
-                max_widths[ci] = max(max_widths[ci], w)
-        col_widths = [w + 2 * pad_x + 2 for w in max_widths]
-
-    total_width = sum(col_widths)
-    if total_width > available_width:
-        scale = available_width / total_width
-        # Shrink the type with the columns. Scaling the widths alone left the
-        # text at its original size inside narrower cells, so it wrapped or ran
-        # over the grid instead of fitting.
-        base_font = max(5.5, base_font * scale)
-        header_font_size = max(6.0, base_font + 1)
-        col_widths = [w * scale for w in col_widths]
-
-    font_size = base_font
-
-    cell_style = ParagraphStyle("cell", fontName="Helvetica", fontSize=font_size,
-                                leading=font_size * 1.25)
-    # A Paragraph draws its own text, so TableStyle's FONTNAME/FONTSIZE/TEXTCOLOR
-    # never reached the header — it rendered black, unbolded and at body size on
-    # the dark blue fill, which is close to unreadable. The header carries its
-    # own style instead.
-    head_style = ParagraphStyle("cellhead", fontName="Helvetica-Bold",
-                                fontSize=header_font_size,
-                                leading=header_font_size * 1.2,
-                                textColor=colors.white, alignment=1)
-    # A Paragraph draws its own text, so a TableStyle FONTNAME or TEXTCOLOR
-    # never reaches it — the same trap the header fell into. Each row kind
-    # therefore carries the style its label needs.
-    def _kind_style(name, **kw):
-        return ParagraphStyle(name, parent=cell_style, **kw)
-
-    label_styles = {
-        "section": _kind_style("s", fontName="Helvetica-Bold",
-                               textColor=PDF_SECTION_FG),
-        "total": _kind_style("t", fontName="Helvetica-Bold"),
-        "subtotal": _kind_style("st", fontName="Helvetica-Bold"),
-        "subtotal_neg": _kind_style("stn", fontName="Helvetica-Bold",
-                                    textColor=PDF_NEG_FG),
-        "grand": _kind_style("g", fontName="Helvetica-Bold",
-                             textColor=colors.white),
-        "mono": _kind_style("m", fontName="Courier"),
-    }
-
-    table_data = []
-    for ri, row in enumerate(data):
-        kind = "header" if ri == 0 else kinds[ri - 1]
-        table_row = []
-        for ci, val in enumerate(row):
-            if ri == 0:
-                table_row.append(Paragraph(str(val), head_style))
-            elif ci in numeric_cols:
-                # Short and right-aligned; a plain string keeps TableStyle's
-                # alignment, font and colour in charge.
-                table_row.append(val)
-            else:
-                key = kind
-                if kind == "subtotal" and any(str(c).startswith("(") for c in row):
-                    key = "subtotal_neg"
-                elif kind == "account" and ci == mono_col:
-                    key = "mono"
-                # Text wraps inside its column. Left as a plain string it would
-                # run over into the next cell once the columns were scaled down.
-                table_row.append(Paragraph(str(val), label_styles.get(key, cell_style)))
-        table_data.append(table_row)
-
-    t = Table(table_data, colWidths=col_widths, repeatRows=1)
-    pad = 4 if font_size >= 7 else 2
-    style = [
-        ("BACKGROUND", (0, 0), (-1, 0), PDF_HEAD_BG),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        # Without these the table kept reportlab's 10pt default: the size
-        # computed to make the columns fit was only ever applied to the few
-        # cells wrapped in a Paragraph, so wide reports ran off the page.
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), header_font_size),
-        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE", (0, 1), (-1, -1), font_size),
-        ("LEADING", (0, 0), (-1, -1), font_size * 1.25),
-        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), pad),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), pad),
-        ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
-        ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]
-    # Money right, words left.
-    for ci in range(ncols):
-        style.append(("ALIGN", (ci, 1), (ci, -1),
-                      "RIGHT" if ci in numeric_cols else "LEFT"))
-
-    # A financial statement is ruled horizontally, not boxed. The old blanket
-    # GRID plus alternating row fills made every report — sections, totals and
-    # account lines alike — read as one undifferentiated spreadsheet dump.
-    for ri, kind in enumerate(kinds, 1):
-        if kind == "spacer":
-            continue
-        if kind == "section":
-            style += [
-                ("SPAN", (0, ri), (-1, ri)),
-                ("BACKGROUND", (0, ri), (-1, ri), PDF_SECTION_BG),
-                ("TEXTCOLOR", (0, ri), (-1, ri), PDF_SECTION_FG),
-                ("FONTNAME", (0, ri), (-1, ri), "Helvetica-Bold"),
-                ("LINEABOVE", (0, ri), (-1, ri), 0.5, PDF_SECTION_RULE),
-                ("ALIGN", (0, ri), (-1, ri), "LEFT"),
-            ]
-        elif kind == "total":
-            style += [
-                ("BACKGROUND", (0, ri), (-1, ri), PDF_TOTAL_BG),
-                ("FONTNAME", (0, ri), (-1, ri), "Helvetica-Bold"),
-                ("LINEABOVE", (0, ri), (-1, ri), 0.6, PDF_TOTAL_RULE),
-            ]
-        elif kind == "subtotal":
-            negative = any(str(c).startswith("(") for c in body[ri - 1])
-            style += [
-                ("BACKGROUND", (0, ri), (-1, ri), PDF_NEG_BG if negative else PDF_PROFIT_BG),
-                ("FONTNAME", (0, ri), (-1, ri), "Helvetica-Bold"),
-                ("LINEABOVE", (0, ri), (-1, ri), 1.0, PDF_HEAD_BG),
-                ("LINEBELOW", (0, ri), (-1, ri), 1.0, PDF_HEAD_BG),
-            ]
-            if negative:
-                style.append(("TEXTCOLOR", (0, ri), (-1, ri), PDF_NEG_FG))
-        elif kind == "grand":
-            style += [
-                ("BACKGROUND", (0, ri), (-1, ri), PDF_HEAD_BG),
-                ("TEXTCOLOR", (0, ri), (-1, ri), colors.white),
-                ("FONTNAME", (0, ri), (-1, ri), "Helvetica-Bold"),
-            ]
-        else:
-            style.append(("LINEBELOW", (0, ri), (-1, ri), 0.4, PDF_RULE))
-            if kind == "account":
-                if indent_col is not None:
-                    style.append(("LEFTPADDING", (indent_col, ri), (indent_col, ri),
-                                  pad_x + 10))
-                if mono_col is not None:
-                    style.append(("FONTNAME", (mono_col, ri), (mono_col, ri), "Courier"))
-    for ri in (bold_rows or ()):
-        r = ri + 1
-        style += [("FONTNAME", (0, r), (-1, r), "Helvetica-Bold"),
-                  ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#E8EEF5"))]
-    t.setStyle(TableStyle(style))
-    elements.append(t)
-    # These belong to build(), not to the SimpleDocTemplate constructor, which
-    # silently accepted and ignored them — so no finance PDF ever carried a
-    # page number.
-    doc.build(elements, onFirstPage=add_page_number, onLaterPages=add_page_number)
-    buf.seek(0)
-    return buf
+               mono_col=None, filters=None):
+    return _rx.build_pdf(title, headers, rows, col_widths=col_widths,
+                         bold_rows=bold_rows, subtitle=subtitle, company=company,
+                         row_kinds=row_kinds, indent_col=indent_col,
+                         mono_col=mono_col, filters=filters)
 
 
 # ═══════════════════════════════════════════════
@@ -1005,10 +643,40 @@ def ledger():
                         c.font = BOLD_FONT
                         c.border = THIN
                         c.alignment = RIGHT if isinstance(val, (int, float, Decimal)) else LEFT_ALIGN
-                _finish_sheet(ws, 6, first_row=hdr_row + 1)
+                    style_row(ws, ri, 6, "total")
+                _finish_sheet(ws, 6, first_row=hdr_row + 1,
+                              title=f"{sec['account'].code} {sec['account'].name}")
+            if len(account_sections) > 1:
+                # One line per account up front: the sheet a reviewer reads
+                # first, linking down to each account's own sheet.
+                summary_rows = [[sec["account"].code, sec["account"].name,
+                                 sec["opening"], sec["opening_side"],
+                                 sec["total_debit"], sec["total_credit"],
+                                 sec["closing"], sec["closing_side"]]
+                                for sec in account_sections]
+                ws = wb.create_sheet(title="Summary", index=0)
+                hdr = _write_sheet_heading(ws, 8, "General Ledger — Summary",
+                                           from_date=from_date, to_date=to_date)
+                _rx.style_header_row(ws, hdr, ["Code", "Account", "Opening",
+                                               "Dr/Cr", "Debit", "Credit",
+                                               "Closing", "Dr/Cr"])
+                for i, row in enumerate(summary_rows, hdr + 1):
+                    for ci, val in enumerate(row, 1):
+                        c = ws.cell(row=i, column=ci, value=val)
+                        c.font = DATA_FONT; c.border = THIN
+                        c.alignment = RIGHT if isinstance(val, (int, float, Decimal)) else LEFT_ALIGN
+                    sheet = wb[account_sections[i - hdr - 1]["account"].code[:31]]
+                    ws.cell(row=i, column=1).hyperlink = f"#'{sheet.title}'!A1"
+                    ws.cell(row=i, column=1).font = Font(size=10, color="1D4ED8", underline="single")
+                t = hdr + 1 + len(summary_rows)
+                ws.cell(row=t, column=2, value="Total")
+                ws.cell(row=t, column=5, value=sum(x["total_debit"] for x in account_sections))
+                ws.cell(row=t, column=6, value=sum(x["total_credit"] for x in account_sections))
+                style_row(ws, t, 8, "grand")
+                _finish_sheet(ws, 8, first_row=hdr + 1, title="General Ledger Summary")
+                wb.active = 0
             out = BytesIO(); wb.save(out); out.seek(0)
-            return send_file(out, as_attachment=True, download_name="general_ledger.xlsx",
-                             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return send_export(out, "excel", "General Ledger", _file_period(from_date, to_date))
         if fmt == "pdf":
             all_data = []
             kinds = []
@@ -1037,8 +705,7 @@ def ledger():
             pdf_out = _build_pdf("General Ledger", hdrs, all_data,
                                  subtitle=_period_line(from_date, to_date),
                                  row_kinds=kinds)
-            return send_file(pdf_out, as_attachment=True, download_name="general_ledger.pdf",
-                             mimetype="application/pdf")
+            return send_export(pdf_out, "pdf", "General Ledger", _file_period(from_date, to_date))
 
     return render_template("finance/ledger.html",
                            account_sections=account_sections,
@@ -1232,8 +899,7 @@ def trial_balance():
         wb_out = _build_excel_wb("Trial Balance", headers, data,
                                  sheet_title="Trial Balance",
                                  from_date=from_date, to_date=to_date, as_of=as_of)
-        return send_file(wb_out, as_attachment=True, download_name="trial_balance.xlsx",
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return send_export(wb_out, "excel", "Trial Balance", _file_period(from_date, to_date))
     if fmt == "pdf":
         # Figures stay numeric. _build_pdf formats them and decides column
         # alignment from the values, so pre-rendering them here left every
@@ -1263,8 +929,7 @@ def trial_balance():
         pdf_out = _build_pdf("Trial Balance", headers, data,
                              subtitle=_period_line(from_date, to_date, as_of),
                              row_kinds=kinds, mono_col=0)
-        return send_file(pdf_out, as_attachment=True, download_name="trial_balance.pdf",
-                         mimetype="application/pdf")
+        return send_export(pdf_out, "pdf", "Trial Balance", _file_period(from_date, to_date))
 
     return render_template("finance/trial_balance.html", rows=rows,
                            total_dr_opening=float(total_dr_op),
@@ -1339,9 +1004,8 @@ def profit_loss():
         for row in pl_rows:
             if row["kind"] == "header":
                 ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=ncols)
-                c = ws.cell(row=r, column=1, value=row["label"])
-                c.font = Font(bold=True, size=12); c.fill = HEADER_FILL
-                c.font = Font(bold=True, size=12, color="FFFFFF")
+                ws.cell(row=r, column=1, value=row["label"])
+                style_row(ws, r, ncols, "section")
             elif row["kind"] == "account":
                 ws.cell(row=r, column=1, value=row["code"]).font = DATA_FONT
                 ws.cell(row=r, column=2, value=row["name"]).font = DATA_FONT
@@ -1355,18 +1019,20 @@ def profit_loss():
                 for ci, cp in enumerate(comp_periods, 4):
                     amt = row.get("comp_amounts", [])[ci - 3] if row.get("comp_amounts") else 0
                     ws.cell(row=r, column=ci, value=amt).font = BOLD_FONT; ws.cell(row=r, column=ci).alignment = RIGHT
+                style_row(ws, r, ncols, "total")
             else:
                 ws.cell(row=r, column=2, value=row["label"]).font = Font(bold=True, size=12, color="1F4E79")
                 ws.cell(row=r, column=3, value=row["amount"]).font = Font(bold=True, size=12, color="1F4E79"); ws.cell(row=r, column=3).alignment = RIGHT
                 for ci, cp in enumerate(comp_periods, 4):
                     amt = row.get("comp_amounts", [])[ci - 3] if row.get("comp_amounts") else 0
                     ws.cell(row=r, column=ci, value=amt).font = Font(bold=True, size=12, color="1F4E79"); ws.cell(row=r, column=ci).alignment = RIGHT
+                style_row(ws, r, ncols, "subtotal",
+                          negative=(row.get("amount") or 0) < 0)
                 r += 1
             r += 1
-        _finish_sheet(ws, ncols, first_row=hdr_row + 1)
+        _finish_sheet(ws, ncols, first_row=hdr_row + 1, title="Profit & Loss")
         out = BytesIO(); wb.save(out); out.seek(0)
-        return send_file(out, as_attachment=True, download_name="profit_loss.xlsx",
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return send_export(out, "excel", "Profit and Loss", _file_period(from_date, to_date))
 
     if fmt == "pdf":
         headers = (["Code", "Account / Section", _col_label(to_date)] +
@@ -1401,8 +1067,7 @@ def profit_loss():
         pdf_out = _build_pdf("Profit &amp; Loss Statement", headers, data,
                              subtitle=_period_line(from_date, to_date),
                              row_kinds=kinds, indent_col=1, mono_col=0)
-        return send_file(pdf_out, as_attachment=True, download_name="profit_loss.pdf",
-                         mimetype="application/pdf")
+        return send_export(pdf_out, "pdf", "Profit and Loss", _file_period(from_date, to_date))
 
     return render_template("finance/profit_loss.html", pl_rows=pl_rows,
                            net_profit=net_profit,
@@ -1492,10 +1157,40 @@ def label_pl():
         row["unlabelled"] = round(float(row.get("amount", 0)) - sum(per), 2) \
             if not picked else None
     nets = [_pl_rows(from_date, to_date, label_ids=[l.id])[1] for l in labels]
+    unlabelled_net = round(net - sum(nets), 2) if not picked else None
+
+    fmt = request.args.get("format")
+    if fmt in ("excel", "pdf", "csv"):
+        headers = (["Code", "Account"] + [l.name for l in labels] +
+                   (["Unlabelled"] if not picked else []) + ["Total"])
+        data, kinds = [], []
+        for row in rows:
+            if row["kind"] == "header":
+                data.append([row["label"]] + [""] * (len(headers) - 1))
+                kinds.append("section")
+                continue
+            if row["kind"] not in ("account", "total", "subtotal"):
+                continue
+            first = ([row.get("code", ""), row.get("name", "")]
+                     if row["kind"] == "account" else ["", row["label"]])
+            data.append(first + list(row.get("by_label") or []) +
+                        ([row["unlabelled"]] if not picked else []) +
+                        [row.get("amount", 0)])
+            kinds.append(row["kind"])
+        data.append(["", "Net profit / (loss)"] + list(nets) +
+                    ([unlabelled_net] if not picked else []) + [net])
+        kinds.append("grand")
+        filters = ["Labels: " + (", ".join(l.name for l in labels) if picked
+                                 else "all, plus Unlabelled")]
+        return _rx.export_table(fmt, "Profit & Loss by Project Label", headers, data,
+                                period=_period_line(from_date, to_date),
+                                filters=filters, row_kinds=kinds, mono_col=0,
+                                file_period=_file_period(from_date, to_date))
+
     return render_template("finance/label_pl.html", rows=rows, net_profit=net,
                            labels=labels, labels_all=labels_all, picked=picked,
                            label_nets=nets,
-                           unlabelled_net=(round(net - sum(nets), 2) if not picked else None),
+                           unlabelled_net=unlabelled_net,
                            from_str=from_date.strftime("%Y-%m-%d"),
                            to_str=to_date.strftime("%Y-%m-%d"))
 
@@ -1565,7 +1260,8 @@ def balance_sheet():
 
         def write_section(ws, sr, section_title, rows, total_label, total_vals):
             ws.merge_cells(start_row=sr, start_column=1, end_row=sr, end_column=ncols)
-            ws.cell(row=sr, column=1, value=section_title).font = Font(bold=True, size=12)
+            ws.cell(row=sr, column=1, value=section_title)
+            style_row(ws, sr, ncols, "section")
             hdr = sr + 1
             h_labels = (["Code", "Account", _col_label(as_of)] +
                         [_col_label(cp.end_date) for cp in comp_periods])
@@ -1588,6 +1284,7 @@ def balance_sheet():
                 ws.cell(row=tr, column=ci, value=float(tv)).font = BOLD_FONT
                 ws.cell(row=tr, column=ci).border = THIN
                 ws.cell(row=tr, column=ci).alignment = RIGHT
+            style_row(ws, tr, ncols, "total")
             return tr + 2
 
         nr = write_section(ws, first_row, "ASSETS", _export_rows(assets, merged_assets),
@@ -1607,10 +1304,10 @@ def balance_sheet():
             float(t["total_liabilities"] + t["total_equity"]) for t in comp_totals]
         for ci, lte in enumerate(lte_vals[:ncols - 2], 3):
             ws.cell(row=nr, column=ci, value=lte).font = Font(bold=True, size=12)
-        _finish_sheet(ws, ncols, first_row=first_row)
+        style_row(ws, nr, ncols, "grand")
+        _finish_sheet(ws, ncols, first_row=first_row, title="Balance Sheet")
         out = BytesIO(); wb.save(out); out.seek(0)
-        return send_file(out, as_attachment=True, download_name="balance_sheet.xlsx",
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return send_export(out, "excel", "Balance Sheet", _file_period(as_of=as_of))
 
     if fmt == "pdf":
         ncols = 3 + len(comp_periods)
@@ -1649,8 +1346,7 @@ def balance_sheet():
         pdf_out = _build_pdf("Balance Sheet", headers, all_data,
                              subtitle=_period_line(as_of=as_of),
                              row_kinds=kinds, indent_col=1, mono_col=0)
-        return send_file(pdf_out, as_attachment=True, download_name="balance_sheet.pdf",
-                         mimetype="application/pdf")
+        return send_export(pdf_out, "pdf", "Balance Sheet", _file_period(as_of=as_of))
 
     return render_template("finance/balance_sheet.html", assets=assets,
                            liabilities=liabilities, equity=equity,
@@ -1922,6 +1618,7 @@ def socie():
                                from_date=None, to_date=None,
                                filter_mode="", from_str="", to_str="", **base)
 
+    from_date, to_date = _export_dates(from_date, to_date)
     specs = _socie_period_specs(from_date, to_date,
                                 comp_periods if comp_mode else [])
     columns, rows = _socie_matrix(specs, label_ids=label_ids)
@@ -1949,14 +1646,12 @@ def socie():
                                   bold_rows=bold, sheet_title="SOCIE",
                                   period=span,
                                   number_format=excel_money_format())
-            return send_file(out, as_attachment=True, download_name="socie.xlsx",
-                             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return send_export(out, "excel", "Statement of Changes in Equity", _file_period(from_date, to_date))
         socie_kinds = ["total" if i in bold else "account"
                        for i in range(len(data))]
         out = _build_pdf(title, headers, data, subtitle=span,
                          row_kinds=socie_kinds, indent_col=0)
-        return send_file(out, as_attachment=True, download_name="socie.pdf",
-                         mimetype="application/pdf")
+        return send_export(out, "pdf", "Statement of Changes in Equity", _file_period(from_date, to_date))
 
     return render_template("finance/socie.html",
                            socie_columns=columns, socie_rows=rows,
@@ -2069,6 +1764,7 @@ def cash_flow():
     settings = ReportSettings.get()
     method = settings.cash_flow_method or "indirect"
 
+    from_date, to_date = _export_dates(from_date, to_date)
     opening_cutoff = from_date - timedelta(days=1)
     all_accts = {a.id: a for a in ChartOfAccount.query.all()}
 
@@ -2242,10 +1938,16 @@ def cash_flow():
         first_row = _write_sheet_heading(
             ws, col_count, f"Cash Flow Statement ({method.title()} Method)",
             from_date=from_date, to_date=to_date)
+        # Column headings: without them a comparative export was a wall of
+        # unlabelled figures.
+        _rx.style_header_row(ws, first_row, ["Item", _col_label(to_date)] +
+                             [_col_label(cp.end_date) for cp in comp_periods][:n_comp])
+        first_row += 1
 
         def write_section_excel(sr, title, items, total_label, total_val, comp_total=None):
             ws.merge_cells(start_row=sr, start_column=1, end_row=sr, end_column=col_count)
-            ws.cell(row=sr, column=1, value=title).font = Font(bold=True, size=12)
+            ws.cell(row=sr, column=1, value=title)
+            style_row(ws, sr, col_count, "section")
             r = sr + 1
             for entry in items:
                 if isinstance(entry, tuple) and len(entry) == 3:
@@ -2267,6 +1969,7 @@ def cash_flow():
                 for ci, cv in enumerate(comp_total):
                     c = ws.cell(row=r, column=3+ci, value=cv or 0)
                     c.font = BOLD_FONT; c.alignment = RIGHT
+            style_row(ws, r, col_count, "total")
             return r + 2
 
         comp_net_op = [m["__net_op__"] for m in comp_item_maps] if comp_item_maps else []
@@ -2290,11 +1993,12 @@ def cash_flow():
             for ci, cv in enumerate(comps):
                 c = ws.cell(row=nr, column=3+ci, value=cv or 0)
                 c.font = BOLD_FONT; c.alignment = RIGHT
+            style_row(ws, nr, col_count,
+                      "grand" if label.startswith("Closing") else "total")
             nr += 1
-        _finish_sheet(ws, col_count, first_row=first_row)
+        _finish_sheet(ws, col_count, first_row=first_row, title="Cash Flow Statement")
         out = BytesIO(); wb.save(out); out.seek(0)
-        return send_file(out, as_attachment=True, download_name="cash_flow.xlsx",
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return send_export(out, "excel", "Cash Flow Statement", _file_period(from_date, to_date))
 
     if fmt == "pdf":
         pdf_headers = ["Item", _col_label(to_date)]
@@ -2340,8 +2044,7 @@ def cash_flow():
                              pdf_headers, pdf_data,
                              subtitle=_period_line(from_date, to_date),
                              row_kinds=kinds, indent_col=0)
-        return send_file(pdf_out, as_attachment=True, download_name="cash_flow.pdf",
-                         mimetype="application/pdf")
+        return send_export(pdf_out, "pdf", "Cash Flow Statement", _file_period(from_date, to_date))
 
     return render_template("finance/cash_flow.html", op_items=op_items,
                            inv_items=inv_items, fin_items=fin_items,
@@ -2570,12 +2273,13 @@ def twcf():
             ws.column_dimensions[openpyxl.utils.get_column_letter(
                 2 + i)].width = 13
         ws.column_dimensions[openpyxl.utils.get_column_letter(ncols)].width = 14
+        _rx.setup_sheet(ws, ncols, header_row=first_row,
+                        title="13 Week Cash Flow", landscape_mode=True)
+        ws.freeze_panes = f"B{first_row + 1}"
         out = BytesIO()
         wb.save(out)
         out.seek(0)
-        return send_file(out, as_attachment=True,
-                         download_name="13_week_cash_flow.xlsx",
-                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return send_export(out, "excel", "13 Week Cash Flow", _file_period(as_of=start))
 
     if loaded and fmt == "pdf":
         pdf_headers = (["Category"]
@@ -2604,9 +2308,7 @@ def twcf():
         pdf_out = _build_pdf("13 Week Cash Flow (TWCF)", pdf_headers,
                              pdf_data, subtitle=subtitle, row_kinds=kinds,
                              indent_col=0)
-        return send_file(pdf_out, as_attachment=True,
-                         download_name="13_week_cash_flow.pdf",
-                         mimetype="application/pdf")
+        return send_export(pdf_out, "pdf", "13 Week Cash Flow", _file_period(as_of=start))
 
     return render_template(
         "finance/twcf.html",

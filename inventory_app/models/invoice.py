@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..extensions import db
+from shared.models.money import Money
 
 
 class InvInvoice(db.Model):
@@ -32,24 +33,24 @@ class InvInvoice(db.Model):
     charges_mode = db.Column(db.String(20), default="general")
     tax_mode = db.Column(db.String(20), default="general")
 
-    global_discount_pct = db.Column(db.Float, default=0)
-    global_discount_value = db.Column(db.Float, default=0)
-    global_delivery = db.Column(db.Float, default=0)
-    global_installation = db.Column(db.Float, default=0)
-    global_sales_tax_pct = db.Column(db.Float, default=0)
-    further_tax_pct = db.Column(db.Float, default=0)
+    global_discount_pct = db.Column(Money, default=0)
+    global_discount_value = db.Column(Money, default=0)
+    global_delivery = db.Column(Money, default=0)
+    global_installation = db.Column(Money, default=0)
+    global_sales_tax_pct = db.Column(Money, default=0)
+    further_tax_pct = db.Column(Money, default=0)
     apply_further_tax = db.Column(db.Boolean, default=False)
-    withholding_tax_pct = db.Column(db.Float, default=0)
+    withholding_tax_pct = db.Column(Money, default=0)
     apply_withholding_tax = db.Column(db.Boolean, default=False)
 
-    subtotal = db.Column(db.Float, default=0)
-    total_discount = db.Column(db.Float, default=0)
-    total_charges = db.Column(db.Float, default=0)
-    total_tax = db.Column(db.Float, default=0)
-    total_further_tax = db.Column(db.Float, default=0)
-    total_withholding_tax = db.Column(db.Float, default=0)
-    total_amount = db.Column(db.Float, default=0)
-    paid_amount = db.Column(db.Float, default=0)
+    subtotal = db.Column(Money, default=0)
+    total_discount = db.Column(Money, default=0)
+    total_charges = db.Column(Money, default=0)
+    total_tax = db.Column(Money, default=0)
+    total_further_tax = db.Column(Money, default=0)
+    total_withholding_tax = db.Column(Money, default=0)
+    total_amount = db.Column(Money, default=0)
+    paid_amount = db.Column(Money, default=0)
 
     notes = db.Column(db.Text)
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"))
@@ -74,9 +75,9 @@ class InvInvoiceItem(db.Model):
     invoice_id = db.Column(db.Integer, db.ForeignKey("inv_invoices.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("inv_products.id"))
     description = db.Column(db.String(300))
-    quantity = db.Column(db.Float, default=1)
+    quantity = db.Column(Money, default=1)
     unit = db.Column(db.String(20), default="pcs")
-    unit_price = db.Column(db.Float, default=0)
+    unit_price = db.Column(Money, default=0)
 
     # Per-line project label. Falls back to the party label, then the company
     # default, when saved without a pick. The first item's label governs the
@@ -90,14 +91,14 @@ class InvInvoiceItem(db.Model):
     source_order_item_id = db.Column(db.Integer, db.ForeignKey("inv_sales_order_items.id"))
     source_order_number = db.Column(db.String(50), default="")
 
-    discount_pct = db.Column(db.Float, default=0)
-    discount_amount = db.Column(db.Float, default=0)
-    delivery = db.Column(db.Float, default=0)
-    installation = db.Column(db.Float, default=0)
-    sales_tax_pct = db.Column(db.Float, default=0)
+    discount_pct = db.Column(Money, default=0)
+    discount_amount = db.Column(Money, default=0)
+    delivery = db.Column(Money, default=0)
+    installation = db.Column(Money, default=0)
+    sales_tax_pct = db.Column(Money, default=0)
 
-    total_before_discount = db.Column(db.Float, default=0)
-    total_after_discount = db.Column(db.Float, default=0)
+    total_before_discount = db.Column(Money, default=0)
+    total_after_discount = db.Column(Money, default=0)
 
     comments = db.Column(db.Text)
 

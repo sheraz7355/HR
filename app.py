@@ -9,6 +9,33 @@ from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
 
 
+def _init_error_tracking(app):
+    """Sentry, when SENTRY_DSN is set (Vercel → Settings → Environment
+    Variables). Unset — local runs, tests — it does nothing. Request bodies
+    and user details are not sent: they hold salaries, bank details and
+    customer data."""
+    dsn = os.environ.get("SENTRY_DSN", "").strip()
+    if not dsn:
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+    except ImportError:
+        print("WARNING: SENTRY_DSN is set but sentry-sdk is not installed",
+              file=sys.stderr)
+        return
+    sentry_sdk.init(
+        dsn=dsn,
+        integrations=[FlaskIntegration()],
+        environment=os.environ.get("VERCEL_ENV", "development"),
+        release=os.environ.get("VERCEL_GIT_COMMIT_SHA") or None,
+        send_default_pii=False,
+        max_request_body_size="never",
+        traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE",
+                                                "0") or 0),
+    )
+
+
 def _create_app():
     from shared.config import Config
     from shared.extensions import db, login_manager
@@ -16,6 +43,7 @@ def _create_app():
     import shared.models.company  # noqa: F401  (tenancy tables: register before create_all)
     import shared.models.project_label  # noqa: F401  (project labels: register before create_all)
     import shared.models.audit_log  # noqa: F401  (audit trail table)
+    import shared.models.stored_file  # noqa: F401  (uploaded files live in the DB)
     import shared.audit  # noqa: F401  (registers the audit session hooks)
 
     app = Flask(
@@ -26,6 +54,16 @@ def _create_app():
     )
 
     app.config.from_object(Config)
+
+    # Without a fixed SECRET_KEY every serverless instance invents its own,
+    # and a session signed by one instance is rejected by the next: users
+    # are logged out at random.
+    if os.environ.get("VERCEL") and not os.environ.get("SECRET_KEY"):
+        print("WARNING: SECRET_KEY is not set; sessions will not survive "
+              "across Vercel instances. Set it in the project's environment.",
+              file=sys.stderr)
+
+    _init_error_tracking(app)
 
     import jinja2
     my_loader = jinja2.ChoiceLoader([
@@ -480,25 +518,25 @@ def _migrate_schema(db):
         ("inventory_settings", "sales_flow", "VARCHAR(200) DEFAULT ''"),
         ("inv_invoices", "discount_mode", "VARCHAR(200) DEFAULT ''"),
         ("inv_invoices", "tax_mode", "VARCHAR(200) DEFAULT ''"),
-        ("inv_invoices", "global_discount_pct", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "global_discount_value", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "global_sales_tax_pct", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "subtotal", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "total_discount", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "total_tax", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "global_discount_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "global_discount_value", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "global_sales_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "subtotal", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "total_discount", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "total_tax", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_invoices", "notes", "VARCHAR(200) DEFAULT ''"),
         ("inv_invoices", "created_by", "INTEGER"),
         ("inv_invoices", "voucher_number", "VARCHAR(50) DEFAULT ''"),
         ("inv_invoices", "voucher_status", "VARCHAR(20) DEFAULT 'unapproved'"),
         ("inv_invoices", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("inv_invoices", "charges_mode", "VARCHAR(20) DEFAULT 'general'"),
-        ("inv_invoices", "total_charges", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "global_delivery", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "global_installation", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "total_charges", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "global_delivery", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "global_installation", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_invoices", "approved_by", "INTEGER"),
         ("inv_invoices", "approved_at", ts_type),
-        ("inv_invoice_items", "delivery", "FLOAT DEFAULT 0"),
-        ("inv_invoice_items", "installation", "FLOAT DEFAULT 0"),
+        ("inv_invoice_items", "delivery", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoice_items", "installation", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_invoice_items", "comments", "TEXT"),
         ("report_settings", "purchase_template_id", "INTEGER"),
         ("report_settings", "sales_template_id", "INTEGER"),
@@ -506,19 +544,19 @@ def _migrate_schema(db):
         ("invoice_templates", "design", "VARCHAR(20)"),
         ("invoice_templates", "accent_color", "VARCHAR(20)"),
         ("invoice_templates", "options_json", "TEXT"),
-        ("inv_invoices", "further_tax_pct", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "further_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_invoices", "apply_further_tax", bool_false),
-        ("inv_invoices", "withholding_tax_pct", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "withholding_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_invoices", "apply_withholding_tax", bool_false),
-        ("inv_invoices", "total_further_tax", "FLOAT DEFAULT 0"),
-        ("inv_invoices", "total_withholding_tax", "FLOAT DEFAULT 0"),
-        ("inv_purchase_invoices", "further_tax_pct", "FLOAT DEFAULT 0"),
+        ("inv_invoices", "total_further_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_invoices", "total_withholding_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_invoices", "further_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_purchase_invoices", "apply_further_tax", bool_false),
         ("additional_charges", "distribution", "VARCHAR(20) DEFAULT 'pro_rata_value'"),
         # v3 §4 order->invoice linkage: how much of each order line has been
         # billed, the order's invoicing progress, and each invoice line's source.
-        ("inv_sales_order_items", "invoiced_qty", "FLOAT DEFAULT 0"),
-        ("inv_purchase_order_items", "invoiced_qty", "FLOAT DEFAULT 0"),
+        ("inv_sales_order_items", "invoiced_qty", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_order_items", "invoiced_qty", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_sales_orders", "fulfilment_status", "VARCHAR(20) DEFAULT 'open'"),
         ("inv_purchase_orders", "fulfilment_status", "VARCHAR(20) DEFAULT 'open'"),
         ("inv_invoice_items", "source_order_id", "INTEGER"),
@@ -528,36 +566,36 @@ def _migrate_schema(db):
         ("inv_purchase_invoice_items", "source_order_item_id", "INTEGER"),
         ("inv_purchase_invoice_items", "source_order_number", "VARCHAR(50) DEFAULT ''"),
         ("inv_purchase_invoices", "apply_withholding_tax", bool_false),
-        ("inv_purchase_invoices", "total_further_tax", "FLOAT DEFAULT 0"),
-        ("inv_purchase_invoices", "total_withholding_tax", "FLOAT DEFAULT 0"),
-        ("inv_purchase_invoices", "total_amount", "FLOAT DEFAULT 0"),
-        ("inv_purchase_invoices", "paid_amount", "FLOAT DEFAULT 0"),
+        ("inv_purchase_invoices", "total_further_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_invoices", "total_withholding_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_invoices", "total_amount", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_invoices", "paid_amount", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_purchase_invoices", "payment_status", "VARCHAR(20) DEFAULT 'unpaid'"),
         ("inv_purchase_invoices", "purchase_order_id", "INTEGER"),
         ("inv_products", "hs_code", "VARCHAR(50) DEFAULT ''"),
-        ("inv_products", "weight", "FLOAT DEFAULT 0"),
+        ("inv_products", "weight", "NUMERIC(20, 6) DEFAULT 0"),
         ("additional_charges", "manual_allocations", "TEXT DEFAULT ''"),
         ("inv_sales_orders", "party_account_id", "INTEGER"),
         ("inv_sales_orders", "expected_date", "DATE"),
         ("inv_sales_orders", "tax_mode", "VARCHAR(20) DEFAULT 'general'"),
-        ("inv_sales_orders", "global_sales_tax_pct", "FLOAT DEFAULT 0"),
-        ("inv_sales_orders", "subtotal", "FLOAT DEFAULT 0"),
-        ("inv_sales_orders", "total_tax", "FLOAT DEFAULT 0"),
-        ("inv_sales_orders", "total_amount", "FLOAT DEFAULT 0"),
+        ("inv_sales_orders", "global_sales_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_sales_orders", "subtotal", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_sales_orders", "total_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_sales_orders", "total_amount", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_sales_orders", "approved_by", "INTEGER"),
         ("inv_sales_orders", "approved_at", ts_type),
         ("inv_sales_order_items", "description", "VARCHAR(200) DEFAULT ''"),
         ("inv_sales_order_items", "unit", "VARCHAR(20) DEFAULT 'pcs'"),
-        ("inv_sales_order_items", "quantity", "FLOAT DEFAULT 1"),
-        ("inv_sales_order_items", "sales_tax_pct", "FLOAT DEFAULT 0"),
-        ("inv_sales_order_items", "total_before_discount", "FLOAT DEFAULT 0"),
-        ("inv_sales_order_items", "total_after_discount", "FLOAT DEFAULT 0"),
+        ("inv_sales_order_items", "quantity", "NUMERIC(20, 6) DEFAULT 1"),
+        ("inv_sales_order_items", "sales_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_sales_order_items", "total_before_discount", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_sales_order_items", "total_after_discount", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_purchase_orders", "party_account_id", "INTEGER"),
         ("inv_purchase_orders", "tax_mode", "VARCHAR(20) DEFAULT 'general'"),
-        ("inv_purchase_orders", "global_sales_tax_pct", "FLOAT DEFAULT 0"),
-        ("inv_purchase_orders", "subtotal", "FLOAT DEFAULT 0"),
-        ("inv_purchase_orders", "total_tax", "FLOAT DEFAULT 0"),
-        ("inv_purchase_orders", "total_amount", "FLOAT DEFAULT 0"),
+        ("inv_purchase_orders", "global_sales_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_orders", "subtotal", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_orders", "total_tax", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_orders", "total_amount", "NUMERIC(20, 6) DEFAULT 0"),
         ("inv_purchase_orders", "driver_name", "VARCHAR(100) DEFAULT ''"),
         ("inv_purchase_orders", "driver_contact", "VARCHAR(50) DEFAULT ''"),
         ("inv_purchase_orders", "vehicle_number", "VARCHAR(50) DEFAULT ''"),
@@ -566,17 +604,17 @@ def _migrate_schema(db):
         ("inv_purchase_orders", "approved_at", ts_type),
         ("inv_purchase_order_items", "description", "VARCHAR(200) DEFAULT ''"),
         ("inv_purchase_order_items", "unit", "VARCHAR(20) DEFAULT 'pcs'"),
-        ("inv_purchase_order_items", "quantity", "FLOAT DEFAULT 1"),
-        ("inv_purchase_order_items", "sales_tax_pct", "FLOAT DEFAULT 0"),
-        ("inv_purchase_order_items", "total_before_discount", "FLOAT DEFAULT 0"),
-        ("inv_purchase_order_items", "total_after_discount", "FLOAT DEFAULT 0"),
+        ("inv_purchase_order_items", "quantity", "NUMERIC(20, 6) DEFAULT 1"),
+        ("inv_purchase_order_items", "sales_tax_pct", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_order_items", "total_before_discount", "NUMERIC(20, 6) DEFAULT 0"),
+        ("inv_purchase_order_items", "total_after_discount", "NUMERIC(20, 6) DEFAULT 0"),
         # v3 ERP-standard: per-charge treatment + independent tax-base switches
         ("additional_charges", "treatment", "VARCHAR(10) DEFAULT 'bill'"),
         ("additional_charges", "st_taxable", bool_true),
         ("additional_charges", "wht_taxable", bool_false),
         ("additional_charges", "extra_taxable", bool_false),
         # invoice_settings — §11 admin defaults, tolerance, field visibility
-        ("invoice_settings", "over_invoice_tolerance_pct", "FLOAT DEFAULT 0"),
+        ("invoice_settings", "over_invoice_tolerance_pct", "NUMERIC(20, 6) DEFAULT 0"),
         ("invoice_settings", "withholding_base", "VARCHAR(10) DEFAULT 'taxable'"),
         ("invoice_settings", "show_further_tax", bool_true),
         ("invoice_settings", "show_withholding_tax", bool_true),
@@ -687,33 +725,33 @@ def _migrate_schema(db):
     # NULLIF(...,'') matters: these columns hold '' where they should hold NULL,
     # and a bare cast of '' to double precision raises.
     retyped_columns = [
-        ("inv_invoices", "global_discount_pct", "DOUBLE PRECISION"),
-        ("inv_invoices", "global_discount_value", "DOUBLE PRECISION"),
-        ("inv_invoices", "global_sales_tax_pct", "DOUBLE PRECISION"),
-        ("inv_invoices", "subtotal", "DOUBLE PRECISION"),
-        ("inv_invoices", "total_discount", "DOUBLE PRECISION"),
-        ("inv_invoices", "total_tax", "DOUBLE PRECISION"),
-        ("inv_invoices", "total_charges", "DOUBLE PRECISION"),
-        ("inv_invoices", "global_delivery", "DOUBLE PRECISION"),
-        ("inv_invoices", "global_installation", "DOUBLE PRECISION"),
-        ("inv_invoices", "further_tax_pct", "DOUBLE PRECISION"),
-        ("inv_invoices", "withholding_tax_pct", "DOUBLE PRECISION"),
-        ("inv_invoices", "total_further_tax", "DOUBLE PRECISION"),
-        ("inv_invoices", "total_withholding_tax", "DOUBLE PRECISION"),
+        ("inv_invoices", "global_discount_pct", "NUMERIC(20, 6)"),
+        ("inv_invoices", "global_discount_value", "NUMERIC(20, 6)"),
+        ("inv_invoices", "global_sales_tax_pct", "NUMERIC(20, 6)"),
+        ("inv_invoices", "subtotal", "NUMERIC(20, 6)"),
+        ("inv_invoices", "total_discount", "NUMERIC(20, 6)"),
+        ("inv_invoices", "total_tax", "NUMERIC(20, 6)"),
+        ("inv_invoices", "total_charges", "NUMERIC(20, 6)"),
+        ("inv_invoices", "global_delivery", "NUMERIC(20, 6)"),
+        ("inv_invoices", "global_installation", "NUMERIC(20, 6)"),
+        ("inv_invoices", "further_tax_pct", "NUMERIC(20, 6)"),
+        ("inv_invoices", "withholding_tax_pct", "NUMERIC(20, 6)"),
+        ("inv_invoices", "total_further_tax", "NUMERIC(20, 6)"),
+        ("inv_invoices", "total_withholding_tax", "NUMERIC(20, 6)"),
         ("inv_invoices", "created_by", "INTEGER"),
-        ("inv_purchase_invoices", "further_tax_pct", "DOUBLE PRECISION"),
-        ("inv_purchase_invoices", "total_further_tax", "DOUBLE PRECISION"),
-        ("inv_purchase_invoices", "total_withholding_tax", "DOUBLE PRECISION"),
-        ("inv_purchase_invoices", "total_amount", "DOUBLE PRECISION"),
-        ("inv_purchase_invoices", "paid_amount", "DOUBLE PRECISION"),
+        ("inv_purchase_invoices", "further_tax_pct", "NUMERIC(20, 6)"),
+        ("inv_purchase_invoices", "total_further_tax", "NUMERIC(20, 6)"),
+        ("inv_purchase_invoices", "total_withholding_tax", "NUMERIC(20, 6)"),
+        ("inv_purchase_invoices", "total_amount", "NUMERIC(20, 6)"),
+        ("inv_purchase_invoices", "paid_amount", "NUMERIC(20, 6)"),
         ("inv_purchase_invoices", "purchase_order_id", "INTEGER"),
-        ("inv_invoice_items", "delivery", "DOUBLE PRECISION"),
-        ("inv_invoice_items", "installation", "DOUBLE PRECISION"),
+        ("inv_invoice_items", "delivery", "NUMERIC(20, 6)"),
+        ("inv_invoice_items", "installation", "NUMERIC(20, 6)"),
         ("inv_invoice_items", "source_order_id", "INTEGER"),
         ("inv_invoice_items", "source_order_item_id", "INTEGER"),
         ("inv_purchase_invoice_items", "source_order_id", "INTEGER"),
         ("inv_purchase_invoice_items", "source_order_item_id", "INTEGER"),
-        ("inv_products", "weight", "DOUBLE PRECISION"),
+        ("inv_products", "weight", "NUMERIC(20, 6)"),
     ]
     if is_pg:
         conn = engine.connect()
@@ -1286,6 +1324,17 @@ def _seed_all_data(app):
         # Run schema migrations FIRST, before any ORM query, so model columns
         # added after the initial deploy are guaranteed to exist.
         _migrate_schema(db)
+
+        # Then the versioned (Alembic) revisions — every new schema change
+        # goes there, not into _migrate_schema. A failed revision is logged
+        # and retried on the next cold start; it must not stop the seeding
+        # below, which the app needs to serve requests at all.
+        from shared import db_migrate
+        try:
+            db_migrate.upgrade(db.engine)
+        except Exception as e:
+            print("MIGRATION ERROR (alembic):", e)
+            _tb.print_exc()
 
         # Multi-company: default company + company_id backfill + memberships.
         # Must run before the first scoped ORM query below, and it selects the

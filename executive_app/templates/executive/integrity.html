@@ -15,6 +15,10 @@
   .bi-intro{color:var(--muted);font-size:13px;margin:-4px 0 14px;max-width:760px}
 </style>
 {% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{{ export_buttons(("excel", "pdf", "csv")) }}
+{% endblock %}
 {% block content %}
 <div class="exr">
   <div class="bi-banner {{ 'ok' if all_ok else 'bad' }}">

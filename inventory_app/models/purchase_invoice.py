@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..extensions import db
+from shared.models.money import Money
 
 
 class InvPurchaseInvoice(db.Model):
@@ -32,28 +33,28 @@ class InvPurchaseInvoice(db.Model):
     expenses_mode = db.Column(db.String(20), default="general")
     tax_mode = db.Column(db.String(20), default="general")
 
-    global_discount_pct = db.Column(db.Float, default=0)
-    global_discount_value = db.Column(db.Float, default=0)
-    global_commission = db.Column(db.Float, default=0)
-    global_freight = db.Column(db.Float, default=0)
-    global_loading = db.Column(db.Float, default=0)
-    global_sales_tax_pct = db.Column(db.Float, default=0)
-    global_withholding_tax_pct = db.Column(db.Float, default=0)
+    global_discount_pct = db.Column(Money, default=0)
+    global_discount_value = db.Column(Money, default=0)
+    global_commission = db.Column(Money, default=0)
+    global_freight = db.Column(Money, default=0)
+    global_loading = db.Column(Money, default=0)
+    global_sales_tax_pct = db.Column(Money, default=0)
+    global_withholding_tax_pct = db.Column(Money, default=0)
     # Further tax exists on sales only (§8); the column is kept so old rows and
     # the shared mapper still load, but a purchase never sets it.
-    further_tax_pct = db.Column(db.Float, default=0)
+    further_tax_pct = db.Column(Money, default=0)
     apply_further_tax = db.Column(db.Boolean, default=False)
     apply_withholding_tax = db.Column(db.Boolean, default=False)
 
-    subtotal = db.Column(db.Float, default=0)
-    total_discount = db.Column(db.Float, default=0)
-    total_expenses = db.Column(db.Float, default=0)
-    total_tax = db.Column(db.Float, default=0)
-    total_further_tax = db.Column(db.Float, default=0)
-    total_withholding_tax = db.Column(db.Float, default=0)
-    net_payable = db.Column(db.Float, default=0)
-    total_amount = db.Column(db.Float, default=0)
-    paid_amount = db.Column(db.Float, default=0)
+    subtotal = db.Column(Money, default=0)
+    total_discount = db.Column(Money, default=0)
+    total_expenses = db.Column(Money, default=0)
+    total_tax = db.Column(Money, default=0)
+    total_further_tax = db.Column(Money, default=0)
+    total_withholding_tax = db.Column(Money, default=0)
+    net_payable = db.Column(Money, default=0)
+    total_amount = db.Column(Money, default=0)
+    paid_amount = db.Column(Money, default=0)
     payment_status = db.Column(db.String(20), default="unpaid")
     purchase_order_id = db.Column(db.Integer, db.ForeignKey("inv_purchase_orders.id"))
 
@@ -83,9 +84,9 @@ class InvPurchaseInvoiceItem(db.Model):
     invoice_id = db.Column(db.Integer, db.ForeignKey("inv_purchase_invoices.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("inv_products.id"))
     description = db.Column(db.String(300))
-    quantity = db.Column(db.Float, default=1)
+    quantity = db.Column(Money, default=1)
     unit = db.Column(db.String(20), default="pcs")
-    unit_price = db.Column(db.Float, default=0)
+    unit_price = db.Column(Money, default=0)
 
     # Per-line project label. Falls back to the party label, then the company
     # default, when saved without a pick. The first item's label governs the
@@ -97,16 +98,16 @@ class InvPurchaseInvoiceItem(db.Model):
     source_order_item_id = db.Column(db.Integer, db.ForeignKey("inv_purchase_order_items.id"))
     source_order_number = db.Column(db.String(50), default="")
 
-    discount_pct = db.Column(db.Float, default=0)
-    discount_amount = db.Column(db.Float, default=0)
-    commission = db.Column(db.Float, default=0)
-    freight = db.Column(db.Float, default=0)
-    loading_unloading = db.Column(db.Float, default=0)
-    sales_tax_pct = db.Column(db.Float, default=0)
-    withholding_tax_pct = db.Column(db.Float, default=0)
+    discount_pct = db.Column(Money, default=0)
+    discount_amount = db.Column(Money, default=0)
+    commission = db.Column(Money, default=0)
+    freight = db.Column(Money, default=0)
+    loading_unloading = db.Column(Money, default=0)
+    sales_tax_pct = db.Column(Money, default=0)
+    withholding_tax_pct = db.Column(Money, default=0)
 
-    total_before_discount = db.Column(db.Float, default=0)
-    total_after_discount = db.Column(db.Float, default=0)
+    total_before_discount = db.Column(Money, default=0)
+    total_after_discount = db.Column(Money, default=0)
 
     comments = db.Column(db.Text)
 

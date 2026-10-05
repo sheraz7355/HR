@@ -17,6 +17,39 @@ E2E tests must cover all app modules:
 - **Inventory**: Login, Dashboard, Products, Suppliers, Customers, Purchase Invoice (form, add/clear items, pill toggles, calculations, global inputs), Purchase Return, Logout
 - **HR**: Login, Hub, Dashboard, Attendance, Leave, ESS, Profile, Logout
 
+## Session Summary (5 Oct 2026) — Serverless Hardening, Report Exports, Invoice Form UX, App-wide UI
+
+### Constraint
+Hosting is fixed: **Vercel (serverless) + Neon Postgres**. Design for it: no local disk, no workers, small pools, migrations at boot.
+
+### Completed
+- **Serverless hardening**
+  - Document amounts: 187 `db.Float` columns → `shared/models/money.py::Money` (NUMERIC(20,6) in Postgres, float in Python). Hours/scores/GPS stay Float. GL/stock layers were already Numeric(16,4)
+  - **Alembic** (`migrations/`, `shared/db_migrate.py`, `tools/db_migrate.py`): runs at boot after `_migrate_schema` (now frozen — new schema changes go in revisions, written idempotently), one transaction under `pg_advisory_xact_lock` (works through Neon's pooler). `0002_money_numeric` converts live double-precision columns
+  - Uploads in the DB (`shared/models/stored_file.py`, `shared/file_store.py`, tenant-scoped) for employee documents and avatars; legacy disk files still read. Payroll bulk sheet parsed in memory
+  - Pool 2+2 on Vercel; optional Sentry (`SENTRY_DSN`, no PII/bodies); boot warning when `SECRET_KEY` unset on Vercel; stdout/stderr.txt untracked
+- **Report exports** — one pipeline, `shared/report_export.py` (finance's builders moved here; `finance_app/routes/reports.py` keeps thin `_build_excel_wb`/`_build_pdf`/`_finish_sheet` wrappers). Every file: company/title/period/filters/generated-by heading, frozen + print-repeated header, fit-to-width print setup, "Page X of Y", section/total/grand styling in Excel AND PDF, quantity formats, `Company_Report_Period.ext` names, `export_table(fmt, …)` one-call Excel/PDF/CSV
+  - New exports: P&L by Label, Stock Valuation (+GL reconciliation rows), Stock Ledger, Product Ledger (+re-costing sheet), Product Sub-Ledgers, Low Stock, **Aged Receivables/Payables** (per-party FIFO buckets via `executive_reports.party_aging`), Party Ledger (all postings, oldest first, running balance), Books Integrity, Fixed Asset Register (+by-category sheet), Attendance/Leave Excel+PDF, Audit Log Excel+PDF, HR report builder through the shared workbook
+  - General Ledger workbook leads with a linked Summary sheet; cash-flow Excel got its missing column headings; SOCIE/Cash Flow export without dates used to 500/return HTML (now default period)
+  - `templates/partials/export.html::export_buttons()` keeps every on-screen filter in the link; inline-SVG icons (Font Awesome loads only on finance pages)
+  - HR reports page: removed hard-coded July / 2026 / 2024–2027 defaults
+- **Invoice create/edit UX** (sales + purchase) — `static/js/doc_form.js` (configured per form by inline `window.DOC`) + `static/css/doc_form.css`
+  - Header: document number as title, one status chip, payment chip only when approved, back link; topbar no longer says "Unapproved …"
+  - Action bar by state — new: Cancel · Save draft · **Save & approve**; draft: More(New, Delete) · Back · Print · Save (lit only when dirty) · **Approve**; approved: More(New, Validate FBR, Unapprove) · Back · Send to FBR · **Print**. Pinned to the bottom on phones
+  - Bugs fixed: a saved draft froze every field until reload; reopened drafts had no Print/Delete; after Unapprove `const editable` stayed false (Ctrl+S refused); descriptions clipped; row ×/+ hover classes swapped; row buttons shown on locked docs
+  - Fields: Payment terms (Due on receipt / Net 7–90) fill the due date; "Party label" → "Project label"; locked fields read "—"; developer badges ("computed", "input · Combined · by %") removed; "Total due" / "Total payable"
+  - Purchase form gained Ctrl+S / Ctrl+Shift+S / Ctrl+P / Alt+N / Alt+C, the unsaved-changes guard and Esc layering
+  - Phone: line items render as labelled cards
+- **App-wide UI**
+  - Theme switch on every page: `static/js/theme.js` + `partials/_theme_toggle.html` on hub, portal, super admin console, landing, sign-in/sign-up (floating). Fixed: on an OS-dark page the first click did nothing and showed the wrong glyph (`data-theme-effective`)
+  - Tables never clipped on phones: `.table-responsive` had no CSS; `.table-wrap` was `overflow:hidden`; bare `.table` scrolls inside its box ≤768px; header import forms wrap; inventory dashboard grids responsive
+  - Stock list "Value" printed `qty * cost|amount_format` (Jinja filter precedence → string repeated qty times); fixed
+  - Dark mode: statement grand-total, employee-card and settings-card headers no longer glare white; flash banners use theme pairs (warning was ~2:1); avatar initial readable
+
+### Verification
+- Full E2E **831 passed, 1 skipped** (Postgres-only check) after updating the two register tests that used `fmt=csv` as their "unsupported" example; unit **452 passed**; Postgres (local pgserver + `TEST_DATABASE_URL`): books integrity 20, audit 7, storage/money 11, exports 59
+- New E2E: `test_storage_and_money.py` (11), `test_report_exports_all.py` (59), `test_invoice_form_ux.py` (9), `test_theme_toggle.py` (8), `test_responsive_pages.py` (17); unit `test_report_export_module.py` (5)
+
 ## Session Summary (Oct 2026) — Document-Date Posting, Date-Ordered Costing, Books Integrity
 
 ### Objective

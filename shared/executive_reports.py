@@ -414,20 +414,9 @@ def _age_party(account_id, acct, rows, balance, as_of_day, side):
     }
 
 
-def aging(as_of=None):
-    """Age every open balance in scope, one side against the other.
-
-    Returns ``{receivable: …, payable: …}``, each a side summary: total,
-    party count, weighted-average days, oldest debt (days + party), the four
-    buckets, and the five largest parties with their share of the total.
-    """
-    in_scope = scope(as_dict=True)
-    if not in_scope:
-        # Still scaled: the template reads bucket["width"] unconditionally,
-        # and an empty scope is the most likely way to reach this page.
-        empty = {RECEIVABLE: _aging_side([]), PAYABLE: _aging_side([])}
-        _scale_buckets(empty[RECEIVABLE], empty[PAYABLE])
-        return empty
+def _aged_parties(in_scope, as_of=None):
+    """FIFO-age every open in-scope account: (receivable, payable) lists of
+    _age_party() results."""
     as_of_day = as_of.date() if isinstance(as_of, datetime) else (
         as_of if isinstance(as_of, date) else datetime.utcnow().date())
 
@@ -457,6 +446,45 @@ def aging(as_of=None):
         party = _age_party(account_id, acct, rows, abs(net), as_of_day, side)
         if party:
             (receivable if side == RECEIVABLE else payable).append(party)
+    return receivable, payable
+
+
+def party_aging(as_of=None):
+    """{account_id: {"buckets": {key: amount}, "avg_days", "oldest_days"}}
+    for every open in-scope balance — the per-party view of aging(), used by
+    the receivable/payable register exports."""
+    in_scope = scope(as_dict=True)
+    if not in_scope:
+        return {}
+    out = {}
+    for party in sum(_aged_parties(in_scope, as_of), []):
+        buckets = {key: 0.0 for key, *_ in BUCKET_DEFS}
+        for days, amount in party["layers"]:
+            for key, _label, lo, hi in BUCKET_DEFS:
+                if days >= lo and (hi is None or days <= hi):
+                    buckets[key] += float(amount)
+                    break
+        out[party["account_id"]] = {"buckets": buckets,
+                                    "avg_days": party["avg_days"],
+                                    "oldest_days": party["oldest_days"]}
+    return out
+
+
+def aging(as_of=None):
+    """Age every open balance in scope, one side against the other.
+
+    Returns ``{receivable: …, payable: …}``, each a side summary: total,
+    party count, weighted-average days, oldest debt (days + party), the four
+    buckets, and the five largest parties with their share of the total.
+    """
+    in_scope = scope(as_dict=True)
+    if not in_scope:
+        # Still scaled: the template reads bucket["width"] unconditionally,
+        # and an empty scope is the most likely way to reach this page.
+        empty = {RECEIVABLE: _aging_side([]), PAYABLE: _aging_side([])}
+        _scale_buckets(empty[RECEIVABLE], empty[PAYABLE])
+        return empty
+    receivable, payable = _aged_parties(in_scope, as_of)
     sides = {
         RECEIVABLE: _aging_side(receivable),
         PAYABLE: _aging_side(payable),

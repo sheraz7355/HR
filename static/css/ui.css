@@ -298,7 +298,10 @@
 }
 
 /* Theme switch. One button, two glyphs — it shows the state you would move
-   TO, so a light page offers a moon. Absent data-theme means light. */
+   TO, so a light page offers a moon. static/js/theme.js stamps
+   data-theme-effective with what is actually on screen (an explicit pick, or
+   the OS default when nothing is stored), so the glyph is right either way;
+   keying off data-theme alone showed a moon on an OS-dark page. */
 [data-ui="v2"] .theme-toggle{
   display:inline-flex;align-items:center;justify-content:center;
   width:32px;height:32px;padding:0;border-radius:8px;cursor:pointer;
@@ -308,13 +311,29 @@
 [data-ui="v2"] .theme-toggle:hover{background:var(--v2-hover);color:var(--v2-ink);}
 [data-ui="v2"] .theme-toggle .nav-svg{width:17px;height:17px;}
 [data-ui="v2"] .theme-toggle .t-dark{display:none;}
-[data-ui="v2"][data-theme="dark"] .theme-toggle .t-light{display:none;}
-[data-ui="v2"][data-theme="dark"] .theme-toggle .t-dark{display:inline-flex;}
+[data-ui="v2"][data-theme="dark"] .theme-toggle .t-light,
+[data-ui="v2"][data-theme-effective="dark"] .theme-toggle .t-light{display:none;}
+[data-ui="v2"][data-theme="dark"] .theme-toggle .t-dark,
+[data-ui="v2"][data-theme-effective="dark"] .theme-toggle .t-dark{display:inline-flex;}
+[data-ui="v2"][data-theme="light"] .theme-toggle .t-light{display:inline-flex;}
+[data-ui="v2"][data-theme="light"] .theme-toggle .t-dark{display:none;}
+/* Pages with no header bar (sign-in): the switch floats in the corner. */
+[data-ui="v2"] .ax-theme-float{position:fixed;top:14px;right:14px;z-index:50;
+  background:var(--v2-surface);border-color:var(--v2-line);box-shadow:var(--v2-shadow);}
 
 [data-ui="v2"] .content-area{padding:22px 20px;background:var(--v2-ground);}
 
 /* ── Page header ──────────────────────────────────────────── */
 [data-ui="v2"] .page-header{margin-bottom:18px;align-items:flex-end;}
+/* Header toolbars (New / Template / Import) wrap on a phone; a file picker
+   keeps its intrinsic ~250px width otherwise and pushes the page sideways. */
+[data-ui="v2"] .page-header form{flex-wrap:wrap;max-width:100%;}
+[data-ui="v2"] .page-header input[type=file]{max-width:100%;min-width:0;}
+[data-ui="v2"] .page-header > *{min-width:0;max-width:100%;}
+@media (max-width:480px){
+  [data-ui="v2"] .page-header form{width:100%;}
+  [data-ui="v2"] .page-header input[type=file]{width:100%!important;flex:1 1 100%;}
+}
 [data-ui="v2"] .page-header h1{
   font-size:19px;font-weight:600;letter-spacing:-.016em;color:var(--v2-ink);
 }
@@ -350,7 +369,21 @@
 
 /* ── Tables: hairline rows, no vertical rules, quiet headers ── */
 [data-ui="v2"] .table-wrap{
-  border:1px solid var(--v2-line);border-radius:12px;overflow:hidden;background:var(--v2-surface);
+  border:1px solid var(--v2-line);border-radius:12px;background:var(--v2-surface);
+  /* Scroll, never clip: overflow:hidden here (it beat app.css's overflow-x:auto)
+     cut wide tables off at the card edge, with the columns past it unreachable. */
+  overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+}
+/* The wrapper most inventory/invoicing lists use had no rule at all. */
+[data-ui="v2"] .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;}
+/* Phone: a list table that sits bare in a card scrolls inside its own box.
+   The shell sets body{overflow-x:hidden}, so anything wider than the screen
+   was simply cut off — on a 360px phone half a register's columns. */
+@media (max-width:768px){
+  [data-ui="v2"] .content-area table.table,
+  [data-ui="v2"] .content-area table.data-table{
+    display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  }
 }
 [data-ui="v2"] table{background:var(--v2-surface);font-size:13px;}
 [data-ui="v2"] th{
@@ -478,6 +511,42 @@
 [data-ui="v2"] textarea:focus-visible,[data-ui="v2"] [tabindex]:focus-visible{
   outline:2px solid var(--v2-ink);outline-offset:2px;
 }
+
+/* Report export buttons (templates/partials/export.html): one quiet group,
+   icon + word, wraps under the title on a phone instead of overflowing. */
+.export-group{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}
+.export-group .export-btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.export-group .export-ico{flex:none;opacity:.8}
+@media (max-width:480px){
+  .export-group{width:100%}
+  .export-group .export-btn{flex:1 1 0;justify-content:center;min-height:36px}
+}
+
+/* Inverted bands (statement grand total, employee card headers, settings card
+   headers) are ink-on-paper in light mode. Inverting them in dark mode made a
+   glaring near-white bar across a dark page; there they become a raised dark
+   surface with ink text instead. */
+[data-ui="v2"][data-theme="dark"] table.statement tr.grand-total td,
+[data-ui="v2"][data-theme="dark"] .emp-card-header,
+[data-ui="v2"][data-theme="dark"] .set-card-hd{
+  background:var(--v2-sunk);color:var(--v2-ink);
+}
+[data-ui="v2"][data-theme="dark"] table.statement tr.grand-total td{
+  border-top:1px solid var(--v2-ink);border-bottom:3px double var(--v2-ink);
+}
+@media (prefers-color-scheme: dark){
+  [data-ui="v2"]:not([data-theme="light"]) table.statement tr.grand-total td,
+  [data-ui="v2"]:not([data-theme="light"]) .emp-card-header,
+  [data-ui="v2"]:not([data-theme="light"]) .set-card-hd{
+    background:var(--v2-sunk);color:var(--v2-ink);
+  }
+  [data-ui="v2"]:not([data-theme="light"]) table.statement tr.grand-total td{
+    border-top:1px solid var(--v2-ink);border-bottom:3px double var(--v2-ink);
+  }
+}
+/* Profile avatar initial: a plain surface, not a grey-to-ink gradient that
+   left the letter nearly invisible in dark mode. */
+[data-ui="v2"] .profile-pic-initial{background:var(--v2-sunk);color:var(--v2-ink);}
 
 /* Printed documents stay on the light palette whatever the screen theme —
    nobody wants an invoice that prints a black rectangle. */

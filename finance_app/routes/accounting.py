@@ -556,23 +556,18 @@ def voucher_export(id):
                      float(line.debit) or 0, float(line.credit) or 0])
     rows.append(["", "", "", "Total", total_debit, total_credit])
 
-    title = f"{VOUCHER_LABELS[v.voucher_type]} - {v.voucher_number}"
-
-    if fmt == "excel":
-        from .reports import _build_excel_wb
-        out = _build_excel_wb(title, headers, rows)
-        return send_file(out, as_attachment=True,
-                         download_name=f"voucher_{v.voucher_number}.xlsx",
-                         mimetype="application/vnd.openxmlformats-"
-                         "officedocument.spreadsheetml.sheet")
-    if fmt != "pdf":
-        abort(404)
-
-    from .reports import _build_pdf
-    pdf_out = _build_pdf(title, headers, rows)
-    return send_file(pdf_out, as_attachment=True,
-                     download_name=f"voucher_{v.voucher_number}.pdf",
-                     mimetype="application/pdf")
+    from shared import report_export as rx
+    title = f"{VOUCHER_LABELS[v.voucher_type]} {v.voucher_number}"
+    when = v.voucher_date.strftime("%d %b %Y") if v.voucher_date else ""
+    status = "Approved" if getattr(v, "status", "") == "approved" else \
+        (getattr(v, "status", "") or "").title()
+    period = " · ".join(x for x in (when, status) if x)
+    narration = (v.notes or "").strip()
+    return rx.export_table(fmt, title, headers, rows, period=period,
+                           filters=[narration] if narration else None,
+                           row_kinds=["plain"] * (len(rows) - 1) + ["grand"],
+                           col_formats={0: "0"}, mono_col=1,
+                           file_period=None)
 
 def _voucher_narration_lines(v, vlines):
     """Register Description from pre-fetched lines (chunk-friendly)."""
@@ -701,9 +696,9 @@ def _voucher_register_rows(vtype, status, from_date, to_date,
 @login_required
 def voucher_register_export():
     from shared.registers import resolve_register_filter
-    from .reports import _build_excel_wb, _build_pdf
+    from shared import report_export as rx
     fmt = (request.args.get("fmt") or "pdf").strip().lower()
-    if fmt not in ("excel", "pdf"):
+    if fmt not in ("excel", "pdf", "csv"):
         abort(404)
     vtype = (request.args.get("vtype") or "").strip().upper()
     if vtype not in VOUCHER_LABELS:
@@ -723,8 +718,8 @@ def voucher_register_export():
         cr = round(sum(float(l.credit or 0) for l in v.lines), 2)
         total_dr += dr
         total_cr += cr
-        data.append([v.voucher_date.strftime("%d %b %Y") if v.voucher_date else "-",
-                     v.voucher_number, _voucher_narration(v), dr, cr])
+        data.append([v.voucher_date, v.voucher_number, _voucher_narration(v),
+                     dr, cr])
         kinds.append("account")
     data.append(["", "", "TOTAL", round(total_dr, 2), round(total_cr, 2)])
     kinds.append("grand")
@@ -733,19 +728,10 @@ def voucher_register_export():
         subtitle += f" · {VOUCHER_LABELS[vtype]}"
     if status:
         subtitle += f" · {status.title()}"
-    if fmt == "excel":
-        out = _build_excel_wb(f"Voucher Register — {subtitle}", headers,
-                              data, sheet_title="Voucher Register",
-                              period=subtitle, bold_rows=[len(data) - 1])
-        return send_file(out, as_attachment=True,
-                         download_name="voucher_register.xlsx",
-                         mimetype="application/vnd.openxmlformats-"
-                         "officedocument.spreadsheetml.sheet")
-    out = _build_pdf("Voucher Register", headers, data, subtitle=subtitle,
-                     row_kinds=kinds, mono_col=1)
-    return send_file(out, as_attachment=True,
-                     download_name="voucher_register.pdf",
-                     mimetype="application/pdf")
+    return rx.export_table(fmt, "Voucher Register", headers, data,
+                           period=subtitle, row_kinds=kinds, mono_col=1,
+                           filters=[f"{len(vouchers)} vouchers"],
+                           file_period=fctx["label"])
 
 
 @acct_bp.route("/registers/vouchers/data")

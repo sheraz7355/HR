@@ -1,0 +1,38 @@
+{#- Export buttons for a report page.
+
+    Each link is the current page with every filter it was opened with
+    (dates, labels, status, search ...) plus format=<fmt>, so the file
+    always matches what is on screen. Icons are inline SVG (currentColor),
+    so they work in every module and in dark mode — Font Awesome is only
+    loaded on finance pages.
+
+    {% from "partials/export.html" import export_buttons %}
+    {{ export_buttons() }}                          Excel + PDF + Print
+    {{ export_buttons(("excel", "pdf", "csv")) }}
+    {{ export_buttons(param="fmt") }}               routes that read ?fmt=
+-#}
+{%- set _EXPORT_ICONS = {
+  "excel": '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8l8 8M16 8l-8 8"/>',
+  "pdf":   '<path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M8 15h8M8 18h5"/>',
+  "csv":   '<path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M8 13h8M8 16h8M8 19h8"/>',
+  "print": '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>'
+} -%}
+{%- macro _icon(name) -%}
+<svg class="export-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ _EXPORT_ICONS[name]|safe }}</svg>
+{%- endmacro -%}
+{%- macro export_buttons(formats=("excel", "pdf"), param="format", print=True, endpoint=None) -%}
+{%- set labels = {"excel": "Excel", "xlsx": "Excel", "pdf": "PDF", "csv": "CSV"} -%}
+{%- set base = request.args.to_dict(flat=False) -%}
+<span class="export-group no-print" role="group" aria-label="Export this report">
+  {%- for f in formats %}
+  {%- set args = dict(base) %}{%- set _ = args.update({param: f}) %}
+  {%- set _ = args.update(request.view_args or {}) %}
+  <a href="{{ url_for(endpoint or request.endpoint, **args) }}" class="btn btn-outline btn-sm export-btn"
+     data-export="{{ f }}" title="Download as {{ labels[f] }} with the filters shown">
+    {{- _icon("excel" if f == "xlsx" else f) }} {{ labels[f] }}</a>
+  {%- endfor %}
+  {%- if print %}
+  <button type="button" onclick="window.print()" class="btn btn-outline btn-sm export-btn">{{ _icon("print") }} Print</button>
+  {%- endif %}
+</span>
+{%- endmacro -%}

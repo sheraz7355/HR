@@ -32,6 +32,9 @@ def index():
             status_summary[s] = {"count": 0, "cost": 0}
         status_summary[s]["count"] += 1
         status_summary[s]["cost"] += a.purchase_cost
+    fmt = request.args.get("format")
+    if fmt:
+        return _export_register(fmt, assets, category_summary)
     return render_template("fixed_assets/reports/index.html",
                            assets=assets,
                            total_cost=total_cost,
@@ -39,3 +42,38 @@ def index():
                            net_book_value=total_cost - total_dep,
                            category_summary=category_summary,
                            status_summary=status_summary)
+
+
+def _export_register(fmt, assets, category_summary):
+    """Fixed asset register: every active asset with cost, depreciation
+    posted to date and net book value; Excel adds the category summary."""
+    from shared import report_export as rx
+    headers = ["Code", "Asset", "Category", "Purchase date", "Location",
+               "Assigned to", "Serial no.", "Method", "Life (yrs)", "Cost",
+               "Salvage", "Acc. depreciation", "Net book value", "Status"]
+    rows = [[a.asset_code, a.name, a.category_obj.name if a.category_obj else "",
+             a.purchase_date, a.location or "", a.assigned_to or "",
+             a.serial_number or "", (a.depreciation_method or "").replace("_", " ").title(),
+             a.useful_life, float(a.purchase_cost or 0), float(a.salvage_value or 0),
+             float(a.posted_depreciation or 0), float(a.net_book_value or 0),
+             (a.status or "").title()] for a in assets]
+    rows.append(["", f"Total ({len(assets)} assets)", "", "", "", "", "", "", "",
+                 sum(r[9] for r in rows), sum(r[10] for r in rows),
+                 sum(r[11] for r in rows), sum(r[12] for r in rows), ""])
+    kinds = ["plain"] * len(assets) + ["grand"]
+    title = "Fixed Asset Register"
+    period = f"Active assets as at {date.today():%d %b %Y}"
+    if fmt in ("excel", "xlsx"):
+        summary = [[name, d["count"], float(d["cost"]), float(d["depreciation"]),
+                    float(d["cost"] - d["depreciation"])]
+                   for name, d in category_summary.items()]
+        buf = rx.build_excel(title, headers, rows, period=period, row_kinds=kinds,
+                             col_formats={8: "0"},
+                             extra_sheets=[("By category",
+                                            ["Category", "Assets", "Cost",
+                                             "Acc. depreciation", "Net book value"],
+                                            summary)])
+        return rx.send_export(buf, "excel", title, date.today())
+    return rx.export_table(fmt, title, headers, rows, period=period,
+                           row_kinds=kinds, col_formats={8: "0"},
+                           file_period=date.today())

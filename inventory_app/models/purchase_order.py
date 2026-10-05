@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..extensions import db
+from shared.models.money import Money
 
 
 class InvPurchaseOrder(db.Model):
@@ -20,10 +21,10 @@ class InvPurchaseOrder(db.Model):
     # open | partial | invoiced — maintained by shared/order_linkage.py (§4.4).
     fulfilment_status = db.Column(db.String(20), default="open")
     tax_mode = db.Column(db.String(20), default="general")
-    global_sales_tax_pct = db.Column(db.Float, default=0)
-    subtotal = db.Column(db.Float, default=0)
-    total_tax = db.Column(db.Float, default=0)
-    total_amount = db.Column(db.Float, default=0)
+    global_sales_tax_pct = db.Column(Money, default=0)
+    subtotal = db.Column(Money, default=0)
+    total_tax = db.Column(Money, default=0)
+    total_amount = db.Column(Money, default=0)
     notes = db.Column(db.Text)
     driver_name = db.Column(db.String(100), default="")
     driver_contact = db.Column(db.String(50), default="")
@@ -49,12 +50,12 @@ class InvPurchaseOrderItem(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey("inv_products.id"), nullable=False)
     description = db.Column(db.String(200), default="")
     unit = db.Column(db.String(20), default="pcs")
-    quantity = db.Column(db.Float, default=1)
+    quantity = db.Column(Money, default=1)
     # Billed so far. On the purchase side §4.2 caps loading at
     # received-not-yet-invoiced for 3-way PO/receipt/invoice matching.
-    invoiced_qty = db.Column(db.Float, default=0)
-    unit_price = db.Column(db.Float, default=0)
-    sales_tax_pct = db.Column(db.Float, default=0)
-    total_before_discount = db.Column(db.Float, default=0)
-    total_after_discount = db.Column(db.Float, default=0)
-    total_price = db.Column(db.Float, default=0)
+    invoiced_qty = db.Column(Money, default=0)
+    unit_price = db.Column(Money, default=0)
+    sales_tax_pct = db.Column(Money, default=0)
+    total_before_discount = db.Column(Money, default=0)
+    total_after_discount = db.Column(Money, default=0)
+    total_price = db.Column(Money, default=0)

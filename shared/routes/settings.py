@@ -1006,6 +1006,24 @@ def audit_csv():
     from shared.tenancy import current_company_id
     members = _audit_members()
     rows = audit.search(current_company_id(), request.args, members.keys()).limit(20000).all()
+    fmt = request.args.get("format", "csv")
+    if fmt in ("excel", "pdf"):
+        from shared import report_export as rx
+        data = []
+        for r in rows:
+            changes = "; ".join(
+                f"{c['field']}: {c['old']} -> {c['new']}" if c["old"] is not None
+                else f"{c['field']}: {c['new']}" for c in audit.decode_changes(r))
+            data.append([r.created_at, r.user_name or "system", r.action,
+                         r.module or "", r.entity_type or "", r.reference or "",
+                         r.summary or "", changes, r.ip_address or ""])
+        flt = [f"{k}: {v}" for k, v in request.args.items()
+               if v and k not in ("format", "page")]
+        return rx.export_table(fmt, "Audit Log",
+                               ["When (UTC)", "User", "Action", "Module", "Record",
+                                "Reference", "Summary", "Changes", "IP"], data,
+                               period=f"{len(data)} entries", filters=flt,
+                               file_period=datetime.utcnow().date())
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["When (UTC)", "User", "Action", "Module", "Record", "Reference",

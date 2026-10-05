@@ -12,6 +12,7 @@ from flask import (Blueprint, render_template, request, redirect, url_for,
 from flask_login import login_required, current_user
 
 from shared import executive_reports as er
+from shared import report_export as rx
 from shared.permissions import deny_page
 
 exec_bp = Blueprint("executive", __name__, url_prefix="/executive",
@@ -69,6 +70,9 @@ def _register(side):
     group_id = request.args.get("group", type=int)
     rows = er.party_rows(side=side, as_of=as_of, search=search or None,
                          group_id=group_id)
+    fmt = request.args.get("format")
+    if fmt:
+        return _export_register(fmt, side, rows, as_of, search, group_id)
     return render_template(
         "executive/register.html",
         side=side, meta=er.SIDE_META[side], rows=rows,
@@ -79,6 +83,46 @@ def _register(side):
                  "as_of": request.args.get("as_of", "")},
         can_edit=current_user.can(RESOURCE, "edit"),
     )
+
+
+def _as_of_text(as_of):
+    return f"Balances as at {as_of:%d %b %Y}" if as_of else         f"Balances as at {datetime.now():%d %b %Y} (all postings)"
+
+
+def _export_register(fmt, side, rows, as_of, search, group_id):
+    """Aged receivables / payables: each party's balance split into the
+    dashboard's FIFO aging buckets."""
+    meta = er.SIDE_META[side]
+    ages = er.party_aging(as_of)
+    bucket_labels = [label for _k, label, *_ in er.BUCKET_DEFS]
+    headers = (["Code", "Party / account", "Group", "Debit", "Credit",
+                meta["title"]] + bucket_labels + ["Avg days", "Oldest days"])
+    data = []
+    sums = {k: 0.0 for k, *_ in er.BUCKET_DEFS}
+    for r in rows:
+        a = ages.get(r["account_id"]) or {}
+        b = a.get("buckets") or {}
+        for k in sums:
+            sums[k] += b.get(k, 0.0)
+        data.append([r["code"], r["name"], r["group"], r["debit"], r["credit"],
+                     r["amount"]] + [b.get(k, 0.0) for k, *_ in er.BUCKET_DEFS] +
+                    [round(a["avg_days"]) if a else "", a.get("oldest_days", "") if a else ""])
+    t = er.totals(rows)
+    data.append(["", f"Total ({t['parties']} parties)", "",
+                 sum(r["debit"] for r in rows), sum(r["credit"] for r in rows),
+                 t["amount"]] + [sums[k] for k, *_ in er.BUCKET_DEFS] + ["", ""])
+    filters = []
+    if search:
+        filters.append(f"Search: {search}")
+    if group_id:
+        g = next((g for g in er.groups() if g["id"] == group_id), None)
+        filters.append(f"Group: {g['label'] if g else group_id}")
+    return rx.export_table(fmt, f"Aged {meta['title']}", headers, data,
+                           period=_as_of_text(as_of) + " · FIFO aging",
+                           filters=filters,
+                           row_kinds=["plain"] * len(rows) + ["grand"],
+                           col_formats={11: "0", 12: "0"},
+                           file_period=(as_of.date() if as_of else datetime.now().date()))
 
 
 @exec_bp.route("/integrity")
@@ -97,6 +141,26 @@ def integrity():
     checks = books.run_all()
     adjustments = (StockCostAdjustment.query
                    .order_by(StockCostAdjustment.id.desc()).limit(25).all())
+    fmt = request.args.get("format")
+    if fmt:
+        rows = [[c["label"], "Pass" if c["ok"] else "Fail", c["expected"],
+                 c["actual"], c.get("detail") or ""] for c in checks]
+        passed = sum(1 for c in checks if c["ok"])
+        verdict = ("All checks pass" if passed == len(checks)
+                   else f"{len(checks) - passed} of {len(checks)} checks FAIL")
+        extra = [("Recent re-costings",
+                  ["Document", "Posted on", "Was", "Now", "Change", "Why"],
+                  [[a.voucher_number, a.entry_date, float(a.old_cost or 0),
+                    float(a.new_cost or 0), float(a.delta or 0), a.trigger or ""]
+                   for a in adjustments])]
+        title = "Books Integrity"
+        headers = ["Check", "Status", "Expected", "Actual", "Detail"]
+        period = f"{verdict} · run {datetime.now():%d %b %Y %H:%M}"
+        if fmt in ("excel", "xlsx"):
+            buf = rx.build_excel(title, headers, rows, period=period, extra_sheets=extra)
+            return rx.send_export(buf, "excel", title, datetime.now().date())
+        return rx.export_table(fmt, title, headers, rows, period=period,
+                               file_period=datetime.now().date())
     return render_template("executive/integrity.html", checks=checks,
                            all_ok=all(c["ok"] for c in checks),
                            adjustments=adjustments)
@@ -127,10 +191,30 @@ def party(account_id):
               "no balance.", "error")
         return redirect(url_for("executive.receivables"))
     as_of = _parse_date(request.args.get("as_of"))
+    lines = er.account_ledger(account_id, as_of)
+    fmt = request.args.get("format")
+    if fmt:
+        # Every posting, oldest first, so the running balance is right; the
+        # screen's list is newest-first and capped.
+        chrono = list(reversed(er.account_ledger(account_id, as_of, limit=None)))
+        data, bal = [], 0.0
+        for l in chrono:
+            bal += float(l.get("debit") or 0) - float(l.get("credit") or 0)
+            data.append([l.get("date"), " ".join(x for x in (l.get("voucher_type"),
+                                                            l.get("voucher_number")) if x),
+                         l.get("description") or "", float(l.get("debit") or 0),
+                         float(l.get("credit") or 0), bal])
+        data.append(["", "", "Balance", row["debit"], row["credit"], row["amount"]])
+        return rx.export_table(fmt, f"Party Ledger — {row['name']}",
+                               ["Date", "Voucher", "Narration", "Debit", "Credit",
+                                "Running balance (Dr+)"], data,
+                               period=f"{row['code']} · {row['group']} · " + _as_of_text(as_of),
+                               row_kinds=["plain"] * len(chrono) + ["grand"],
+                               file_period=row["code"])
     return render_template(
         "executive/party.html",
         row=row, meta=er.SIDE_META[row["side"]],
-        lines=er.account_ledger(account_id, as_of),
+        lines=lines,
     )
 
 

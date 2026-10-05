@@ -29,9 +29,5 @@ if app is None:
     def error_route(path=""):
         return "<h1>App failed to start</h1>", 500
 
-try:
-    upload_dir = app.config.get("UPLOAD_FOLDER", "")
-    if upload_dir:
-        os.makedirs(os.path.join(upload_dir, "avatars"), exist_ok=True)
-except OSError:
-    pass  # readonly fs on Vercel, uploads won't work
+# Uploads are stored in the database (shared/file_store.py), so there is no
+# upload folder to prepare on Vercel's read-only filesystem.

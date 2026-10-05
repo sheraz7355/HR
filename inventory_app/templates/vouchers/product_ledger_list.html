@@ -1,6 +1,10 @@
 {% extends "layouts/base_inv.html" %}
 {% block title %}Inventory Ledger{% endblock %}
 {% block page_title %}Inventory Ledger{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{% if rows %}{{ export_buttons(("excel", "pdf", "csv")) }}{% endif %}
+{% endblock %}
 {% block content %}
 <div class="card">
   <div class="card-header"><strong>Account: 1200 - Inventory (Product Sub-Ledgers)</strong></div>

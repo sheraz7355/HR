@@ -1,5 +1,5 @@
-import os
 from datetime import datetime, date, timedelta
+from io import BytesIO
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for, send_file, abort
 from flask_login import login_required, current_user
 from ..extensions import db
@@ -11,39 +11,19 @@ from ..models.timesheet import TimesheetWeek
 from ..models.compensation import PayrollSlip
 from ..models.performance import PerformanceReview
 from ..models.communication import Notification, NotificationRecipient
-from ..config import Config
+from shared import file_store
 
 df_bp = Blueprint("digital_files", __name__, url_prefix="/digital-files")
 
 
-def _ensure_upload_dir():
-    """Per-company, per-user upload directory: uploads/<company_id>/<user_id>/.
+def _file_key(f):
+    """Storage key of a DigitalFile's bytes inside its company.
 
-    Files live under the company's own subfolder so one company's admins can
-    never address another company's files from disk.
+    Same per-user layout the upload folder had (<user_id>/<file>), so the
+    legacy-disk fallback in file_store finds files uploaded before the
+    database store, and one user's files never collide with another's.
     """
-    cid = current_company_id()
-    if cid is None:
-        raise RuntimeError("No active company for file upload")
-    d = os.path.join(Config.UPLOAD_FOLDER, str(cid), str(current_user.id))
-    os.makedirs(d, exist_ok=True)
-    return d
-
-
-def _resolve_path(f):
-    """Absolute path of a DigitalFile's blob.
-
-    Looks in the per-company folder first (uploads/<company_id>/<user_id>/);
-    falls back to the legacy flat folder (uploads/) so files uploaded before
-    multi-company keep working.
-    """
-    cid = f.company_id
-    if cid:
-        p = os.path.join(Config.UPLOAD_FOLDER, str(cid),
-                         str(f.user_id), f.filename)
-        if os.path.exists(p):
-            return p
-    return os.path.join(Config.UPLOAD_FOLDER, f.filename)
+    return f"{f.user_id}/{f.filename}"
 
 
 @df_bp.route("/")
@@ -71,22 +51,25 @@ def upload():
     if ext not in allowed:
         flash("Only PDF, PNG, JPG files allowed.", "danger")
         return redirect(url_for("digital_files.index"))
-    upload_dir = _ensure_upload_dir()
+    if current_company_id() is None:
+        flash("Open a company before uploading files.", "danger")
+        return redirect(url_for("digital_files.index"))
     import uuid
     unique = f"{uuid.uuid4().hex}.{ext}"
-    f.save(os.path.join(upload_dir, unique))
+    data = f.read()
     df = DigitalFile(
         user_id=current_user.id,
         category_id=request.form.get("category_id", type=int),
         title=request.form.get("title", f.filename),
         filename=unique,
         original_name=f.filename,
-        file_size=os.path.getsize(os.path.join(upload_dir, unique)),
+        file_size=len(data),
         mime_type=f.content_type,
         notes=request.form.get("notes", ""),
         expiry_date=datetime.strptime(request.form["expiry_date"], "%Y-%m-%d").date() if request.form.get("expiry_date") else None,
     )
     db.session.add(df)
+    file_store.save(_file_key(df), data, f.content_type)
     db.session.commit()
     flash("File uploaded.", "success")
     return redirect(url_for("digital_files.index"))
@@ -99,11 +82,12 @@ def download(fid):
     if f.user_id != current_user.id and not current_user.is_admin():
         flash("Access denied.", "danger")
         return redirect(url_for("digital_files.index"))
-    path = _resolve_path(f)
-    if not os.path.exists(path):
+    stored = file_store.read(_file_key(f), company_id=f.company_id)
+    if stored is None:
         abort(404)
-    return send_file(path, download_name=f.original_name,
-                     mimetype=f.mime_type or None, as_attachment=True)
+    data, content_type = stored
+    return send_file(BytesIO(data), download_name=f.original_name,
+                     mimetype=f.mime_type or content_type, as_attachment=True)
 
 
 @df_bp.route("/delete/<int:fid>", methods=["POST"])
@@ -112,9 +96,7 @@ def delete(fid):
     f = scoped_get_404(DigitalFile, fid)
     if f.user_id != current_user.id and not current_user.is_admin():
         return jsonify({"error": "Access denied"}), 403
-    fpath = _resolve_path(f)
-    if os.path.exists(fpath):
-        os.remove(fpath)
+    file_store.delete(_file_key(f), company_id=f.company_id)
     db.session.delete(f)
     db.session.commit()
     flash("File deleted.", "success")

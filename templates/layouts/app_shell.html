@@ -180,7 +180,7 @@
         </h2>
         <div class="topbar-right">
           {% if ui_v2 %}
-          <button type="button" class="theme-toggle" id="theme-toggle"
+          <button type="button" class="theme-toggle" id="theme-toggle" data-theme-toggle
                   aria-label="Switch between light and dark theme" title="Light / dark">
             <span class="t-light">{{ ico.svg("moon") }}</span>
             <span class="t-dark">{{ ico.svg("sun") }}</span>
@@ -313,18 +313,7 @@
   </script>
   {% block extra_scripts %}{% endblock %}
   {% if ui_v2 %}
-  <script>
-  (function(){
-    var b = document.getElementById("theme-toggle");
-    if (!b) return;
-    b.addEventListener("click", function(){
-      var root = document.documentElement;
-      var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
-      root.setAttribute("data-theme", next);
-      try { localStorage.setItem("ax-theme", next); } catch (e) {}
-    });
-  })();
-  </script>
+  <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
   {% endif %}
 </body>
 </html>

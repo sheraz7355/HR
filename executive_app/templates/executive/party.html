@@ -2,6 +2,10 @@
 {% block title %}{{ row.name }}{% endblock %}
 {% block page_title %}{{ row.name }}{% endblock %}
 {% block extra_css %}{% include "executive/_style.html" %}{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{{ export_buttons(("excel", "pdf", "csv")) }}
+{% endblock %}
 {% block content %}
 <div class="exr">
 

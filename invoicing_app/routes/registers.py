@@ -287,9 +287,9 @@ def data():
 @inv_reg_bp.route("/export")
 @login_required
 def export():
-    from finance_app.routes.reports import _build_excel_wb, _build_pdf
+    from shared import report_export as rx
     fmt = (request.args.get("fmt") or "pdf").strip().lower()
-    if fmt not in ("excel", "pdf"):
+    if fmt not in ("excel", "pdf", "csv"):
         abort(404)
     doc = (request.args.get("doc") or "sales").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
@@ -303,22 +303,12 @@ def export():
         subtitle += f" · {status.title()}"
     data, kinds = [], []
     for r in rows:
-        data.append([r["date"].strftime("%d %b %Y") if r["date"] else "-",
-                     r["invoice_number"], r["voucher_number"], r["party"],
+        data.append([r["date"], r["invoice_number"], r["voucher_number"], r["party"],
                      *[round(v, 2) for v in r["vals"]], r["status"]])
         kinds.append("account")
     data.append(["", "", "", "TOTAL", *[round(v, 2) for v in totals], ""])
     kinds.append("grand")
-    fname = f"{doc}_invoice_register"
-    if fmt == "excel":
-        out = _build_excel_wb(f"{title} — {subtitle}", columns, data,
-                              sheet_title=title[:31], period=subtitle,
-                              bold_rows=[len(data) - 1])
-        return send_file(out, as_attachment=True,
-                         download_name=f"{fname}.xlsx",
-                         mimetype=XLSX_MIMETYPE)
-    out = _build_pdf(title, columns, data, subtitle=subtitle,
-                     row_kinds=kinds, mono_col=1)
-    return send_file(out, as_attachment=True,
-                     download_name=f"{fname}.pdf",
-                     mimetype="application/pdf")
+    return rx.export_table(fmt, title, columns, data, period=subtitle,
+                           row_kinds=kinds, mono_col=1,
+                           filters=[f"{len(rows)} documents"],
+                           file_period=fctx["label"])

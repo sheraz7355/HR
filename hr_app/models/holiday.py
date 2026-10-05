@@ -1,5 +1,6 @@
 from datetime import datetime, date
 from ..extensions import db
+from shared.models.money import Money
 
 
 class CompanyHoliday(db.Model):
@@ -140,7 +141,7 @@ class PFProfitDistribution(db.Model):
     company_id = db.Column(db.Integer, index=True)
     month = db.Column(db.Integer, nullable=False)
     year = db.Column(db.Integer, nullable=False)
-    total_profit = db.Column(db.Float, nullable=False)
+    total_profit = db.Column(Money, nullable=False)
     distributed_at = db.Column(db.DateTime, default=datetime.utcnow)
     distributed_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     status = db.Column(db.String(20), default="completed")
@@ -153,11 +154,11 @@ class PFSettlement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    total_employee_contrib = db.Column(db.Float, default=0.0)
-    total_employer_contrib = db.Column(db.Float, default=0.0)
-    total_profit_distributed = db.Column(db.Float, default=0.0)
-    outstanding_loan = db.Column(db.Float, default=0.0)
-    net_settlement = db.Column(db.Float, default=0.0)
+    total_employee_contrib = db.Column(Money, default=0.0)
+    total_employer_contrib = db.Column(Money, default=0.0)
+    total_profit_distributed = db.Column(Money, default=0.0)
+    outstanding_loan = db.Column(Money, default=0.0)
+    net_settlement = db.Column(Money, default=0.0)
     status = db.Column(db.String(20), default="pending")
     settled_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     settled_at = db.Column(db.DateTime)

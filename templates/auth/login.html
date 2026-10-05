@@ -66,6 +66,7 @@
 </style>
 </head>
 <body>
+{% with theme_float=True %}{% include "partials/_theme_toggle.html" %}{% endwith %}
 <div class="login-card">
   <h1>Accountix ERP</h1>
   <p class="subtitle">Sign in to your account</p>
@@ -96,5 +97,6 @@
   </div>
   {% endif %}
 </div>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>

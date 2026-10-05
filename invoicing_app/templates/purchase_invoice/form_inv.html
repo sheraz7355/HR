@@ -4,8 +4,8 @@
 {% set is_unapproved = status == 'unapproved' %}
 {% set is_approved = status == 'approved' %}
 {% set editable = not is_approved %}
-{% block title %}{{ 'Approved' if is_approved else ('Unapproved' if is_unapproved else 'New') }} Purchase Invoice{% endblock %}
-{% block page_title %}{{ 'Approved' if is_approved else ('Unapproved' if is_unapproved else 'New') }} Purchase Invoice{% endblock %}
+{% block title %}{{ invoice.voucher_number ~ ' · ' if invoice else '' }}Purchase Invoice{% endblock %}
+{% block page_title %}Purchase Invoice{% endblock %}
 {% block extra_css %}
 <style>
 
@@ -572,10 +572,11 @@ body{background:var(--card);font-size:10px}
 .hdr-g{display:grid;grid-template-columns:1.6fr 1.2fr 1fr;gap:20px;align-items:start}
 
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/doc_form.css') }}">
 {% endblock %}
 
 {% block content %}
-<div class="wrap">
+<div class="wrap{{ ' is-locked' if is_approved else '' }}" id="docWrap">
   {% with doc_title = 'Purchase Invoice' %}{% include '_print_header.html' %}{% endwith %}
   {% if rendered_template %}
   <div class="rendered-template">{{ rendered_template|safe }}</div>
@@ -588,20 +589,17 @@ body{background:var(--card);font-size:10px}
   {% set editable = not is_approved %}
 
   {% if is_approved %}
-  <div class="ap-b"><span class="ap-t">&#10003; APPROVED</span><span>{{ invoice.approver.full_name if invoice.approver else '' }} @ {{ invoice.approved_at.strftime('%Y-%m-%d %H:%M') if invoice.approved_at else '' }}</span></div>
-  {% elif is_unapproved %}
-  <div class="ap-w"><span class="ap-t">&#9888; Unapproved</span><span>All fields are editable</span></div>
+  <div class="ap-b"><span class="ap-t">&#128274; Approved and locked</span><span>Posted to the ledger{% if invoice.approver %} by {{ invoice.approver.full_name }}{% endif %}{% if invoice.approved_at %} on {{ invoice.approved_at.strftime('%d %b %Y, %H:%M') }}{% endif %}. Unapprove from <b>More</b> to make changes.</span></div>
   {% endif %}
 
   <!-- PAGE HEADER (template: title + "PI-… • Draft" left, actions right) -->
   <div class="pg-h">
-    <div>
-      <h1 class="pg-t">Purchase Invoice</h1>
-      <p class="pg-s">
-        <span class="pg-num">{{ invoice.voucher_number if invoice else 'New' }}</span>
-        <span class="pg-dot">&bull;</span>
-        <span>{{ 'Approved' if is_approved else 'Draft' }}</span>
-      </p>
+    <div class="pg-id">
+      <a class="pg-back" href="{{ url_for('inv_purchase_invoice.list_invoices') }}" id="backLink">&larr; Purchase invoices</a>
+      <h1 class="pg-t"><span id="docTitle">{{ invoice.voucher_number if invoice else 'New purchase invoice' }}</span>
+        <span class="bdg bdg-{{ 'approved' if is_approved else 'unapproved' }}" id="statusBadge">{{ 'Approved' if is_approved else 'Draft' }}</span>
+      </h1>
+      <p class="pg-s" id="docMeta">{% if invoice %}{{ invoice.supplier.name if invoice.supplier else '' }}{% else %}Fill in the supplier and lines, then save as a draft or approve.{% endif %}</p>
     </div>
     <div class="pg-a" id="pageActions"></div>
   </div>
@@ -615,32 +613,29 @@ body{background:var(--card);font-size:10px}
       <div class="fsec-h">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
         <span>Supplier details</span>
-        <span class="fsec-aside">
-          <span class="bdg bdg-{{ status }}" id="statusBadge">{{ status|title }}</span>
-        </span>
       </div>
-      <div class="frow frow-5">
+      <div class="frow frow-5 frow-4w">
         <div class="ffield ac-wrap">
-          <label class="lbl" for="supplierSearch">Supplier <span style="color:var(--danger);">*</span></label>
+          <label class="lbl" for="supplierSearch">Supplier <span class="req" aria-hidden="true">*</span></label>
           <input type="text" class="inp inp-sm" id="supplierSearch" placeholder="Search or press Space..." value="{{ invoice.supplier.name if invoice else '' }}" autocomplete="off" {{ 'disabled' if not editable else '' }}>
           <input type="hidden" id="supplierId" value="{{ invoice.supplier_id if invoice else '' }}">
           <div class="ac-dd" id="supplierDropdown"></div>
         </div>
-        <div class="ffield"><label class="lbl" for="invVoucher">Document #</label>
-          <!-- One document, one number — see next_voucher() in the route. -->
-          <input type="text" class="inp inp-sm inp-plain" readonly id="invVoucher" value="{{ invoice.voucher_number if invoice else '(auto)' }}"></div>
+        <!-- One document, one number — see next_voucher() in the route. It is
+             the page title now; the field stays for the save payload. -->
+        <input type="hidden" id="invVoucher" value="{{ invoice.voucher_number if invoice else '(auto)' }}">
         <div class="ffield"><label class="lbl" for="invDate">Invoice date</label>
           <input type="date" class="inp inp-sm" id="invDate" value="{{ (invoice.invoice_date or invoice.created_at).strftime('%Y-%m-%d') if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
         <div class="ffield"><label class="lbl" for="invTime">Time</label>
           <input type="time" class="inp inp-sm" id="invTime" value="{{ invoice.created_at.strftime('%H:%M') if invoice else '' }}" {{ 'disabled' if not editable else '' }}></div>
-        <div class="ffield"><label class="lbl" for="invLabelSearch">Party label</label>
+        <div class="ffield"><label class="lbl" for="invLabelSearch" title="Tags the whole invoice for P&amp;L by label">Project label</label>
           <select id="invLabel" class="inp inp-sm" {{ 'disabled' if not editable else '' }} style="display:none" aria-hidden="true">
             <option value="">&mdash; None &mdash;</option>
             {% for l in project_labels|default([]) %}
             <option value="{{ l.id }}" {{ 'selected' if invoice and invoice.label_id and invoice.label_id == l.id else '' }}>{{ l.name }}</option>
             {% endfor %}
           </select>
-          <input type="text" id="invLabelSearch" class="inp inp-sm" placeholder="Search..." autocomplete="off" {{ 'disabled' if not editable else '' }}></div>
+          <input type="text" id="invLabelSearch" class="inp inp-sm" placeholder="None" autocomplete="off" {{ 'disabled' if not editable else '' }}></div>
       </div>
       {% if party_mode == 'all' %}
       <div class="frow frow-1" style="margin-top:12px;">
@@ -756,7 +751,7 @@ body{background:var(--card);font-size:10px}
         <button type="button" class="bsm bsm-d" id="clearAllBtn">&#10005; Clear all lines</button>
         {% endif %}
         <span style="flex:1;"></span>
-        <span style="font-size:11px;color:var(--muted);">Space to search &bull; Enter to add row</span>
+        <span class="ga-hint">Space opens the list &middot; Enter moves to the next cell &middot; Ctrl+S saves</span>
       </div>
     </div>
   </div>
@@ -766,11 +761,11 @@ body{background:var(--card);font-size:10px}
     <div class="card-b" style="padding:0;">
       <div class="btm">
         <div class="btm-l">
-          <label class="lbl">Notes / Comments</label>
-          <textarea id="invoiceNotes" class="inp" rows="5" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
+          <label class="lbl" for="invoiceNotes">Notes</label>
+          <textarea id="invoiceNotes" class="inp" rows="5" placeholder="Supplier bill reference, delivery notes…" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
         </div>
         <div class="btm-r">
-          <div class="sl"><span class="sll">Subtotal <span class="mbadge mb-c">computed</span></span><span class="slv" id="summarySubtotal">0.00</span></div>
+          <div class="sl"><span class="sll">Subtotal</span><span class="slv" id="summarySubtotal">0.00</span></div>
           <div class="sl">
             <span class="sll">Discount</span>
             <span style="display:flex;align-items:center;gap:4px;">
@@ -801,32 +796,14 @@ body{background:var(--card);font-size:10px}
               <span class="slv" id="summaryWithholdingTax" style="color:var(--danger);width:70px;text-align:right;min-width:auto;">-0.00</span>
             </span>
           </div>
-          <div class="sl sl-net"><span class="sll">Net Payable</span><span class="slv" id="summaryNetPayable">0.00</span></div>
+          <div class="sl sl-net"><span class="sll">Total payable</span><span class="slv" id="summaryNetPayable">0.00</span></div>
         </div>
       </div>
     </div>
   </div>
 
     <!-- ACTION BAR -->
-    <div class="ab">
-      {% set can_approve = current_user.is_admin() or current_user.is_manager() %}
-      {% if is_new %}
-        <button type="button" class="btn btn-p" id="saveBtn">Save</button>
-        {% if can_approve %}
-        <button type="button" class="btn btn-s" id="saveApproveBtn">Save &amp; Approve</button>
-        {% endif %}
-      {% elif is_unapproved %}
-        <button type="button" class="btn btn-p" id="saveBtn" disabled>Save</button>
-        {% if can_approve %}
-        <button type="button" class="btn btn-s" id="approveBtn">Approve</button>
-        {% endif %}
-        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
-        <button type="button" class="btn btn-d" id="deleteBtn" onclick="showConfirm('Delete Invoice','Are you sure you want to delete this invoice? This action cannot be undone.',deleteInvoice)">Delete</button>
-      {% elif is_approved %}
-        <button type="button" class="btn btn-d" id="unapproveBtn">Unapprove</button>
-        <button type="button" class="btn btn-o" onclick="window.print()">Print</button>
-      {% endif %}
-      <a href="{{ url_for('inv_purchase_invoice.list_invoices') }}" class="btn btn-o">Cancel</a>
+    <div class="ab" data-state="{{ 'approved' if is_approved else ('draft' if invoice else 'new') }}"></div>
     </div>
   </div>
 </div>
@@ -1061,7 +1038,7 @@ body{background:var(--card);font-size:10px}
     <p id="confirmMsg" style="color:var(--muted);font-size:14px;margin:0 0 16px;"></p>
     <div class="modal-acts">
       <button type="button" class="btn btn-o" onclick="closeConfirm()">Cancel</button>
-      <button type="button" class="btn btn-p" id="confirmOkBtn">Yes, Continue</button>
+      <button type="button" class="btn btn-s" id="confirmOkBtn">Yes, continue</button>
     </div>
   </div>
 </div>
@@ -1297,7 +1274,7 @@ drop.addEventListener('mousedown',function(e){var t=e.target.closest('.ac-it');i
 var PER_LINE = {{ 'true' if per_line_labeling else 'false' }};
 function rowLabelOptions(){var s=document.getElementById('invLabel');var h='<option value="">&mdash;</option>';for(var i=1;i<s.options.length;i++){var o=s.options[i];h+='<option value="'+o.value+'">'+esc(o.text)+'</option>'}return h}
 function addRow(data,noFocus){var tbody=document.getElementById('itemsBody'),tr=document.createElement('tr');rowCount++;var d=getMode('discount'),e=getMode('expenses'),t=getMode('tax'),id=d==='individual',ie=e==='individual',it=t==='individual',dis=editable?'':'disabled';var byPct=discMethod()==='pct';tr.dataset.productId=(data&&data.product_id)||'';tr.dataset.weight=(data&&data.weight)||0;
-tr.innerHTML='<td class="rn">'+rowCount+'</td><td><input type="text" class="ri ac-code" data-col="code" placeholder="SKU" value="'+((data&&data.product&&data.product.sku)||'')+'" '+dis+'></td><td><div class="ac-wrap"><textarea class="ri ac-desc-input" data-col="description" placeholder="Search or Space..." rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(data&&data.description||'')+'</textarea><div class="ac-dd"></div><div class="info-badge" style="font-size:10px;color:var(--light);"></div></div></td><td><input type="number" class="ri num" data-col="quantity" value="'+((data&&data.quantity)||1)+'" min="0.01" step="any" '+dis+'></td><td><span class="ri rc ac-unit">'+((data&&data.unit)||'pcs')+'</span></td><td><input type="number" class="ri num" data-col="unit_price" value="'+((data&&data.unit_price)||0)+'" step="0.01" min="0" '+dis+'></td><td><input type="text" class="ri rc num" data-col="amount" value="0" readonly></td><td class="c-disc c-disc-pct" style="'+((id&&byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_pct" value="'+((data&&data.discount_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&id?'':'disabled')+'></div></td><td class="c-disc c-disc-amt" style="'+((id&&!byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_amount" value="'+((data&&data.discount_amount)||0)+'" step="0.01" min="0" '+(editable&&id?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="commission" value="'+((data&&data.commission)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="freight" value="'+((data&&data.freight)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="loading_unloading" value="'+((data&&data.loading_unloading)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-tax" style="'+(it?'':'display:none;')+'"><div class="row-tax"><input type="number" class="ri num" data-col="sales_tax_pct" value="'+((data&&data.sales_tax_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&it?'':'disabled')+'></div></td><td><input type="text" class="ri rc num" data-col="net_amount" value="0" readonly></td><td><div class="ra"><button type="button" onclick="removeRow(this)">&times;</button><button type="button" class="del" onclick="addRowAfter(this)" title="Duplicate this row">+</button></div></td>';tbody.appendChild(tr);var di=tr.querySelector('.ac-desc-input');if(di)setupDescInput(di);tr.querySelectorAll('input[data-col]').forEach(function(inp){inp.addEventListener('input',function(){recalcRow(tr);recalc()});inp.addEventListener('change',function(){recalcRow(tr);recalc()})})
+tr.innerHTML='<td class="rn">'+rowCount+'</td><td><input type="text" class="ri ac-code" data-col="code" placeholder="SKU" value="'+((data&&data.product&&data.product.sku)||'')+'" '+dis+'></td><td><div class="ac-wrap"><textarea class="ri ac-desc-input" data-col="description" placeholder="Search or Space..." rows="1" style="resize:none;overflow:hidden" '+dis+'>'+esc(data&&data.description||'')+'</textarea><div class="ac-dd"></div><div class="info-badge" style="font-size:10px;color:var(--light);"></div></div></td><td><input type="number" class="ri num" data-col="quantity" value="'+((data&&data.quantity)||1)+'" min="0.01" step="any" '+dis+'></td><td><span class="ri rc ac-unit">'+((data&&data.unit)||'pcs')+'</span></td><td><input type="number" class="ri num" data-col="unit_price" value="'+((data&&data.unit_price)||0)+'" step="0.01" min="0" '+dis+'></td><td><input type="text" class="ri rc num" data-col="amount" value="0" readonly></td><td class="c-disc c-disc-pct" style="'+((id&&byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_pct" value="'+((data&&data.discount_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&id?'':'disabled')+'></div></td><td class="c-disc c-disc-amt" style="'+((id&&!byPct)?'':'display:none;')+'"><div class="row-disc"><input type="number" class="ri num" data-col="discount_amount" value="'+((data&&data.discount_amount)||0)+'" step="0.01" min="0" '+(editable&&id?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="commission" value="'+((data&&data.commission)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="freight" value="'+((data&&data.freight)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-exp" style="'+(ie?'':'display:none;')+'"><div class="row-exp"><input type="number" class="ri num" data-col="loading_unloading" value="'+((data&&data.loading_unloading)||0)+'" step="0.01" min="0" '+(editable&&ie?'':'disabled')+'></div></td><td class="c-tax" style="'+(it?'':'display:none;')+'"><div class="row-tax"><input type="number" class="ri num" data-col="sales_tax_pct" value="'+((data&&data.sales_tax_pct)||0)+'" step="0.01" min="0" max="100" '+(editable&&it?'':'disabled')+'></div></td><td><input type="text" class="ri rc num" data-col="net_amount" value="0" readonly></td><td class="c-act"><div class="ra"><button type="button" class="dup" onclick="addRowAfter(this)" title="Add a line with this product" aria-label="Add a line with this product">+</button><button type="button" class="del" onclick="removeRow(this)" title="Remove this line" aria-label="Remove this line">&times;</button></div></td>';tbody.appendChild(tr);var di=tr.querySelector('.ac-desc-input');if(di)setupDescInput(di);tr.querySelectorAll('input[data-col]').forEach(function(inp){inp.addEventListener('input',function(){recalcRow(tr);recalc()});inp.addEventListener('change',function(){recalcRow(tr);recalc()})})
 if(PER_LINE){var _sel=document.createElement('select');_sel.className='ri rc row-lbl-sel';_sel.setAttribute('aria-label','Project label');_sel.style.maxWidth='110px';_sel.style.fontSize='11px';_sel.style.padding='4px 6px';_sel.innerHTML=rowLabelOptions();_sel.value=(data&&data.label_id)?String(data.label_id):(document.getElementById('invLabel').value||'');if(!editable)_sel.disabled=true;var _td=document.createElement('td');_td.className='c-lab';_td.appendChild(_sel);tr.insertBefore(_td,tr.lastElementChild)}
 var ci=tr.querySelector('.ac-code');if(ci){ci.addEventListener('input',async function(){var v=this.value.trim().toLowerCase();if(v.length===1)autoAddCheck();var m=allProducts.find(function(p){return p.sku.toLowerCase()===v});
 // The preloaded cache holds only the first 20 products, so an exact SKU that
@@ -1876,4 +1853,22 @@ document.addEventListener('keydown',function(e){if((e.key==='ArrowUp'||e.key==='
   }
 })();
 </script>
+<script>
+// Configuration for the shared document UI layer (static/js/doc_form.js).
+window.DOC = {
+  title: 'Purchase Invoice', noun: 'purchase invoice',
+  partyKey: 'supplier_id', partySearch: 'supplierSearch', partyNoun: 'supplier',
+  listUrl: "{{ url_for('inv_purchase_invoice.list_invoices') }}",
+  newUrl: "{{ url_for('inv_purchase_invoice.invoice_form') }}",
+  viewBase: "{{ url_for('inv_purchase_invoice.invoice_form') }}",
+  saveUrl: '/inventory/purchase-invoice/save',
+  unapproveBase: '/inventory/purchase-invoice/unapprove/',
+  editable: {{ 'false' if is_approved else 'true' }},
+  canApprove: {{ 'true' if current_user.is_admin() or current_user.is_manager() else 'false' }},
+  fbr: false,
+  approveMsg: 'Save and approve this purchase invoice? It is posted to the ledger, stock is received at cost and the invoice is locked.',
+  unapproveMsg: 'Unapprove this purchase invoice? Its journal is reversed and the stock it received is taken back out (refused if already used).'
+};
+</script>
+<script src="{{ url_for('static', filename='js/doc_form.js') }}"></script>
 {% endblock %}

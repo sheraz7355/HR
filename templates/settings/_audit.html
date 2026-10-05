@@ -30,7 +30,9 @@
       <input type="search" id="alQ" name="q" class="inp" value="{{ a.get('q','') }}" placeholder="Invoice no., product, user…"></div>
     <div class="al-btns">
       <button type="submit" class="btn btn-p">Apply</button>
-      <a class="btn" href="{{ url_for('settings.audit_csv', **a.to_dict()) }}">Export CSV</a>
+      <a class="btn" href="{{ url_for('settings.audit_csv', format='excel', **a.to_dict()) }}">Excel</a>
+      <a class="btn" href="{{ url_for('settings.audit_csv', format='pdf', **a.to_dict()) }}">PDF</a>
+      <a class="btn" href="{{ url_for('settings.audit_csv', **a.to_dict()) }}">CSV</a>
     </div>
   </form>
 

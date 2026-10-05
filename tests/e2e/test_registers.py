@@ -87,8 +87,13 @@ class TestInvoiceRegister:
 
     def test_unknown_format_is_404(self, admin_page):
         resp = admin_page.request.get(
-            f"{BASE_URL}/invoicing/registers/export?fmt=csv")
+            f"{BASE_URL}/invoicing/registers/export?fmt=docx")
         assert resp.status == 404
+        # CSV is a supported register export now.
+        csv_resp = admin_page.request.get(
+            f"{BASE_URL}/invoicing/registers/export?fmt=csv")
+        assert csv_resp.status == 200
+        assert csv_resp.headers["content-type"].startswith("text/csv")
 
     def test_bulk_documents_load_full_invoices(self, admin_page):
         admin_page.goto(
@@ -155,8 +160,13 @@ class TestVoucherRegister:
 
     def test_unknown_format_is_404(self, admin_page):
         resp = admin_page.request.get(
-            f"{BASE_URL}/accounting/registers/vouchers/export?fmt=csv")
+            f"{BASE_URL}/accounting/registers/vouchers/export?fmt=docx")
         assert resp.status == 404
+        # CSV is a supported register export now.
+        csv_resp = admin_page.request.get(
+            f"{BASE_URL}/accounting/registers/vouchers/export?fmt=csv")
+        assert csv_resp.status == 200
+        assert csv_resp.headers["content-type"].startswith("text/csv")
 
     def test_bulk_documents_load_full_vouchers(self, admin_page):
         admin_page.goto(

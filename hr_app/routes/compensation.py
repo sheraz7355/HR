@@ -17,7 +17,6 @@ from ..models.communication import Notification, NotificationRecipient
 from ..models.tax import IncomeTaxSlab
 from ..models.loan import LoanAdvanceRequest, LoanRepayment
 from shared.formatting import format_amount as _m
-from ..config import Config
 from shared.forms import REQUIRED, form_date, form_float, form_int
 
 comp_bp = Blueprint("compensation", __name__, url_prefix="/compensation")
@@ -566,24 +565,21 @@ def upload_bulk_data():
         # fail at parse time after the file was already stored.
         if ext not in (".csv", ".xlsx"):
             return jsonify({"error": "Upload a .csv or .xlsx file."}), 400
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cid = current_company_id()
-        if cid is None:
+        if current_company_id() is None:
             return jsonify({"error": "No active company"}), 400
-        bulk_dir = os.path.join(Config.UPLOAD_FOLDER, str(cid), "bulk")
-        os.makedirs(bulk_dir, exist_ok=True)
-        path = os.path.join(bulk_dir, f"payroll_bulk_{ts}{ext}")
-        f.save(path)
+        # Parsed straight from memory: the sheet is only read once, here, and
+        # a copy on disk would not survive a serverless instance anyway.
+        data = f.read()
         rows = []
         try:
             if ext == ".csv":
                 import csv
-                with open(path, newline="", encoding="utf-8-sig") as fh:
-                    reader = csv.DictReader(fh)
-                    rows = [r for r in reader]
+                reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig"),
+                                                    newline=""))
+                rows = [r for r in reader]
             elif ext == ".xlsx":
                 import openpyxl
-                wb = openpyxl.load_workbook(path, data_only=True)
+                wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
                 ws = wb.active
                 headers = [str(c.value).strip() if c.value is not None else "" for c in ws[1]]
                 for row in ws.iter_rows(min_row=2, values_only=True):

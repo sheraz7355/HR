@@ -691,6 +691,7 @@
         <a href="{{ url_for('superadmin.index') }}" class="{{ 'active' if request.endpoint == 'superadmin.index' }}">Platform</a>
       </nav>
       <div class="sa-user-section">
+        {% include "partials/_theme_toggle.html" %}
         <span class="sa-user-name">{{ current_user.full_name }}</span>
         <a href="{{ url_for('auth.logout') }}" class="sa-logout-btn">Logout</a>
       </div>
@@ -717,5 +718,6 @@
     });
   })();
   </script>
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>

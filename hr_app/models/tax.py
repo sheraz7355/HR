@@ -1,14 +1,15 @@
 from ..extensions import db
+from shared.models.money import Money
 
 
 class IncomeTaxSlab(db.Model):
     __tablename__ = "income_tax_slabs"
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
-    min_income = db.Column(db.Float, nullable=False, default=0)
-    max_income = db.Column(db.Float, nullable=False, default=999999999)
-    rate_pct = db.Column(db.Float, nullable=False, default=0)
-    fixed_amount = db.Column(db.Float, nullable=False, default=0)
+    min_income = db.Column(Money, nullable=False, default=0)
+    max_income = db.Column(Money, nullable=False, default=999999999)
+    rate_pct = db.Column(Money, nullable=False, default=0)
+    fixed_amount = db.Column(Money, nullable=False, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=db.func.now())
 

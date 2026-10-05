@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..extensions import db
+from shared.models.money import Money
 
 
 class InvCustomer(db.Model):
@@ -15,7 +16,7 @@ class InvCustomer(db.Model):
     city = db.Column(db.String(50))
     tax_id = db.Column(db.String(50))
     payment_terms = db.Column(db.String(100))
-    credit_limit = db.Column(db.Float, default=0)
+    credit_limit = db.Column(Money, default=0)
     website = db.Column(db.String(200))
     notes = db.Column(db.Text)
     is_active = db.Column(db.Boolean, default=True)

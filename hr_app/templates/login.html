@@ -113,6 +113,7 @@
 </style>
 </head>
 <body>
+{% with theme_float=True %}{% include "partials/_theme_toggle.html" %}{% endwith %}
 
 <div class="split">
   <aside class="panel">
@@ -159,5 +160,6 @@
   </main>
 </div>
 
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>

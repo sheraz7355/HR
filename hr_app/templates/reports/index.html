@@ -68,33 +68,41 @@
 <div class="grid-3 mt-20">
     <div class="card">
         <div class="card-header">Attendance Report</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Download monthly attendance records as CSV.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Download a month's attendance records.</p>
         <form method="GET" action="{{ url_for('reports.export_attendance') }}">
             <div class="form-row">
                 <div class="form-group"><label>Month</label>
                     <select name="month" class="form-control">
-                        {% for m in range(1,13) %}<option value="{{ m }}" {{ 'selected' if m == 7 }}>{{ m }}</option>{% endfor %}
+                        {% for m in range(1,13) %}<option value="{{ m }}" {{ 'selected' if m == today.month }}>{{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m] }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="form-group"><label>Year</label>
                     <select name="year" class="form-control">
-                        {% for y in range(2024, 2028) %}<option value="{{ y }}" {{ 'selected' if y == 2026 }}>{{ y }}</option>{% endfor %}
+                        {% for y in range(today.year - 4, today.year + 2) %}<option value="{{ y }}" {{ 'selected' if y == today.year }}>{{ y }}</option>{% endfor %}
                     </select>
                 </div>
             </div>
-            <button type="submit" class="btn btn-outline">Download CSV</button>
+            <div class="export-group">
+                <button type="submit" name="format" value="excel" class="btn btn-outline btn-sm">Excel</button>
+                <button type="submit" name="format" value="pdf" class="btn btn-outline btn-sm">PDF</button>
+                <button type="submit" name="format" value="csv" class="btn btn-outline btn-sm">CSV</button>
+            </div>
         </form>
     </div>
     <div class="card">
         <div class="card-header">Leave Report</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Download annual leave records as CSV.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Download a year's leave requests.</p>
         <form method="GET" action="{{ url_for('reports.export_leaves') }}">
             <div class="form-group"><label>Year</label>
                 <select name="year" class="form-control">
-                    {% for y in range(2024, 2028) %}<option value="{{ y }}" {{ 'selected' if y == 2026 }}>{{ y }}</option>{% endfor %}
+                    {% for y in range(today.year - 4, today.year + 2) %}<option value="{{ y }}" {{ 'selected' if y == today.year }}>{{ y }}</option>{% endfor %}
                 </select>
             </div>
-            <button type="submit" class="btn btn-outline">Download CSV</button>
+            <div class="export-group">
+                <button type="submit" name="format" value="excel" class="btn btn-outline btn-sm">Excel</button>
+                <button type="submit" name="format" value="pdf" class="btn btn-outline btn-sm">PDF</button>
+                <button type="submit" name="format" value="csv" class="btn btn-outline btn-sm">CSV</button>
+            </div>
         </form>
     </div>
     <div class="card">
@@ -170,18 +178,23 @@ document.getElementById('export-excel')?.addEventListener('click', async functio
     const r = await fetch('/reports/export-excel', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({rows: lastResults, columns: lastColumns})
+        body: JSON.stringify({rows: lastResults, columns: lastColumns,
+                              date_from: document.getElementById('report-from').value || null,
+                              date_to: document.getElementById('report-to').value || null})
     });
+    if (!r.ok) { alert('Export failed.'); return; }
     const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^";]+)"?/);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `hr_report_${new Date().toISOString().slice(0,10)}.xlsx`;
+    a.download = m ? m[1] : `HR_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
     a.click();
 });
 
 (async function() {
     try {
-        const r = await fetch('/reports/attendance-chart?year=2026');
+        const r = await fetch('/reports/attendance-chart?year={{ today.year }}');
         const data = await r.json();
         const container = document.getElementById('chart-container');
         container.innerHTML = '';

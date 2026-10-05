@@ -1,5 +1,6 @@
 from datetime import datetime
 from ..extensions import db
+from shared.models.money import Money
 
 
 class AdditionalCharge(db.Model):
@@ -11,7 +12,7 @@ class AdditionalCharge(db.Model):
     doc_id = db.Column(db.Integer, nullable=False)
     charge_account_id = db.Column(db.Integer, db.ForeignKey("chart_of_accounts.id"), nullable=False)
     description = db.Column(db.String(200))
-    amount = db.Column(db.Float, default=0)
+    amount = db.Column(Money, default=0)
     scope = db.Column(db.String(20), default="general")  # general (Combined) | individual (Per-line)
     # How a per-item charge is split across lines (§6.2). Only meaningful when
     # scope is per-line; a combined charge is a single document-level value.

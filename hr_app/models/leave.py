@@ -1,5 +1,6 @@
 from datetime import datetime, date
 from ..extensions import db
+from shared.models.money import Money
 
 
 class LeaveType(db.Model):
@@ -51,7 +52,7 @@ class LeaveRequest(db.Model):
     leave_type_id = db.Column(db.Integer, db.ForeignKey("leave_types.id"), nullable=False)
     start_date = db.Column(db.Date, nullable=False)
     end_date = db.Column(db.Date, nullable=False)
-    total_days = db.Column(db.Float, nullable=False)
+    total_days = db.Column(Money, nullable=False)
     reason = db.Column(db.Text, nullable=False)
     status = db.Column(db.String(20), default="pending")
     is_half_day = db.Column(db.Boolean, default=False)

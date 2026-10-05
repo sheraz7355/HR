@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from shared.extensions import db
+from shared.models.money import Money
 
 
 class AssetCategory(db.Model):
@@ -14,7 +15,7 @@ class AssetCategory(db.Model):
     description = db.Column(db.Text, default="")
     default_useful_life = db.Column(db.Integer, default=5)
     default_depreciation_method = db.Column(db.String(20), default="straight_line")
-    default_salvage_value_pct = db.Column(db.Float, default=0)
+    default_salvage_value_pct = db.Column(Money, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -56,12 +57,12 @@ class FixedAsset(db.Model):
     description = db.Column(db.Text, default="")
     category_id = db.Column(db.Integer, db.ForeignKey("fa_categories.id"), nullable=False)
     purchase_date = db.Column(db.Date, nullable=False)
-    purchase_cost = db.Column(db.Float, nullable=False, default=0)
+    purchase_cost = db.Column(Money, nullable=False, default=0)
     useful_life = db.Column(db.Integer, nullable=False, default=5)
     depreciation_method = db.Column(db.String(20), nullable=False, default="straight_line")
-    salvage_value = db.Column(db.Float, default=0)
-    accumulated_depreciation = db.Column(db.Float, default=0)
-    current_book_value = db.Column(db.Float, nullable=False, default=0)
+    salvage_value = db.Column(Money, default=0)
+    accumulated_depreciation = db.Column(Money, default=0)
+    current_book_value = db.Column(Money, nullable=False, default=0)
     status = db.Column(db.String(20), default="active")
     location = db.Column(db.String(200), default="")
     assigned_to = db.Column(db.String(100), default="")
@@ -167,12 +168,12 @@ class AssetDepreciation(db.Model):
     company_id = db.Column(db.Integer, index=True)
     asset_id = db.Column(db.Integer, db.ForeignKey("fixed_assets.id"), nullable=False)
     entry_date = db.Column(db.Date, nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0)
+    amount = db.Column(Money, nullable=False, default=0)
     # accumulated_after / net_book_value_after are a point-in-time SNAPSHOT for
     # display. They are deliberately not read back for arithmetic: a later
     # reversal would make them lie. FixedAsset derives its totals instead.
-    accumulated_after = db.Column(db.Float, nullable=False, default=0)
-    net_book_value_after = db.Column(db.Float, nullable=False, default=0)
+    accumulated_after = db.Column(Money, nullable=False, default=0)
+    net_book_value_after = db.Column(Money, nullable=False, default=0)
     # The journal this charge was posted as. Un-posting or deleting it removes
     # this row from every derived total.
     journal_entry_id = db.Column(db.Integer, db.ForeignKey("journal_entries.id"), nullable=True)

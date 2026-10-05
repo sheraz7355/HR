@@ -1,5 +1,6 @@
 from datetime import datetime, date
 from ..extensions import db
+from shared.models.money import Money
 
 
 class LoanAdvanceRequest(db.Model):
@@ -8,11 +9,11 @@ class LoanAdvanceRequest(db.Model):
     company_id = db.Column(db.Integer, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     request_type = db.Column(db.String(20), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(Money, nullable=False)
     purpose = db.Column(db.Text, nullable=False)
     installment_months = db.Column(db.Integer, default=12)
-    monthly_installment = db.Column(db.Float)
-    remaining_amount = db.Column(db.Float)
+    monthly_installment = db.Column(Money)
+    remaining_amount = db.Column(Money)
     status = db.Column(db.String(20), default="pending")
     approved_by = db.Column(db.Integer, db.ForeignKey("users.id"))
     approved_at = db.Column(db.DateTime)
@@ -30,7 +31,7 @@ class LoanRepayment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     loan_id = db.Column(db.Integer, db.ForeignKey("loan_advance_requests.id"), nullable=False)
-    amount = db.Column(db.Float, nullable=False)
+    amount = db.Column(Money, nullable=False)
     paid_at = db.Column(db.DateTime, default=datetime.utcnow)
     payroll_run_id = db.Column(db.Integer, db.ForeignKey("payroll_runs.id"))
     notes = db.Column(db.Text)

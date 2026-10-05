@@ -1,6 +1,10 @@
 {% extends "layouts/base_inv.html" %}
 {% block title %}Stock Valuation{% endblock %}
 {% block page_title %}Stock Valuation{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{{ export_buttons(("excel", "pdf", "csv")) }}
+{% endblock %}
 {% block content %}
 <style>
   .sv-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-bottom:14px}

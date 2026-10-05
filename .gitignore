@@ -29,3 +29,7 @@ Microsoft/
 # Screenshots (not code). The design guide itself stays tracked: DESIGN.md
 # names it as the current standard and code comments cite it by section.
 shots/
+
+# Local server output captures
+stdout.txt
+stderr.txt

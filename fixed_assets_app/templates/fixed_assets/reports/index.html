@@ -1,6 +1,10 @@
 {% extends "fixed_assets/layouts/base.html" %}
 {% block title %}Asset Reports{% endblock %}
 {% block page_title %}Asset Reports{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{{ export_buttons(("excel", "pdf", "csv")) }}
+{% endblock %}
 {% block content %}
 <div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px;">
   <div class="stat-card"><div class="stat-value">{{ "{:,.0f}".format(total_cost) }}</div><div class="stat-label">Total Cost</div></div>

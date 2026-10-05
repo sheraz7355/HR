@@ -126,6 +126,7 @@
 </style>
 </head>
 <body>
+{% with theme_float=True %}{% include "partials/_theme_toggle.html" %}{% endwith %}
 
 <div class="shell">
   <div class="brand">
@@ -251,5 +252,6 @@
 })();
 </script>
 
+<script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 </body>
 </html>

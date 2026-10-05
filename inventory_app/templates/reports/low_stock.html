@@ -1,6 +1,10 @@
 {% extends "layouts/base_inv.html" %}
 {% block title %}Low Stock Alert{% endblock %}
 {% block page_title %}Low Stock Alert{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{% if products %}{{ export_buttons(("excel", "pdf", "csv")) }}{% endif %}
+{% endblock %}
 {% block content %}
 <div class="card">
   <div class="card-header"><strong>Products at or below Reorder Level</strong></div>

@@ -61,12 +61,13 @@ class TestHeaderOrder:
 
     def test_customer_row_carries_the_whole_critical_path(self, admin_page):
         """Field order is entry order — Enter walks the DOM, so the row must
-        read party, document, dates, then the optional label."""
+        read party, invoice date, payment terms, due date, then the optional
+        label. The document number is the page title, not a field."""
         _open_new(admin_page)
         ids = admin_page.eval_on_selector_all(
             ".frow-5 .ffield :is(input,select):not([type=hidden])",
             "els => els.filter(e => e.offsetParent !== null).map(e => e.id)")
-        assert ids == ["customerSearch", "invNumber", "invDate",
+        assert ids == ["customerSearch", "invDate", "payTerms",
                        "dueDate", "invLabelSearch"]
 
     def test_logistics_starts_collapsed_but_visible(self, admin_page):
@@ -123,9 +124,12 @@ class TestEnterNavigation:
             "document.activeElement.id") == "invDate"
         admin_page.keyboard.press("Enter")
         assert admin_page.evaluate(
+            "document.activeElement.id") == "payTerms"
+        admin_page.keyboard.press("Enter")
+        assert admin_page.evaluate(
             "document.activeElement.id") == "dueDate"
         admin_page.keyboard.press("Enter")
-        # The party-label picker opens on focus; Escape skips past it.
+        # The project-label picker opens on focus; Escape skips past it.
         assert admin_page.evaluate(
             "document.activeElement.id") == "invLabelSearch"
         admin_page.keyboard.press("Escape")

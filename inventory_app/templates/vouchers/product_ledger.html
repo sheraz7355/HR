@@ -1,6 +1,10 @@
 {% extends "layouts/base_inv.html" %}
 {% block title %}Product Ledger{% endblock %}
 {% block page_title %}Product Ledger{% endblock %}
+{% block actions %}
+{% from "partials/export.html" import export_buttons %}
+{% if product %}{{ export_buttons(("excel", "pdf", "csv")) }}{% endif %}
+{% endblock %}
 {% block content %}
 <div class="card">
   <div class="card-body">

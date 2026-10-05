@@ -1,6 +1,7 @@
 from collections import defaultdict
 from decimal import Decimal
 from flask import Blueprint, render_template, request, jsonify
+from shared import report_export as rx
 from flask_login import login_required, current_user
 from shared.extensions import db
 from shared.tenancy import scoped_get
@@ -26,9 +27,54 @@ def stock_ledger_report():
         entries = []
         product = None
 
+    fmt = request.args.get("format")
+    if fmt and product:
+        return export_stock_ledger(fmt, product, entries)
+
     return render_template("reports/stock_ledger.html",
                            products=products, product=product,
                            entries=entries, selected_id=product_id)
+
+
+LEDGER_HEADERS = ["Date", "Voucher", "Type", "Qty In", "Qty Out", "Unit Cost",
+                  "Value", "Running Qty", "Running Value", "Avg Cost", "Notes"]
+LEDGER_QTY_COLS = {3: rx.QTY_FMT, 4: rx.QTY_FMT, 7: rx.QTY_FMT}
+
+
+def stock_ledger_rows(entries):
+    """A product's stock-ledger lines as export rows (document-date order)."""
+    rows = []
+    for e in entries:
+        inbound = e.transaction_type == "IN"
+        q = float(e.quantity or 0)
+        rows.append([e.txn_date or (e.created_at.date() if e.created_at else None),
+                     " ".join(x for x in (e.voucher_type, e.voucher_number) if x),
+                     "In" if inbound else "Out",
+                     q if inbound else 0, 0 if inbound else q,
+                     float(e.unit_cost or 0), float(e.total_cost or 0),
+                     float(e.running_qty or 0), float(e.running_cost or 0),
+                     float(e.running_avg or 0), e.notes or ""])
+    return rows
+
+
+def export_stock_ledger(fmt, product, entries, adjustments=None):
+    """Stock ledger / product ledger export. Excel gets the re-costing history
+    on a second sheet when there is any."""
+    title = f"Stock Ledger — {product.name}"
+    period = f"SKU {product.sku} · unit {product.unit or '-'} · document-date order"
+    rows = stock_ledger_rows(entries)
+    if adjustments and fmt in ("excel", "xlsx"):
+        extra = [("Re-costing history",
+                  ["Date", "Voucher", "Old Cost", "New Cost", "Difference", "Trigger"],
+                  [[a.entry_date or (a.created_at.date() if a.created_at else None),
+                    " ".join(x for x in (a.voucher_type, a.voucher_number) if x),
+                    float(a.old_cost or 0), float(a.new_cost or 0),
+                    float(a.delta or 0), a.trigger or ""] for a in adjustments])]
+        buf = rx.build_excel(title, LEDGER_HEADERS, rows, period=period,
+                             col_formats=LEDGER_QTY_COLS, extra_sheets=extra)
+        return rx.send_export(buf, "excel", title, product.sku)
+    return rx.export_table(fmt, title, LEDGER_HEADERS, rows, period=period,
+                           col_formats=LEDGER_QTY_COLS, file_period=product.sku)
 
 
 @inv_reports_bp.route("/valuation", methods=["GET"])
@@ -100,6 +146,32 @@ def valuation_report():
     rows.sort(key=lambda r: r["name"].lower())
 
     gl_balance = _gl_inventory_balance(as_of)
+
+    fmt = request.args.get("format")
+    if fmt:
+        headers = ["SKU", "Product", "Unit", "Opening Qty", "Opening Value",
+                   "In Qty", "In Value", "Out Qty", "Out Value",
+                   "Closing Qty", "Avg Cost", "Closing Value"]
+        data = [[r["sku"], r["name"], r["unit"], r["open_qty"], r["open_val"],
+                 r["in_qty"], r["in_val"], r["out_qty"], r["out_val"],
+                 r["close_qty"], r["avg"], r["close_val"]] for r in rows]
+        kinds = ["plain"] * len(data)
+        data.append(["", "Total", "", "", totals["open_val"], "", totals["in_val"],
+                     "", totals["out_val"], "", "", totals["close_val"]])
+        kinds.append("grand")
+        diff = totals["close_val"] - gl_balance
+        data += [["", "Inventory accounts (general ledger)", "", "", "", "", "",
+                  "", "", "", "", gl_balance],
+                 ["", "Difference (stock ledger − GL)", "", "", "", "", "",
+                  "", "", "", "", diff]]
+        kinds += ["total", "total"]
+        qty = {i: rx.QTY_FMT for i in (3, 5, 7, 9)}
+        return rx.export_table(fmt, "Stock Valuation", headers, data,
+                               period=(f"Movement {start:%d %b %Y} to {as_of:%d %b %Y}"
+                                       f" · valued as at {as_of:%d %b %Y}"),
+                               row_kinds=kinds, col_formats=qty,
+                               file_period=f"as_at_{as_of:%Y-%m-%d}")
+
     return render_template("reports/valuation.html", rows=rows, totals=totals,
                            total_val=totals["close_val"], gl_balance=gl_balance,
                            difference=totals["close_val"] - gl_balance,
@@ -136,6 +208,19 @@ def low_stock_report():
         InvProduct.is_active == True,
         InvProduct.current_stock <= InvProduct.reorder_level
     ).order_by(InvProduct.current_stock).all()
+    fmt = request.args.get("format")
+    if fmt:
+        rows = [[p.sku, p.name, float(p.current_stock or 0), float(p.reorder_level or 0),
+                 max(float(p.reorder_level or 0) - float(p.current_stock or 0), 0),
+                 p.unit or "", "Out of stock" if (p.current_stock or 0) <= 0 else "Low"]
+                for p in products]
+        from datetime import date
+        return rx.export_table(fmt, "Low Stock Alert",
+                               ["SKU", "Product", "Current Stock", "Reorder Level",
+                                "Short By", "Unit", "Status"], rows,
+                               period=f"Products at or below reorder level, {date.today():%d %b %Y}",
+                               col_formats={2: rx.QTY_FMT, 3: rx.QTY_FMT, 4: rx.QTY_FMT},
+                               file_period=date.today())
     return render_template("reports/low_stock.html", products=products)
 
 
