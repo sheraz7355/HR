@@ -2,6 +2,8 @@
 {% block title %}{{ 'Edit' if voucher else 'New' }} Scrap Voucher{% endblock %}
 {% block page_title %}{{ 'Edit: '+voucher.voucher_number if voucher else 'New Scrap Voucher' }}{% endblock %}
 {% block content %}
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{{ gl_entry_button("SCRAP", voucher.id if voucher else None) }}
 <form method="POST" class="voucher-form">
   {% if voucher and voucher.status == 'approved' %}
   <div class="vf-locked">Approved and posted{% if voucher.approved_at %} on {{ voucher.approved_at.strftime('%d %b %Y') }}{% endif %} — read only. Unapprove to make changes.</div>

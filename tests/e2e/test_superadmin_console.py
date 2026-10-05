@@ -1097,3 +1097,41 @@ def test_ajax_check_endpoints(seeded):
     # Fresh email.
     resp = c.get(f"/signup/check-email?email=fresh_{_suffix()}@example.com")
     assert resp.json["exists"] is False
+
+
+# ── Manage Companies provisions the books ───────────────────────────────────
+
+def _periods(cid):
+    from shared.models.company_settings import AccountingPeriod
+    from shared.models.ledger import ChartOfAccount
+    from shared.tenancy import unscoped
+    with flask_app.app_context(), unscoped():
+        return (AccountingPeriod.query.filter_by(company_id=cid).count(),
+                ChartOfAccount.query.filter_by(company_id=cid).count())
+
+
+def test_console_created_company_gets_periods_and_a_chart(seeded):
+    """The Manage Companies form used to create the company and its admin
+    but never provision it, so it had no financial periods and every
+    report's period picker was empty."""
+    from shared.models.company import Company
+    c = _super()
+    slug = f"console-{_suffix()}"
+    r = c.post("/superadmin/companies/", data={
+        "name": "Console Books Co", "slug": slug, "plan_name": "free",
+        "admin_email": f"{slug}@example.com", "admin_name": "Console Admin"})
+    assert r.status_code == 302
+    with flask_app.app_context():
+        cid = Company.query.filter_by(slug=slug).one().id
+    periods, accounts = _periods(cid)
+    assert periods >= 1 and accounts > 50
+
+
+def test_boot_provisions_a_company_left_without_periods(seeded):
+    """Companies created before the fix are repaired on the next boot."""
+    cid = _create_company("Old Console Co", f"old-console-{_suffix()}")
+    assert _periods(cid)[0] == 0
+    from app import _seed_all_data
+    _seed_all_data(flask_app)
+    periods, accounts = _periods(cid)
+    assert periods >= 1 and accounts > 50

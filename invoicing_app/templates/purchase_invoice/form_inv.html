@@ -576,6 +576,8 @@ body{background:var(--card);font-size:10px}
 {% endblock %}
 
 {% block content %}
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{{ gl_entry_button("PI", invoice.id if invoice else None, id_from="#invoiceId") }}
 <div class="wrap{{ ' is-locked' if is_approved else '' }}" id="docWrap">
   {% with doc_title = 'Purchase Invoice' %}{% include '_print_header.html' %}{% endwith %}
   {% if rendered_template %}
@@ -682,6 +684,8 @@ body{background:var(--card);font-size:10px}
     </section>
   </div>
 
+  <div class="doc-body">
+  <div class="doc-main">
   <!-- LINE ITEMS: the card owns its toolbar and grid (DESIGN.md §3). -->
   <div class="card">
     <div class="card-h">
@@ -692,9 +696,9 @@ body{background:var(--card);font-size:10px}
       </div>
       <div class="tool-actions">
         {% if editable %}
-        <button type="button" class="bsm" id="fromOrdersBtn" title="Import items from approved purchase orders">From Orders</button>
-        <button type="button" class="bsm bsm-charges" id="chargesBtn">&#8853; Additional Charges <span id="chargesCount"></span></button>
-        <button type="button" class="bsm bsm-settings" onclick="openSidePanel()">&#9881; Settings</button>
+        <button type="button" class="bsm" id="fromOrdersBtn" title="Import items from approved purchase orders">Import from order</button>
+        <button type="button" class="bsm bsm-charges" id="chargesBtn">Charges <span id="chargesCount"></span></button>
+        <button type="button" class="bsm bsm-settings" onclick="openSidePanel()">Invoice options</button>
         {% endif %}
         <!-- Scope toggles live in the Additional Settings panel (§13);
              the grid header states the active modes read-only (Figure 3). -->
@@ -756,15 +760,17 @@ body{background:var(--card);font-size:10px}
     </div>
   </div>
 
-  <!-- BOTTOM: Notes left, Summary right -->
-  <div class="card">
-    <div class="card-b" style="padding:0;">
-      <div class="btm">
-        <div class="btm-l">
+  <!-- NOTES (left column, under the items) -->
+  <section class="card doc-notes btm"><div class="btm-l">
           <label class="lbl" for="invoiceNotes">Notes</label>
           <textarea id="invoiceNotes" class="inp" rows="5" placeholder="Supplier bill reference, delivery notes…" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
-        </div>
-        <div class="btm-r">
+        </div></section>
+  </div><!-- /doc-main -->
+
+  <!-- SUMMARY RAIL: totals beside the items, where the eye is while entering lines -->
+  <aside class="doc-rail" aria-label="Summary">
+    <div class="doc-summary btm"><div class="btm-r">
+          <h2 class="sum-h">Summary</h2>
           <div class="sl"><span class="sll">Subtotal</span><span class="slv" id="summarySubtotal">0.00</span></div>
           <div class="sl">
             <span class="sll">Discount</span>
@@ -788,6 +794,10 @@ body{background:var(--card);font-size:10px}
           </div>
           <!-- Every additional charge, itemised below the input-sales-tax line (§6.5 / §9) -->
           <div id="chargesSummaryContainer"></div>
+          <div class="sum-add">
+            <button type="button" class="sum-link" id="sumAddCharge">+ Add charge</button>
+            <button type="button" class="sum-link" id="sumAddTax">+ Withholding tax</button>
+          </div>
           <div class="sl sl-deduct" id="withholdingTaxRow" style="display:none;">
             <span class="sll">Withholding (from supplier)</span>
             <span style="display:flex;align-items:center;gap:4px;">
@@ -797,10 +807,10 @@ body{background:var(--card);font-size:10px}
             </span>
           </div>
           <div class="sl sl-net"><span class="sll">Total payable</span><span class="slv" id="summaryNetPayable">0.00</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
+        
+    </div></div>
+  </aside>
+  </div><!-- /doc-body -->
 
     <!-- ACTION BAR -->
     <div class="ab" data-state="{{ 'approved' if is_approved else ('draft' if invoice else 'new') }}"></div>
@@ -813,17 +823,17 @@ body{background:var(--card);font-size:10px}
   <div class="chg-shell">
     <div class="chg-main">
       <div class="chg-head">
-        <span>Additional Charges &mdash; <span id="chgHeadInv">this invoice</span></span>
+        <span>Charges <span class="chg-sub" id="chgHeadInv">this invoice</span></span>
         <button type="button" class="chg-x" onclick="closeChargesModal()" title="Close">&times;</button>
       </div>
       <div class="chg-body">
-        <p style="font-size:12px;color:var(--muted);margin:0 0 4px;">Each row is one charge picked from the chart of accounts. Scope, distribution, treatment and tax bases are set per charge.</p>
+        <p class="chg-intro">Add freight, installation or any other charge, then choose who pays for it and how it is taxed.</p>
         <p style="font-size:12px;color:var(--muted);margin:0 0 14px;">A purchase carries no further tax &mdash; it is a sales-side levy (&sect;8).</p>
         <div class="chg-wrap">
           <div id="chargesList"></div>
         </div>
         <div class="chg-actions">
-          <button type="button" class="bsm" id="addChargeBtn">+ Add charge from ledger</button>
+          <button type="button" class="bsm" id="addChargeBtn">+ Add another charge</button>
           <div class="chg-foot" id="chargesFoot"></div>
         </div>
         <div class="modal-acts" style="margin-top:14px;">
@@ -928,7 +938,7 @@ body{background:var(--card);font-size:10px}
 
 <!-- SETTINGS SIDE PANEL -->
 <div class="side-panel" id="sidePanel">
-  <div class="sp-h"><span>Additional Settings</span><button onclick="closeSidePanel()">&times;</button></div>
+  <div class="sp-h"><span>Invoice options</span><button onclick="closeSidePanel()">&times;</button></div>
   <div class="sp-b">
     <!-- 1 · DISCOUNT -->
     <div class="accordion">
@@ -1856,6 +1866,7 @@ document.addEventListener('keydown',function(e){if((e.key==='ArrowUp'||e.key==='
 <script>
 // Configuration for the shared document UI layer (static/js/doc_form.js).
 window.DOC = {
+  kind: 'purchase',
   title: 'Purchase Invoice', noun: 'purchase invoice',
   partyKey: 'supplier_id', partySearch: 'supplierSearch', partyNoun: 'supplier',
   listUrl: "{{ url_for('inv_purchase_invoice.list_invoices') }}",

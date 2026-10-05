@@ -98,6 +98,13 @@ def valuation_report():
         except DocumentDateError:
             return default
 
+    if not any(k in request.args for k in ("as_of", "from", "format", "run")):
+        # Nothing is calculated until the report is asked for (Apply / export).
+        today = date.today()
+        return render_template("reports/valuation.html", loaded=False, rows=[],
+                               totals={"close_val": 0}, total_val=0, gl_balance=0,
+                               difference=0, as_of=today.isoformat(),
+                               start=today.replace(day=1).isoformat())
     as_of = _date("as_of", date.today())
     start = _date("from", as_of.replace(day=1))
     if start > as_of:
@@ -172,7 +179,7 @@ def valuation_report():
                                row_kinds=kinds, col_formats=qty,
                                file_period=f"as_at_{as_of:%Y-%m-%d}")
 
-    return render_template("reports/valuation.html", rows=rows, totals=totals,
+    return render_template("reports/valuation.html", loaded=True, rows=rows, totals=totals,
                            total_val=totals["close_val"], gl_balance=gl_balance,
                            difference=totals["close_val"] - gl_balance,
                            as_of=as_of.isoformat(), start=start.isoformat())
@@ -191,13 +198,11 @@ def _gl_inventory_balance(as_of):
         pass
     if not ids:
         return Decimal("0")
+    from shared.models.gl_balance import GLDailyBalance as G
     dr, cr = (db.session.query(
-        db.func.coalesce(db.func.sum(JournalLine.debit), 0),
-        db.func.coalesce(db.func.sum(JournalLine.credit), 0))
-        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-        .filter(JournalEntry.is_posted == True,  # noqa: E712
-                JournalEntry.entry_date <= datetime.combine(as_of, time.max),
-                JournalLine.account_id.in_(ids)).one())
+        db.func.coalesce(db.func.sum(G.debit), 0),
+        db.func.coalesce(db.func.sum(G.credit), 0))
+        .filter(G.day <= as_of, G.account_id.in_(ids)).one())
     return Decimal(str(dr)) - Decimal(str(cr))
 
 

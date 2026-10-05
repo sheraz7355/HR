@@ -42,7 +42,7 @@
   .set-note { background: var(--warning-light); border: 1px solid var(--warning); border-radius: 8px;
               padding: 10px 12px; font-size: 11.5px; line-height: 1.55; color: var(--warning);
               margin-top: 12px; }
-  /* §11.1 charge-ledger defaults table */
+  /* Charge-ledger defaults table */
   .cld-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   .cld-tbl th { text-align: left; padding: 7px 10px; font-size: 10px;
                 color: var(--muted); background: var(--bg-top);
@@ -78,6 +78,65 @@
   @media (max-width: 900px) {
     .fgrid { grid-template-columns: 1fr; }
   }
+
+  /* ── Clean-up layer ───────────────────────────────────────────────────
+     One readable column, light section headers, sentence-case labels and
+     one button language: Save is the filled primary everywhere (it was an
+     outline on some tabs and black on others), secondary actions are
+     outlines, destructive ones carry red text. */
+  .set-main { max-width: 1060px; display: flex; flex-direction: column; gap: 16px; }
+  .set-card { border-color: var(--v2-line, var(--line)); border-radius: 12px; padding: 22px 24px; margin: 0; }
+  .set-card h3 { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+  .set-card .hint { font-size: 13px; line-height: 1.55; max-width: 72ch; }
+  /* Boxed cards (Labels, Cash Flow, ...) read like every other card: the
+     title sits in the card at h3 size, not on a grey band. */
+  .set-card-hd { background: transparent; color: var(--v2-ink, var(--text));
+                 font-size: 18px; font-weight: 650; letter-spacing: -.01em;
+                 padding: 22px 24px 0; border-bottom: 0; align-items: baseline; flex-wrap: wrap; }
+  .set-card-hd .sub { color: var(--v2-muted, var(--muted)); font-size: 12.5px; font-weight: 400; }
+  .set-card-bd { padding: 12px 24px 22px; }
+  .set-card-bd > .hint:first-child { margin-top: 0; }
+  .fgroup label.lbl, .set-card .lbl { font-size: 12.5px; font-weight: 500; text-transform: none;
+                                     letter-spacing: 0; color: var(--v2-body, var(--muted)); margin-bottom: 5px; }
+  .inp, .sel { min-height: 38px; border-radius: 8px; border-color: var(--v2-line-2, var(--line));
+               background: var(--v2-surface, var(--card)); color: var(--v2-ink, var(--text)); }
+  textarea.inp { min-height: 76px; }
+  .help { font-size: 12px; }
+  .stbl th, .cld-tbl th { font-size: 12px; font-weight: 500; text-transform: none; letter-spacing: 0;
+                          border-bottom-width: 1px; background: transparent; }
+  .set-note { background: var(--v2-sunk, var(--bg-top)); border-color: var(--v2-line, var(--line));
+              color: var(--v2-body, var(--muted)); font-size: 12.5px; }
+  .set-actions { border-top: 1px solid var(--v2-line, var(--line)); padding-top: 16px; margin-top: 20px;
+                 align-items: center; }
+  .set-main .btn, .set-main .bsm { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 38px; padding: 0 16px; border-radius: 9px; border: 1px solid var(--v2-line-2, var(--line));
+    background: var(--v2-surface, var(--card)); color: var(--v2-ink, var(--text)); font: inherit;
+    font-size: 13.5px; font-weight: 500; cursor: pointer; text-decoration: none; }
+  .set-main .btn:hover, .set-main .bsm:hover { background: var(--v2-hover, var(--bg-top)); }
+  .set-main .btn-p, .set-main .btn-primary { background: var(--v2-ink, #17181a); color: var(--v2-ground, #fff);
+    border-color: var(--v2-ink, #17181a); font-weight: 600; }
+  .set-main .btn-p:hover, .set-main .btn-primary:hover { background: var(--v2-ink-2, #2c2f34); }
+  .set-main .btn-danger { color: var(--v2-neg, #b4453b); background: var(--v2-surface, var(--card)); }
+  .set-main .btn-danger:hover { background: var(--v2-neg-bg, #fbecea); border-color: var(--v2-neg, #b4453b); }
+  .set-main .btn-sm, .set-main .bsm { min-height: 32px; padding: 0 12px; font-size: 12.5px; }
+  @media (max-width: 640px) {
+    .set-card { padding: 16px; }
+    .set-actions .btn, .set-actions .bsm { flex: 1 1 auto; }
+  }
+
+  /* Report structure: rows move with up/down, not typed order numbers. */
+  .rs-row td { vertical-align: middle; }
+  .rs-move { display: inline-flex; gap: 4px; }
+  .rs-move button { width: 30px; height: 30px; border-radius: 7px; border: 1px solid var(--v2-line-2, var(--line));
+    background: var(--v2-surface, var(--card)); color: var(--v2-body, var(--muted)); cursor: pointer; font-size: 13px; line-height: 1; }
+  .rs-move button:hover:not(:disabled) { color: var(--v2-ink, var(--text)); background: var(--v2-hover, var(--bg-top)); }
+  .rs-move button:disabled { opacity: .35; cursor: default; }
+  .rs-kind { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .rs-kind.sec { background: var(--v2-sunk, var(--bg-top)); color: var(--v2-body, var(--muted)); }
+  .rs-kind.sub { background: var(--v2-accent-soft, var(--accent-light)); color: var(--v2-accent-ink, var(--accent)); }
+  .rs-row.is-sub td { background: var(--v2-hover, transparent); }
+  .rs-row.is-sub .inp { font-weight: 600; }
+  .rs-effect { font-size: 12px; color: var(--v2-muted, var(--muted)); white-space: nowrap; }
 </style>
 {% endblock %}
 {% block content %}

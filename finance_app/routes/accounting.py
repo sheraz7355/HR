@@ -905,3 +905,44 @@ def api_cash_bank_accounts():
         {"id": a.id, "code": a.code, "name": a.name, "type": a.type}
         for a in accounts
     ])
+
+
+@acct_bp.route("/gl-entry")
+@login_required
+def gl_entry():
+    """The journal(s) a document posted, for the floating "Accounting entry"
+    panel on every form that hits the general ledger (shared/gl_entry.py)."""
+    from shared.gl_entry import entries_for
+    vtype = (request.args.get("type") or "").strip()
+    vid = request.args.get("id", type=int)
+    if not vtype or len(vtype) > 20:
+        return jsonify({"ok": False, "error": "Unknown document type"}), 400
+    if not vid:
+        return jsonify({"ok": True, "posted": [], "history": [], "saved": False})
+    also = []
+    for part in (request.args.get("also") or "").split(","):
+        t, _, i = part.strip().rpartition(":")
+        if t and i.isdigit() and len(t) <= 20:
+            also.append((t.upper(), int(i)))
+    data = entries_for(vtype, vid, also=also[:200])
+    return jsonify({"ok": True, "saved": True,
+                    "ledger_url": url_for("finance.ledger"), **data})
+
+
+@acct_bp.route("/api/account-balance")
+@login_required
+def api_account_balance():
+    """Posted balance of one account (debit minus credit), for the voucher
+    form's "balance now → after this voucher" line under the cash/bank
+    account."""
+    acc_id = request.args.get("id", type=int)
+    acc = scoped_get(ChartOfAccount, acc_id) if acc_id else None
+    if acc is None:
+        return jsonify({"ok": False}), 404
+    from shared.models.gl_balance import GLDailyBalance as G
+    dr, cr = (db.session.query(
+        db.func.coalesce(db.func.sum(G.debit), 0),
+        db.func.coalesce(db.func.sum(G.credit), 0))
+        .filter(G.account_id == acc.id).one())
+    return jsonify({"ok": True, "id": acc.id, "code": acc.code, "name": acc.name,
+                    "balance": float(Decimal(str(dr)) - Decimal(str(cr)))})

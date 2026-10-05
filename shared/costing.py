@@ -465,7 +465,8 @@ def _cover_shorts(product_id, receipt_row, qty, value):
 
 
 def record_in(product_id, voucher_type, voucher_id, voucher_number,
-              qty, unit_cost, notes="", created_by=1, txn_date=None):
+              qty, unit_cost, notes="", created_by=1, txn_date=None,
+              total_cost=None):
     """Stock received at an actual acquisition cost (e.g. landed purchase cost).
 
     FIFO opens a new layer. Weighted average merges into the open layer and
@@ -475,6 +476,12 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
     ``txn_date`` is the document date. Dated before the product's latest
     movement, the receipt is slotted into the timeline and every later issue
     is re-costed around it (``_replay``).
+
+    ``total_cost`` is the exact value the document posts to the inventory
+    account (a purchase line's landed total). Given, the receipt carries that
+    figure; otherwise it is qty x the 4dp unit cost, which drifts from the
+    journal by a paisa whenever the landed cost does not divide evenly
+    (288 x 15,349.6528 = 4,420,700.01 against a posted 4,420,700.00).
     """
     qty = _d(qty)
     if qty <= 0:
@@ -483,7 +490,7 @@ def record_in(product_id, voucher_type, voucher_id, voucher_number,
             "must be positive."
         )
     unit_cost = _q(unit_cost)
-    total_cost = _q(qty * unit_cost, 2)
+    total_cost = _q(qty * unit_cost, 2) if total_cost is None else _q(_d(total_cost), 2)
     txn_date = as_txn_date(txn_date)
     backdated = _is_backdated(product_id, txn_date)
     row = _write_row(product_id, voucher_type, voucher_id, voucher_number,

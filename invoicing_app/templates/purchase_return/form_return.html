@@ -102,6 +102,8 @@ textarea.inp{resize:vertical;font-family:inherit}
 {% endblock %}
 
 {% block content %}
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{{ gl_entry_button("PR", return_doc.id if return_doc else None, id_from="#returnId") }}
 <div class="wrap">
   <div class="toast-c" id="toastContainer"></div>
   <input type="hidden" id="returnId" value="{{ return_doc.id if return_doc else '' }}">

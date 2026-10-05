@@ -182,6 +182,10 @@ def companies():
             membership.status = CompanyMembership.ACTIVE
             membership.role_id = admin_role.id
         db.session.commit()
+        # Same books as a portal-created company: chart, settings, periods,
+        # numbering. Without this the company had no financial periods.
+        from shared.company_setup import provision_company
+        provision_company(company.id)
         msg = (f"Company '{name}' created. Admin: {email}.")
         if created_user:
             msg += f" New user — password: {password}"

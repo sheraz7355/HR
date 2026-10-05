@@ -434,7 +434,7 @@ def test_16_reports_render_on_the_corrected_books(world):
                 "/finance/label-pl", f"/inventory/reports/valuation?as_of={ago(30)}"):
         r = c.get(url)
         assert r.status_code == 200, f"{url} -> {r.status_code}"
-    body = c.get("/executive/integrity").get_data(as_text=True)
+    body = c.get("/executive/integrity?run=1").get_data(as_text=True)
     assert "All checks pass" in body
 
 
@@ -570,3 +570,38 @@ def test_20_multi_label_invoice_splits_revenue_and_cogs_by_line(world):
     assert page.status_code == 200
     html = page.get_data(as_text=True)
     assert "Project North" in html and "Project South" in html
+
+
+def test_21_uneven_landed_cost_keeps_stock_equal_to_the_ledger(world):
+    """A landed cost that does not divide evenly by the quantity.
+
+    288 units, 14,300 carriage absorbed: 4,420,700 / 288 = 15,349.6527... The
+    receipt used to store qty x the 4dp unit cost (4,420,700.01) while the
+    journal debited 4,420,700.00 — a paisa per such purchase, enough over a
+    year of trade to fail the inventory = stock valuation check.
+    """
+    from shared.ledger_utils import posting_account
+    from shared.models.stock_ledger import StockLedger
+    with Ctx(world):
+        carriage = posting_account("cogs").id
+    qty, price, absorb = 288, 15300, 14300
+    goods = qty * price
+    body = world["client"].post("/inventory/purchase-invoice/save", json={
+        "supplier_id": world["supplier"], "invoice_date": ago(0),
+        "discount_mode": "general", "expenses_mode": "general", "tax_mode": "general",
+        "global_discount_pct": 0, "global_discount_value": 0, "global_commission": 0,
+        "global_freight": 0, "global_loading": 0, "global_sales_tax_pct": 0,
+        "global_withholding_tax_pct": 0, "subtotal": goods, "total_discount": 0,
+        "net_payable": goods + absorb, "total_amount": goods + absorb,
+        "charges": [{"description": "Carriage inward", "treatment": "absorb",
+                     "charge_account_id": carriage, "amount": absorb,
+                     "scope": "general", "distribution": "pro_rata_value"}],
+        "items": [{"product_id": world["product"], "quantity": qty, "unit_price": price,
+                   "discount_pct": 0, "total_before_discount": goods,
+                   "total_after_discount": goods}],
+        "action": "approve"}).get_json()
+    assert body and body.get("ok"), body
+    with Ctx(world):
+        row = StockLedger.query.filter_by(voucher_type="PI", voucher_id=body["id"]).one()
+        assert Decimal(str(row.total_cost)) == Decimal(goods + absorb)
+    assert_books_tie(world, "uneven landed cost")

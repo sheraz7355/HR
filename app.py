@@ -1329,12 +1329,30 @@ def _seed_all_data(app):
         # goes there, not into _migrate_schema. A failed revision is logged
         # and retried on the next cold start; it must not stop the seeding
         # below, which the app needs to serve requests at all.
-        from shared import db_migrate
         try:
+            from shared import db_migrate
             db_migrate.upgrade(db.engine)
         except Exception as e:
             print("MIGRATION ERROR (alembic):", e)
             _tb.print_exc()
+
+        # Reports read gl_daily_balances. Fill it from the ledger whenever it
+        # is empty while posted journals exist — independent of Alembic, so a
+        # failed revision (e.g. alembic not installed in the interpreter that
+        # runs the server) can never leave every report silently blank.
+        try:
+            with db.engine.begin() as conn:
+                empty = conn.execute(db.text(
+                    "SELECT 1 FROM gl_daily_balances LIMIT 1")).first() is None
+                posted = conn.execute(db.text(
+                    "SELECT 1 FROM journal_entries WHERE is_posted = :t LIMIT 1"),
+                    {"t": True}).first() is not None
+                if empty and posted:
+                    from shared.gl_summary import rebuild
+                    rebuild(conn)
+                    print("Reporting table rebuilt from the ledger")
+        except Exception as e:
+            print("REPORTING TABLE CHECK ERROR:", e)
 
         # Multi-company: default company + company_id backfill + memberships.
         # Must run before the first scoped ORM query below, and it selects the
@@ -1624,6 +1642,27 @@ def _seed_all_data(app):
         _bootstrap_default_company(db)
 
         db.session.commit()
+
+        # Companies created by the super admin console's Manage Companies form
+        # were never provisioned (only the chart was filled in later by this
+        # boot), so they had no financial periods: every report's period
+        # picker was empty. Provision any company still without periods;
+        # provision_company is idempotent and keeps existing rows.
+        try:
+            from shared.company_setup import provision_company
+            from shared.models.company import Company
+            from shared.models.company_settings import AccountingPeriod
+            from shared.tenancy import unscoped
+            with unscoped():
+                have = {cid for (cid,) in db.session.query(
+                    AccountingPeriod.company_id).distinct()}
+                missing = [c.id for c in Company.query.order_by(Company.id).all()
+                           if c.id not in have]
+            for cid in missing:
+                provision_company(cid)
+        except Exception as e:
+            db.session.rollback()
+            print("PROVISION BACKFILL ERROR:", e)
         print("Seed data OK")
 
 

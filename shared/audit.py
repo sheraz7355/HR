@@ -331,7 +331,8 @@ def search(company_id, args, member_ids=()):
 
     Rows of the company itself, plus sign-in events (company NULL) of the
     company's own members — an admin should see who signed in to their books,
-    but never another company's activity.
+    but never another company's activity, nor a member's visits to the super
+    admin console (those are on the console's own audit page).
     """
     from datetime import datetime as _dt, time as _time
     from shared.models.audit_log import AuditLog
@@ -341,7 +342,11 @@ def search(company_id, args, member_ids=()):
         own = db.or_(own, db.and_(AuditLog.company_id.is_(None),
                                   AuditLog.user_id.in_(list(member_ids)),
                                   AuditLog.action.in_(("login", "logout",
-                                                       "login_failed"))))
+                                                       "login_failed")),
+                                  # Entering the super admin console is a
+                                  # platform event, not a visit to these books.
+                                  db.or_(AuditLog.path.is_(None),
+                                         ~AuditLog.path.like("/superadmin%"))))
     q = q.filter(own)
 
     def _d(v):

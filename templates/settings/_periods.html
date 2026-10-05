@@ -26,10 +26,10 @@
     </div>
   </form>
   <p class="hint" style="margin-top:8px;">
-    Current rule: <strong>{{ fiscal_rule.start_day }} {{ months[fiscal_rule.start_month - 1] }}</strong> &rarr; 
-    <strong>{{ fiscal_rule.start_day - 1 }} {{ months[(fiscal_rule.start_month - 2) % 12] }}</strong>
-    (e.g., FY {{ "%04d"|format(2020) }}: {{ "%02d"|format(fiscal_rule.start_day) }} {{ months[fiscal_rule.start_month - 1] }} 2020 &ndash;
-    {{ "%02d"|format(fiscal_rule.start_day - 1) }} {{ months[(fiscal_rule.start_month - 2) % 12] }} 2021)
+    {% set ex_s, ex_e = fy_example %}
+    Each financial year runs <strong>{{ ex_s.day ~ ' ' ~ ex_s.strftime('%B') }}</strong> &rarr;
+    <strong>{{ ex_e.day ~ ' ' ~ ex_e.strftime('%B') }}</strong>.
+    The current one is {{ ex_s.strftime('%d %b %Y') }} &ndash; {{ ex_e.strftime('%d %b %Y') }}.
   </p>
 </div>
 

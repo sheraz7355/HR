@@ -237,7 +237,35 @@ def _has_value(doc):
     return True
 
 
-CHECKS = (trial_balance, journals_balanced, inventory_vs_gl, stock_layers,
+def reporting_table():
+    """The reporting table every report reads (gl_daily_balances) agrees with
+    the posted journal lines, account by account and label by label."""
+    from shared.models.gl_balance import GLDailyBalance as G
+    from shared.models.ledger import JournalEntry, JournalLine
+    src = {(a, l or 0): (_d(dr), _d(cr)) for a, l, dr, cr in (
+        db.session.query(JournalLine.account_id, JournalLine.label_id,
+                         db.func.coalesce(db.func.sum(JournalLine.debit), 0),
+                         db.func.coalesce(db.func.sum(JournalLine.credit), 0))
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .filter(JournalEntry.is_posted == True)  # noqa: E712
+        .group_by(JournalLine.account_id, JournalLine.label_id).all())}
+    summ = {(a, l): (_d(dr), _d(cr)) for a, l, dr, cr in (
+        db.session.query(G.account_id, G.label_id,
+                         db.func.coalesce(db.func.sum(G.debit), 0),
+                         db.func.coalesce(db.func.sum(G.credit), 0))
+        .group_by(G.account_id, G.label_id).all())}
+    zero = (_d(0), _d(0))
+    bad = [k for k in set(src) | set(summ)
+           if abs(src.get(k, zero)[0] - summ.get(k, zero)[0]) > TOL
+           or abs(src.get(k, zero)[1] - summ.get(k, zero)[1]) > TOL]
+    return _check("reporting_table", "Reporting table matches the ledger",
+                  0, len(bad),
+                  "Accounts whose report totals differ from their journal lines"
+                  + (f" — run tools/rebuild_gl_summary.py ({len(bad)} differ)" if bad else ""),
+                  tol=0)
+
+
+CHECKS = (trial_balance, journals_balanced, reporting_table, inventory_vs_gl, stock_layers,
           stock_quantity, fixed_assets_vs_gl, documents_posted)
 
 

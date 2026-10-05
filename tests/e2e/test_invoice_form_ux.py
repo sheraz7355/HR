@@ -196,3 +196,62 @@ class TestPurchaseInvoice:
         assert "Discard" in admin_page.locator("#confirmTitle").inner_text()
         admin_page.locator("#confirmOkBtn").click()
         admin_page.wait_for_url("**/purchase-invoice/list**")
+
+
+class TestEditorLayout:
+    """Summary rail beside the items, plain-language options and charges."""
+
+    def test_summary_rail_sits_beside_the_items(self, admin_page):
+        admin_page.set_viewport_size({"width": 1440, "height": 900})
+        _open_new(admin_page)
+        items = admin_page.locator(".doc-main").bounding_box()
+        rail = admin_page.locator(".doc-rail").bounding_box()
+        assert rail["x"] >= items["x"] + items["width"], "rail is to the right"
+        # Narrower screens: the rail drops under the items instead of
+        # squeezing them.
+        admin_page.set_viewport_size({"width": 1280, "height": 900})
+        items = admin_page.locator(".doc-main").bounding_box()
+        rail = admin_page.locator(".doc-rail").bounding_box()
+        assert rail["y"] >= items["y"] + items["height"] - 1
+        assert admin_page.locator(".doc-rail #summaryNetTotal").is_visible()
+        assert admin_page.locator("#sumAddCharge").is_visible()
+
+    def test_add_charge_link_opens_the_editor_with_a_charge_ready(self, admin_page):
+        _open_new(admin_page)
+        admin_page.locator("#sumAddCharge").click()
+        assert admin_page.locator("#chargesModal.show").count() == 1
+        card = admin_page.locator("#chargesList .chg-card").first
+        assert card.locator(".chg-acct").count() == 1
+        labels = card.locator(".chg-treat-opt .ct-t").all_inner_texts()
+        assert labels == ["Bill the customer", "Add to item prices", "Company expense"]
+
+    def test_who_pays_cards_drive_the_saved_treatment(self, admin_page):
+        _open_new(admin_page)
+        admin_page.locator("#sumAddCharge").click()
+        card = admin_page.locator("#chargesList .chg-card").first
+        card.locator(".chg-treat-opt", has_text="Company expense").click()
+        # The card list re-renders; the choice is what the charge now holds.
+        assert admin_page.evaluate("charges[0].treatment") == "expense"
+        assert admin_page.locator("#chargesList .chg-card").first.locator(
+            ".chg-treat-opt:has(input:checked) .ct-t").inner_text() == "Company expense"
+        # A charge nobody bills cannot carry a tax base.
+        assert admin_page.locator("#chargesList .chg-card .chg-st").count() == 0
+
+    def test_options_panel_speaks_plainly(self, admin_page):
+        _open_new(admin_page)
+        admin_page.locator(".bsm-settings").click()
+        panel = admin_page.locator("#sidePanel")
+        assert panel.locator(".sp-h").inner_text().startswith("Invoice options")
+        titles = panel.locator(".acc-h > span:first-child").all_inner_texts()
+        assert titles[0] == "Discount" and not any("·" in t for t in titles)
+        pills = panel.locator("#discountMode .pill-b").all_inner_texts()
+        assert pills == ["Whole invoice", "Each line"]
+
+    def test_mode_note_appears_only_for_per_line_settings(self, admin_page):
+        _open_new(admin_page)
+        assert admin_page.locator("#modeNote").is_hidden()
+        admin_page.evaluate(
+            "document.querySelector('#discountMode .pill-b[data-value=\"individual\"]').click()")
+        admin_page.wait_for_timeout(150)
+        note = admin_page.locator("#modeNote")
+        assert note.is_visible() and "Each line" in note.inner_text()

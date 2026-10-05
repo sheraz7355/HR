@@ -146,42 +146,68 @@ def _eod(d):
     return datetime.combine(d, datetime.max.time())
 
 
+# ── Balances come from the reporting table, not from every journal line ──
+# gl_daily_balances (shared/models/gl_balance.py) holds posted activity per
+# account, label and day, kept in step with the ledger in the same
+# transaction (shared/gl_summary.py). A year's trial balance reads at most a
+# few hundred rows per account here instead of every line ever posted.
+from shared.models.gl_balance import GLDailyBalance as _GLB  # noqa: E402
+
+
+def _as_day(d):
+    """A report date (date or datetime) as a calendar day."""
+    return d.date() if isinstance(d, datetime) else d
+
+
 def _get_account_balance(account_id, as_of=None, label_ids=None):
     q = db.session.query(
-        db.func.coalesce(db.func.sum(JournalLine.debit), 0).label("dr"),
-        db.func.coalesce(db.func.sum(JournalLine.credit), 0).label("cr"),
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-           ).filter(JournalLine.account_id == account_id,
-                    JournalEntry.is_posted == True)
+        db.func.coalesce(db.func.sum(_GLB.debit), 0).label("dr"),
+        db.func.coalesce(db.func.sum(_GLB.credit), 0).label("cr"),
+    ).filter(_GLB.account_id == account_id)
     if as_of:
-        q = q.filter(JournalEntry.entry_date <= _eod(as_of))
+        q = q.filter(_GLB.day <= _as_day(as_of))
     if label_ids:
-        q = q.filter(JournalLine.label_id.in_(label_ids))
+        q = q.filter(_GLB.label_id.in_(label_ids))
     row = q.first()
     return Decimal(str(row.dr)), Decimal(str(row.cr))
 
 
 def _all_account_balances(as_of=None, account_types=None, label_ids=None):
     q = db.session.query(
-        JournalLine.account_id,
+        _GLB.account_id,
         ChartOfAccount.code,
         ChartOfAccount.name,
         ChartOfAccount.type,
-        db.func.coalesce(db.func.sum(JournalLine.debit), 0).label("dr"),
-        db.func.coalesce(db.func.sum(JournalLine.credit), 0).label("cr"),
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-           ).join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id
-                  ).filter(JournalEntry.is_posted == True)
+        db.func.coalesce(db.func.sum(_GLB.debit), 0).label("dr"),
+        db.func.coalesce(db.func.sum(_GLB.credit), 0).label("cr"),
+    ).join(ChartOfAccount, _GLB.account_id == ChartOfAccount.id)
     if as_of:
-        q = q.filter(JournalEntry.entry_date <= _eod(as_of))
+        q = q.filter(_GLB.day <= _as_day(as_of))
     if account_types:
         q = q.filter(ChartOfAccount.type.in_(account_types))
     if label_ids:
-        q = q.filter(JournalLine.label_id.in_(label_ids))
-    q = q.group_by(JournalLine.account_id, ChartOfAccount.code,
+        q = q.filter(_GLB.label_id.in_(label_ids))
+    q = q.group_by(_GLB.account_id, ChartOfAccount.code,
                    ChartOfAccount.name, ChartOfAccount.type
                    ).order_by(ChartOfAccount.code)
     return q.all()
+
+
+def _sum_balances(account_ids, as_of=None, label_ids=None):
+    """Combined (dr, cr) of several accounts at a date — one query, however
+    many accounts (cash and bank totals used to run one query per account)."""
+    if not account_ids:
+        return Decimal("0"), Decimal("0")
+    q = db.session.query(
+        db.func.coalesce(db.func.sum(_GLB.debit), 0),
+        db.func.coalesce(db.func.sum(_GLB.credit), 0),
+    ).filter(_GLB.account_id.in_(list(account_ids)))
+    if as_of:
+        q = q.filter(_GLB.day <= _as_day(as_of))
+    if label_ids:
+        q = q.filter(_GLB.label_id.in_(label_ids))
+    dr, cr = q.one()
+    return Decimal(str(dr)), Decimal(str(cr))
 
 
 def _net_income(as_of=None, label_ids=None):
@@ -207,25 +233,24 @@ def _resolve_labels():
 
 
 def _period_movements(from_date=None, to_date=None, types=None, label_ids=None):
-    """Per-account (dr, cr) sums of posted lines within the period.
+    """Per-account (dr, cr) sums of posted activity within the period.
     Returns {account_id: (Decimal dr, Decimal cr)}."""
     q = db.session.query(
-        JournalLine.account_id,
-        db.func.coalesce(db.func.sum(JournalLine.debit), 0).label("dr"),
-        db.func.coalesce(db.func.sum(JournalLine.credit), 0).label("cr"),
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-           ).filter(JournalEntry.is_posted == True)
+        _GLB.account_id,
+        db.func.coalesce(db.func.sum(_GLB.debit), 0).label("dr"),
+        db.func.coalesce(db.func.sum(_GLB.credit), 0).label("cr"),
+    )
     if from_date:
-        q = q.filter(JournalEntry.entry_date >= from_date)
+        q = q.filter(_GLB.day >= _as_day(from_date))
     if to_date:
-        q = q.filter(JournalEntry.entry_date <= _eod(to_date))
+        q = q.filter(_GLB.day <= _as_day(to_date))
     if types:
-        q = q.join(ChartOfAccount, JournalLine.account_id == ChartOfAccount.id
+        q = q.join(ChartOfAccount, _GLB.account_id == ChartOfAccount.id
                    ).filter(ChartOfAccount.type.in_(types))
     if label_ids:
-        q = q.filter(JournalLine.label_id.in_(label_ids))
+        q = q.filter(_GLB.label_id.in_(label_ids))
     return {r.account_id: (Decimal(str(r.dr)), Decimal(str(r.cr)))
-            for r in q.group_by(JournalLine.account_id).all()}
+            for r in q.group_by(_GLB.account_id).all()}
 
 
 def _pl_by_section(from_date, to_date, label_ids=None):
@@ -468,56 +493,85 @@ def _get_descendant_ids(account_id):
 
 
 def _get_leaf_descendant_ids(account_id):
-    """Get only leaf (no-children) descendant IDs, excluding the head itself."""
-    leaf_ids = []
-    for child in ChartOfAccount.query.filter_by(parent_id=account_id, is_active=True).all():
-        grand_children = ChartOfAccount.query.filter_by(parent_id=child.id, is_active=True).count()
-        if grand_children == 0:
-            leaf_ids.append(child.id)
+    """Leaf (no-children) descendant IDs of a head, excluding the head itself.
+    One query for the active chart, then a walk in memory (it used to issue a
+    query plus a count per node)."""
+    rows = db.session.query(ChartOfAccount.id, ChartOfAccount.parent_id).filter(
+        ChartOfAccount.is_active == True).all()  # noqa: E712
+    kids = defaultdict(list)
+    for i, parent in rows:
+        if parent is not None:
+            kids[parent].append(i)
+    leaves, stack = set(), list(kids.get(account_id, []))
+    while stack:
+        n = stack.pop()
+        if kids.get(n):
+            stack.extend(kids[n])
         else:
-            leaf_ids.extend(_get_leaf_descendant_ids(child.id))
-    return list(set(leaf_ids))
+            leaves.add(n)
+    return list(leaves)
 
 
 def _get_ledger_sections(account_ids, from_date, to_date, label_ids=None):
     """Per-account ledger: opening balance (all posted activity before the
     period), movements during the period with a running balance, and a
-    closing balance labelled Dr/Cr."""
+    closing balance labelled Dr/Cr.
+
+    Set-based: the accounts, every opening balance (from the reporting
+    table) and every line in the period are three queries in total. It used
+    to run two queries per account plus a lazy load per line — minutes for
+    "all accounts" on a busy ledger."""
+    if not account_ids:
+        return []
+    ids = list(dict.fromkeys(account_ids))
+    accounts = {a.id: a for a in ChartOfAccount.query.filter(ChartOfAccount.id.in_(ids)).all()}
+    openings = {}
+    if from_date:
+        oq = db.session.query(
+            _GLB.account_id,
+            db.func.coalesce(db.func.sum(_GLB.debit), 0),
+            db.func.coalesce(db.func.sum(_GLB.credit), 0),
+        ).filter(_GLB.account_id.in_(ids), _GLB.day < _as_day(from_date))
+        if label_ids:
+            oq = oq.filter(_GLB.label_id.in_(label_ids))
+        for aid, dr, cr in oq.group_by(_GLB.account_id).all():
+            openings[aid] = Decimal(str(dr)) - Decimal(str(cr))
+    lq = db.session.query(
+        JournalLine.account_id, JournalLine.debit, JournalLine.credit,
+        JournalLine.description, JournalEntry.entry_date,
+        JournalEntry.voucher_number, JournalEntry.description,
+    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
+           ).filter(JournalLine.account_id.in_(ids), JournalEntry.is_posted == True)  # noqa: E712
+    if label_ids:
+        lq = lq.filter(JournalLine.label_id.in_(label_ids))
+    if from_date:
+        lq = lq.filter(JournalEntry.entry_date >= from_date)
+    if to_date:
+        lq = lq.filter(JournalEntry.entry_date <= _eod(to_date))
+    by_acc = defaultdict(list)
+    for row in lq.order_by(JournalLine.account_id, JournalEntry.entry_date,
+                           JournalEntry.id, JournalLine.id).all():
+        by_acc[row[0]].append(row)
+
     sections = []
-    for aid in account_ids:
-        account = scoped_get(ChartOfAccount, aid)
+    for aid in ids:
+        account = accounts.get(aid)
         if not account:
             continue
-        opening = Decimal("0")
-        if from_date:
-            odr, ocr = _get_account_balance(aid, from_date - timedelta(days=1),
-                                            label_ids=label_ids)
-            opening = odr - ocr
-        q = JournalLine.query.join(JournalEntry).filter(
-            JournalLine.account_id == aid,
-            JournalEntry.is_posted == True,
-        )
-        if label_ids:
-            q = q.filter(JournalLine.label_id.in_(label_ids))
-        if from_date:
-            q = q.filter(JournalEntry.entry_date >= from_date)
-        if to_date:
-            q = q.filter(JournalEntry.entry_date <= _eod(to_date))
-        q = q.order_by(JournalEntry.entry_date, JournalEntry.id)
-        lines = q.all()
+        opening = openings.get(aid, Decimal("0"))
         rows = []
         balance = opening
         total_dr = total_cr = Decimal("0")
-        for line in lines:
-            dr = Decimal(str(line.debit))
-            cr = Decimal(str(line.credit))
+        for _a, debit, credit, ldesc, edate, vno, edesc in by_acc.get(aid, []):
+            dr = Decimal(str(debit or 0))
+            cr = Decimal(str(credit or 0))
             balance += dr - cr
             total_dr += dr
             total_cr += cr
             rows.append({
-                "date": line.entry.entry_date.strftime("%Y-%m-%d") if line.entry.entry_date else "",
-                "voucher": line.entry.voucher_number or "",
-                "description": line.description or line.entry.description or "",
+                "date": edate.strftime("%Y-%m-%d") if edate else "",
+                "voucher": vno or "",
+                "description": ldesc or edesc or "",
                 "debit": float(dr) if dr else 0,
                 "credit": float(cr) if cr else 0,
                 "balance": float(balance),
@@ -1142,6 +1196,13 @@ def label_pl():
     from datetime import date as _date
     labels_all = ProjectLabel.query.order_by(ProjectLabel.name).all()
     today = _date.today()
+    # Nothing is calculated until the report is asked for (View / export).
+    if not any(k in request.args for k in ("from", "to", "label_id", "format", "run")):
+        return render_template("finance/label_pl.html", loaded=False, rows=[], net_profit=0,
+                               labels=[], labels_all=labels_all, picked=[], label_nets=[],
+                               unlabelled_net=None,
+                               from_str=_date(today.year, 1, 1).strftime("%Y-%m-%d"),
+                               to_str=today.strftime("%Y-%m-%d"))
     from_date = _parse_date(request.args.get("from", "")) or _date(today.year, 1, 1)
     to_date = _parse_date(request.args.get("to", "")) or today
     picked = [int(x) for x in request.args.getlist("label_id") if str(x).isdigit()]
@@ -1187,7 +1248,7 @@ def label_pl():
                                 filters=filters, row_kinds=kinds, mono_col=0,
                                 file_period=_file_period(from_date, to_date))
 
-    return render_template("finance/label_pl.html", rows=rows, net_profit=net,
+    return render_template("finance/label_pl.html", loaded=True, rows=rows, net_profit=net,
                            labels=labels, labels_all=labels_all, picked=picked,
                            label_nets=nets,
                            unlabelled_net=unlabelled_net,
@@ -1729,11 +1790,8 @@ def _cash_flow_direct(from_date, to_date, label_ids=None):
                   for name, v in sorted(groups["financing"].items())]
 
     def cash_balance(as_of):
-        total = Decimal("0")
-        for cid in cash_ids:
-            dr, cr = _get_account_balance(cid, as_of, label_ids=label_ids)
-            total += dr - cr
-        return float(total)
+        dr, cr = _sum_balances(cash_ids, as_of, label_ids=label_ids)
+        return float(dr - cr)
     opening_cash = cash_balance(opening_cutoff)
     closing_cash = cash_balance(to_date)
     return op_items, inv_items, fin_items, opening_cash, closing_cash
@@ -1837,11 +1895,8 @@ def cash_flow():
                     if (a.effective_cash_flow_activity() or "") == "cash" and a.level >= 5]
 
         def cash_balance(as_of):
-            total = Decimal("0")
-            for cid in cash_ids:
-                dr, cr = _get_account_balance(cid, as_of, label_ids=label_ids)
-                total += dr - cr
-            return float(total)
+            dr, cr = _sum_balances(cash_ids, as_of, label_ids=label_ids)
+            return float(dr - cr)
         opening_cash = cash_balance(opening_cutoff)
         closing_cash = cash_balance(to_date)
 

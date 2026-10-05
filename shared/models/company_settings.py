@@ -41,12 +41,21 @@ class CompanyInfo(db.Model):
             # No active company (login page, boot): return an unsaved default
             # rather than querying a tenant-scoped table (which fails closed).
             return cls()
+        # Once per request: every formatted amount on a page asks for the
+        # company's number format through here, which was one query per
+        # number (390 on a trial balance).
+        from flask import g, has_app_context
+        cache = getattr(g, "_company_info", None) if has_app_context() else None
+        if cache is not None and cache[0] == cid:
+            return cache[1]
         c = cls.query.filter_by(company_id=cid).first()
         if not c:
             c = cls(company_id=cid, company_name="SolarKon Energy Solutions")
             db.session.add(c)
             # Flush only this row: never commit another caller's pending work.
             db.session.flush(objects=[c])
+        if has_app_context():
+            g._company_info = (cid, c)
         return c
 
 

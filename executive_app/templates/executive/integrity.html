@@ -17,10 +17,12 @@
 {% endblock %}
 {% block actions %}
 {% from "partials/export.html" import export_buttons %}
-{{ export_buttons(("excel", "pdf", "csv")) }}
+{% if loaded %}{{ export_buttons(("excel", "pdf", "csv")) }}{% endif %}
+<a class="btn btn-primary btn-sm" href="?run=1" id="runChecks">{{ 'Run again' if loaded else 'Run checks' }}</a>
 {% endblock %}
 {% block content %}
 <div class="exr">
+{% if loaded %}
   <div class="bi-banner {{ 'ok' if all_ok else 'bad' }}">
     <span class="dot" aria-hidden="true"></span>
     <span>{% if all_ok %}All checks pass — the general ledger agrees with stock, assets and documents.{% else %}{{ checks|rejectattr('ok')|list|length }} check(s) need attention.{% endif %}</span>
@@ -66,5 +68,9 @@
   {% else %}
   <p class="bi-detail">No issue has been re-costed. Re-costings happen when a document is back-dated, or an earlier one is corrected or reversed.</p>
   {% endif %}
+{% else %}
+  <p class="bi-intro">Each document posts to its own register and to the general ledger. These checks prove both halves still match after every back-dated entry, edit and reversal.</p>
+  <div class="report-wait" role="status" style="border:1px dashed var(--border,#d9dce0);border-radius:12px;padding:36px 20px;text-align:center;color:var(--muted,#5b6068);font-size:14px;background:var(--card,#fff)"><b style="display:block;color:var(--text,#17181a);font-size:15px;margin-bottom:4px">Press Run checks to test the books</b>Trial balance, the reporting table, stock, cost layers, fixed assets and documents are each compared with the general ledger.</div>
+{% endif %}
 </div>
 {% endblock %}

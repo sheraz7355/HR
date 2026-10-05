@@ -282,6 +282,149 @@
     if (pt && pt.value === '') { var o0 = pt.querySelector('option[value=""]'); if (o0) o0.textContent = '—'; }
   }
 
+  // ── plain language: options panel, mode note, charge editor ──────────
+  // The calculation code names its modes "Combined / Per line / Per item"
+  // and its sections "1 · Discount". People think "whole invoice / each
+  // line". Text only — values, ids and data-value attributes are untouched.
+  var WORDS = [
+    [/\bCombined\b/g, 'Whole invoice'], [/\bPer line\b/g, 'Each line'],
+    [/\bPer item\b/g, 'Spread over lines'], [/\bper item\b/g, 'spread over lines'],
+    [/\bW\/H\b/g, 'Withholding'], [/\bOn\b/g, 'on'], [/\bOff\b/g, 'off']
+  ];
+  function plain(t) { WORDS.forEach(function (w) { t = t.replace(w[0], w[1]); }); return t; }
+  var LABELS = {
+    'Scope': 'Apply to', 'Method': 'Enter discount as', 'Sales tax scope': 'Apply sales tax to',
+    'Sales Tax % (combined)': 'Sales tax rate (%)', 'Further Tax (sales only)': 'Further tax',
+    'Further Tax %': 'Further tax rate (%)', 'Withholding Tax': 'Withholding tax', 'WHT %': 'Withholding rate (%)',
+    'Default scope for new charges': 'New charges apply to', 'Default distribution (per-item charges)': 'Spread new charges by',
+    'Default tax bases for billed charges': 'Taxes on new billed charges', 'Invoice Template': 'Print design', 'Copies': 'Copies to print',
+    'Input tax scope': 'Apply input tax to', 'Input Tax % (combined)': 'Input tax rate (%)',
+    'Carriage columns (commission / freight / loading)': 'Commission, freight and loading'
+  };
+  var SECTION_HELP = {
+    'Discount': 'Give one discount on the whole invoice, or a discount on each line.',
+    'Additional charges': 'Defaults for freight, installation and other charges you add.',
+    'Taxes': 'Sales tax for the whole invoice or line by line, plus further and withholding tax.',
+    'Expenses': 'Commission, freight and loading on the whole bill or on each line.',
+    'Columns & fields': 'Extra columns and what the printed copy looks like.'
+  };
+  function relabelPanel() {
+    $$('#sidePanel .acc-h > span:first-child').forEach(function (sp) {
+      if (sp.dataset.plain) return;
+      var t = sp.textContent.replace(/^\s*\d+\s*·\s*/, '').trim();
+      sp.textContent = t; sp.dataset.plain = '1';
+      var help = SECTION_HELP[t] || SECTION_HELP[t.replace(/^Additional /, 'Additional ')];
+      var body = sp.closest('.accordion') && sp.closest('.accordion').querySelector('.acc-b');
+      if (help && body && !body.querySelector('.acc-help')) {
+        var p = document.createElement('p'); p.className = 'acc-help'; p.textContent = help; body.insertBefore(p, body.firstChild);
+      }
+    });
+    $$('#sidePanel .lbl').forEach(function (l) { var t = l.textContent.trim(); if (LABELS[t]) l.textContent = LABELS[t]; });
+    $$('#sidePanel .pill-b').forEach(function (b) { b.textContent = plain(b.textContent); });
+    $$('#sidePanel .acc-sum').forEach(function (s) { s.textContent = plain(s.textContent); });
+    var dn = $('#discMethodNote'); if (dn) dn.textContent = plain(dn.textContent).replace('below the table', 'in the summary').replace('the total is a rollup', 'the summary adds them up');
+    $$('#sidePanel select option').forEach(function (o) { if (/^(Combined|Per item)$/.test(o.textContent.trim())) o.textContent = plain(o.textContent); });
+  }
+  // Mode note above the grid: say only what differs from the default.
+  function modeNote() {
+    var box = $('#modeChips'); if (!box) return;
+    var on = [];
+    $$('#modeChips .chip:not(.chip-off)').forEach(function (c) {
+      var k = (c.querySelector('.chip-k') || {}).textContent || '';
+      var v = c.textContent.replace(k, '').trim();
+      on.push(plain(k.charAt(0) + k.slice(1).toLowerCase() + ': ' + v));
+    });
+    var note = $('#modeNote');
+    if (!note) { note = document.createElement('button'); note.type = 'button'; note.id = 'modeNote'; note.className = 'mode-note';
+      note.addEventListener('click', function () { if (window.openSidePanel) openSidePanel(); });
+      box.parentNode.insertBefore(note, box); }
+    note.textContent = on.length ? on.join(' · ') : '';
+    note.hidden = !on.length;
+    note.title = 'Change in Invoice options';
+  }
+  ['updatePanelSummaries', 'renderChips'].forEach(function (fn) {
+    if (typeof window[fn] !== 'function') return;
+    var orig = window[fn];
+    window[fn] = function () { var r = orig.apply(this, arguments); relabelPanel(); modeNote(); return r; };
+  });
+  relabelPanel(); modeNote();
+
+  // Charge editor: the treatment is a choice between three plain outcomes,
+  // shown as cards, not a select of accounting jargon. The select stays (hidden)
+  // and still drives the existing handler, so nothing about saving changes.
+  var TREAT = DOC.kind === 'purchase' ? {
+    bill: ['Supplier bills it', 'A separate charge on this bill, added to what you owe.'],
+    absorb: ['Add to stock cost', 'Spread into the cost of the items received, like carriage inward.'],
+    expense: ['We bear it', 'Posts to the expense ledger only; stock cost is unchanged.']
+  } : {
+    bill: ['Bill the customer', 'Printed on the invoice and added to the total.'],
+    absorb: ['Add to item prices', 'Spread into the line amounts; nothing separate prints.'],
+    expense: ['Company expense', 'The customer is not charged; posts to the expense ledger only.']
+  };
+  var CHG_LABELS = {
+    'Charge type — expense ledger': 'Charge account', 'Amount': 'Amount', 'Scope': 'Apply to',
+    'Distribution across lines': 'How to spread it', 'Treatment': 'Who pays', 'Include in tax base': 'Taxes on this charge'
+  };
+  function enhanceCharges() {
+    $$('#chargesList .chg-card').forEach(function (card, idx) {
+      card.querySelectorAll('.chg-lbl').forEach(function (l) { var t = l.textContent.trim(); if (CHG_LABELS[t]) l.textContent = CHG_LABELS[t]; });
+      card.querySelectorAll('.chg-checks span').forEach(function (sp) { sp.textContent = sp.textContent.replace('W/H tax', 'Withholding tax'); });
+      card.querySelectorAll('.chg-scope').forEach(function (b) { b.textContent = b.dataset.v === 'individual' ? 'Spread over lines' : 'Whole invoice'; });
+      var sel = card.querySelector('.chg-treatment');
+      if (sel && !card.querySelector('.chg-treat')) {
+        var wrap = document.createElement('div'); wrap.className = 'chg-treat'; wrap.setAttribute('role', 'radiogroup');
+        wrap.setAttribute('aria-label', 'Who pays for this charge');
+        Array.prototype.forEach.call(sel.options, function (o) {
+          var t = TREAT[o.value] || [o.textContent, ''];
+          var lab = document.createElement('label'); lab.className = 'chg-treat-opt' + (sel.value === o.value ? ' on' : '');
+          lab.innerHTML = '<input type="radio" name="chgTreat' + idx + '" value="' + o.value + '"' + (sel.value === o.value ? ' checked' : '') + '>' +
+            '<span class="ct-t"></span><span class="ct-d"></span>';
+          lab.querySelector('.ct-t').textContent = t[0]; lab.querySelector('.ct-d').textContent = t[1];
+          lab.querySelector('input').addEventListener('change', function () {
+            sel.value = o.value; sel.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          wrap.appendChild(lab);
+        });
+        sel.style.display = 'none';
+        sel.parentNode.appendChild(wrap);
+        // Who pays is the first decision after what and how much: move it up.
+        var bot = card.querySelector('.chg-bot'), top = card.querySelector('.chg-top');
+        var treatBlock = sel.parentNode;
+        if (bot && top) { var row = document.createElement('div'); row.className = 'chg-who'; row.appendChild(treatBlock); top.after(row); }
+      }
+      var none = card.querySelector('.chg-sec .chg-none');
+      if (none && /single invoice-level/.test(none.textContent)) none.textContent = 'One amount for the whole invoice — choose “Spread over lines” to split it.';
+    });
+    var list = $('#chargesList');
+    if (list && !list.children.length) {
+      list.innerHTML = '<div class="chg-empty"><b>No charges yet</b><span>Freight, installation, packing — add one and choose who pays for it.</span></div>';
+    }
+  }
+  if (typeof window.renderCharges === 'function') {
+    var _rch = window.renderCharges;
+    window.renderCharges = function () { var r = _rch.apply(this, arguments); enhanceCharges(); return r; };
+  }
+
+  // Summary rail quick links.
+  var addC = $('#sumAddCharge');
+  if (addC) {
+    if (!DOC.editable) addC.parentNode.style.display = 'none';
+    addC.addEventListener('click', function () {
+      if (typeof openChargesModal !== 'function') return;
+      openChargesModal();
+      if (typeof charges !== 'undefined' && (!charges.length || charges.every(function (c) { return !(parseFloat(c.amount) > 0); })) &&
+          typeof addChargeRow === 'function' && !charges.length) addChargeRow();
+    });
+  }
+  var addT = $('#sumAddTax');
+  if (addT) addT.addEventListener('click', function () {
+    if (typeof openSidePanel !== 'function') return;
+    openSidePanel();
+    $$('#sidePanel .acc-h').forEach(function (h) {
+      if (/Tax/.test(h.textContent) && !h.classList.contains('open') && typeof toggleAccordion === 'function') toggleAccordion(h);
+    });
+  });
+
   var bar0 = $('.ab');
   rebuildActionBar(bar0 ? bar0.dataset.state : 'new');
 })();

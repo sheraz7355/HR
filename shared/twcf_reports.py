@@ -72,19 +72,25 @@ def _cash_account_ids():
             and a.level >= 5]
 
 
+def _glb_day(d):
+    """A report date (date or datetime) as a calendar day, for the reporting
+    table (gl_daily_balances)."""
+    from datetime import datetime as _dt
+    return d.date() if isinstance(d, _dt) else d
+
+
 def opening_cash(as_of):
     """Actual cash and equivalents at the end of ``as_of`` (inclusive)."""
     ids = _cash_account_ids()
     if not ids:
         return 0.0
+    from shared.models.gl_balance import GLDailyBalance as G
     q = (db.session.query(
-            db.func.coalesce(db.func.sum(JournalLine.debit), 0),
-            db.func.coalesce(db.func.sum(JournalLine.credit), 0))
-         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-         .filter(JournalEntry.is_posted == True,   # noqa: E712
-                 JournalLine.account_id.in_(ids)))
+            db.func.coalesce(db.func.sum(G.debit), 0),
+            db.func.coalesce(db.func.sum(G.credit), 0))
+         .filter(G.account_id.in_(ids)))
     if as_of:
-        q = q.filter(JournalEntry.entry_date <= _eod(as_of))
+        q = q.filter(G.day <= _glb_day(as_of))
     dr, cr = q.first()
     return _f(dr) - _f(cr)
 
@@ -94,14 +100,12 @@ def actual_net_cash(from_date, to_date):
     ids = _cash_account_ids()
     if not ids:
         return 0.0
+    from shared.models.gl_balance import GLDailyBalance as G
     q = (db.session.query(
-            db.func.coalesce(db.func.sum(JournalLine.debit), 0),
-            db.func.coalesce(db.func.sum(JournalLine.credit), 0))
-         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-         .filter(JournalEntry.is_posted == True,   # noqa: E712
-                 JournalEntry.entry_date >= from_date,
-                 JournalEntry.entry_date <= _eod(to_date),
-                 JournalLine.account_id.in_(ids)))
+            db.func.coalesce(db.func.sum(G.debit), 0),
+            db.func.coalesce(db.func.sum(G.credit), 0))
+         .filter(G.day >= _glb_day(from_date), G.day <= _glb_day(to_date),
+                 G.account_id.in_(ids)))
     dr, cr = q.first()
     return _f(dr) - _f(cr)
 

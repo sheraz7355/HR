@@ -4,7 +4,8 @@
 {% set vtype = v.voucher_type if v else (initial_type if initial_type else 'CPV') %}
 {% set is_approved = v and v.status == 'approved' %}
 {% set editable = not is_approved %}
-{% set form_active = editable and (is_new or edit_mode) %}
+{# Drafts open ready to edit: the old read-only view needed an extra "Edit" click. #}
+{% set form_active = editable %}
 {% set is_cb = vtype in ('CPV','CRV','BPV','BRV') %}
 {% set is_receipt = vtype in ('CRV','BRV') %}
 {% set cb_label = {'CPV':'Cash Account','CRV':'Cash Account','BPV':'Bank Account','BRV':'Bank Account'} %}
@@ -158,164 +159,305 @@
   .vtb th,.vtb td{border:1px solid var(--v2-line-2);padding:4px 6px}
   .vinp{border:none;background:transparent}
 }
+/* ── Voucher layout v3: header + actions, type picker, fields, entries,
+   summary rail with a live entry preview. ── */
+.vwrap{max-width:1320px}
+.vhead{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:4px 0 16px}
+.vhead-id{min-width:0}
+.vback{display:inline-block;font-size:12.5px;color:var(--v2-muted);text-decoration:none;margin-bottom:6px}
+.vback:hover{color:var(--v2-ink);text-decoration:underline}
+.vtitle{margin:0;font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:var(--v2-ink);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vchip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;letter-spacing:.02em}
+.vchip-draft{background:var(--v2-warn-bg);color:var(--v2-warn)}
+.vchip-ok{background:var(--v2-pos-bg);color:var(--v2-pos)}
+.vsub{margin:6px 0 0;font-size:13px;color:var(--v2-muted)}
+.vactions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.vactions .vbtn{min-height:38px}
+.vlock{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;
+  background:var(--v2-pos-bg);color:var(--v2-pos);border:1px solid var(--v2-pos)}
+.vlock b{font-weight:600}
+.verr{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;background:var(--v2-neg-bg);color:var(--v2-neg);border:1px solid var(--v2-neg)}
+.verr[hidden]{display:none}
+.vmore{position:relative}
+.vmenu{position:absolute;right:0;top:calc(100% + 6px);min-width:220px;background:var(--v2-surface);border:1px solid var(--v2-line-2);
+  border-radius:10px;box-shadow:var(--v2-pop);padding:6px;z-index:50;display:none}
+.vmore.open .vmenu{display:block}
+.vmenu a,.vmenu button{display:flex;justify-content:space-between;gap:14px;align-items:center;width:100%;padding:9px 10px;border:0;background:transparent;
+  border-radius:7px;font:inherit;font-size:13px;color:var(--v2-ink);text-decoration:none;cursor:pointer;text-align:left}
+.vmenu a:hover,.vmenu button:hover,.vmenu a:focus-visible,.vmenu button:focus-visible{background:var(--v2-hover);outline:none}
+.vmenu .danger{color:var(--v2-neg)}
+.vmenu .hint{font-size:11px;color:var(--v2-faint)}
+.vmenu hr{border:0;border-top:1px solid var(--v2-line);margin:5px 4px}
+.vmenu .only-sm{display:none}
+
+/* type picker: a segmented control, one line each */
+.vtype-pills{display:flex;gap:6px;flex-wrap:wrap;padding:4px;border:1px solid var(--v2-line);border-radius:12px;background:var(--v2-sunk);margin-bottom:14px}
+.vtype-pill{flex:1 1 120px;min-width:0;padding:9px 12px;border:1px solid transparent!important;border-radius:9px!important;background:transparent;
+  font-size:13px;font-weight:600;text-align:left;color:var(--v2-ink)}
+.vtype-pill small{display:block;font-size:11.5px;font-weight:400;color:var(--v2-muted);opacity:1;margin-top:1px}
+.vtype-pill.active{background:var(--v2-surface);border-color:var(--v2-line-2)!important;box-shadow:var(--v2-shadow)}
+.vtype-pill:hover:not(.active){background:var(--v2-hover)}
+
+/* two columns: work on the left, totals and the entry preview on the right */
+.vbody{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1340px){
+  .vbody{grid-template-columns:minmax(0,1fr) 340px}
+  .vrail{position:sticky;top:16px}
+}
+.vmain{min-width:0;display:flex;flex-direction:column;gap:0}
+.vfields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.vfields-cb{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr) minmax(0,1fr)}
+.vlbl{font-size:12px}
+.vlbl-sub{font-weight:400;color:var(--v2-faint);margin-left:4px}
+.vbal{margin-top:6px;font-size:12px;color:var(--v2-muted);display:flex;gap:6px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.vbal b{color:var(--v2-ink);font-weight:600}
+.vbal .warn{color:var(--v2-neg);font-weight:600}
+.vcard-h{padding:12px 16px}
+.vcard-title{font-size:14px;font-weight:650}
+.vtb .code-cell{width:128px}
+.vtb .code-cell .ri{font-size:11.5px;min-width:118px}
+
+.vsum-h{margin:0 0 6px;font-size:15px;font-weight:650;color:var(--v2-ink)}
+.vrail .vsummary{padding:0;border:0;background:transparent}
+.vrail .vsum-line{justify-content:space-between;padding:6px 0}
+.vrail .vsum-line .a{min-width:0}
+.vrail .contra-line{justify-content:space-between}
+.vsum-diff{border-top:1px solid var(--v2-line);margin-top:4px;padding-top:8px!important}
+.vpre-sub{margin:0 0 10px;font-size:12px;color:var(--v2-muted)}
+.vpre{display:flex;flex-direction:column;font-size:12.5px}
+.vpre-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:6px;padding:6px 0;border-top:1px solid var(--v2-line);align-items:baseline}
+.vpre-row:first-child{border-top:0}
+.vpre-side{font-size:11px;font-weight:600;color:var(--v2-muted)}
+.vpre-row.cr .vpre-acc{padding-left:14px}
+.vpre-acc{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--v2-ink)}
+.vpre-acc small{color:var(--v2-faint);font-family:ui-monospace,monospace;margin-right:6px}
+.vpre-amt{font-variant-numeric:tabular-nums;font-weight:600}
+.vpre-tot{display:flex;justify-content:space-between;padding-top:8px;margin-top:2px;border-top:1.5px solid var(--v2-ink);font-weight:650;font-variant-numeric:tabular-nums}
+.vpre-ok{margin-top:6px;font-size:12px;color:var(--v2-pos)}
+.vpre-bad{margin-top:6px;font-size:12px;color:var(--v2-neg)}
+.vpre-empty{font-size:12.5px;color:var(--v2-muted);padding:8px 0}
+
+/* in-page confirm */
+.vmodal{position:fixed;inset:0;z-index:3500;background:rgba(9,11,13,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+.vmodal[hidden]{display:none}
+.vmodal-b{background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:14px;padding:22px;width:min(440px,100%);box-shadow:var(--v2-pop)}
+.vmodal-b h3{margin:0 0 6px;font-size:16px;font-weight:650;color:var(--v2-ink)}
+.vmodal-b p{margin:0 0 18px;font-size:13.5px;line-height:1.55;color:var(--v2-body)}
+.vmodal-acts{display:flex;justify-content:flex-end;gap:8px}
+
+/* read-only voucher reads as a document */
+.is-locked .vinp:disabled{background:transparent;border-color:transparent;color:var(--v2-ink);padding-left:0}
+.is-locked .vinp:disabled::placeholder{color:var(--v2-faint)}
+
+@media (max-width:900px){.vfields,.vfields-cb{grid-template-columns:1fr}}
+@media (max-width:768px){
+  .vtitle{font-size:21px}
+  .vactions{position:fixed;left:0;right:0;bottom:0;z-index:1500;flex-wrap:nowrap;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+    background:var(--v2-surface);border-top:1px solid var(--v2-line);box-shadow:0 -6px 18px -12px rgba(0,0,0,.35)}
+  .vactions > .vbtn,.vactions > .vmore{flex:1 1 0}
+  .vactions .vbtn{width:100%;justify-content:center;padding:0 10px}
+  .vactions .hide-sm{display:none}
+  .vmenu{top:auto;bottom:calc(100% + 8px)}
+  .vmenu .only-sm{display:flex}
+  .vwrap{padding-bottom:80px}
+  body:has(.vactions) .gle-fab{bottom:84px}
+}
+@media print{.vhead .vactions,.vtype-pills,.vrail,.vlock,.vback{display:none!important}}
 </style>
 {% endblock %}
 {% block content %}
-<div class="vwrap">
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{{ gl_entry_button(v.voucher_type if v else vtype, v.id if v else None) }}
+<div class="vwrap{{ ' is-locked' if is_approved else '' }}">
 {% with doc_title = labels[vtype] %}{% include '_print_header.html' %}{% endwith %}
 <form method="POST" id="voucherForm">
   <input type="hidden" name="action" id="formAction" value="save">
   <input type="hidden" name="voucher_type" id="voucherTypeInput" value="{{ vtype }}">
 
   {% if is_approved %}
-  <div class="ap-banner">
-    <span style="font-weight:700;">&#10003; APPROVED &mdash; locked</span>
-    <span>{{ v.approver.full_name if v.approver else '' }} @ {{ v.approved_at.strftime('%Y-%m-%d %H:%M') if v.approved_at else '' }}</span>
+  <div class="vlock" role="status">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+    <span><b>Approved and posted</b> — {% if v.approver %}by {{ v.approver.full_name }} {% endif %}{% if v.approved_at %}on {{ v.approved_at.strftime('%d %b %Y, %H:%M') }}{% endif %}. Unapprove from <b>More</b> to change it.</span>
+  </div>
+  {% endif %}
+  <div class="verr" id="vErr" role="alert" hidden></div>
+
+  <header class="vhead">
+    <div class="vhead-id">
+      <a class="vback" href="{{ url_for('accounting.voucher_list') }}">&larr; Vouchers</a>
+      <h1 class="vtitle">{{ v.voucher_number if v else 'New ' ~ labels[vtype]|lower }}
+        <span class="vchip {{ 'vchip-ok' if is_approved else 'vchip-draft' }}">{{ 'Approved' if is_approved else 'Draft' }}</span>
+      </h1>
+      <p class="vsub">{{ labels[vtype] }}{% if is_cb %} · {{ 'money in' if is_receipt else 'money out' }}{% else %} · debits must equal credits{% endif %}</p>
+    </div>
+    <div class="vactions">
+      {% if is_new and editable %}
+        <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o hide-sm">Cancel</a>
+        <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save draft</button>
+        <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
+      {% elif v and editable %}
+        <div class="vmore">
+          <button type="button" class="vbtn vbtn-o vmore-btn" aria-haspopup="menu" aria-expanded="false">More &#9662;</button>
+          <div class="vmenu" role="menu">
+            <a role="menuitem" href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank">Print</a>
+            <a role="menuitem" href="{{ url_for('accounting.voucher_form', type=vtype) }}">New {{ labels[vtype]|lower }}</a>
+            <a role="menuitem" class="only-sm" href="{{ url_for('accounting.voucher_list') }}">Back to vouchers</a>
+            <hr>
+            <button role="menuitem" type="submit" form="vDeleteForm" class="danger" data-confirm="Delete this draft voucher? This cannot be undone." data-confirm-title="Delete draft" data-confirm-ok="Delete">Delete draft</button>
+          </div>
+        </div>
+        <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o hide-sm">Print</a>
+        <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save</button>
+        <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Approve</button>
+      {% elif is_approved and v %}
+        <div class="vmore">
+          <button type="button" class="vbtn vbtn-o vmore-btn" aria-haspopup="menu" aria-expanded="false">More &#9662;</button>
+          <div class="vmenu" role="menu">
+            <a role="menuitem" href="{{ url_for('accounting.voucher_form', type=vtype) }}">New {{ labels[vtype]|lower }}</a>
+            <a role="menuitem" class="only-sm" href="{{ url_for('accounting.voucher_list') }}">Back to vouchers</a>
+            <hr>
+            <button role="menuitem" type="submit" form="vUnapproveForm" class="danger" data-confirm="Unapprove this voucher? Its journal is reversed and it becomes an editable draft again." data-confirm-title="Unapprove voucher" data-confirm-ok="Unapprove">Unapprove <span class="hint">reverses the posting</span></button>
+          </div>
+        </div>
+        <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o hide-sm">Back to vouchers</a>
+        <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-s">Print</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if is_new and editable %}
+  <div class="vtype-pills" role="group" aria-label="Voucher type">
+    {% for vt, vn, vd in [('CPV','Cash Payment','Pay out of cash'),('CRV','Cash Receipt','Receive into cash'),('BPV','Bank Payment','Pay from a bank account'),('BRV','Bank Receipt','Receive into a bank account'),('JV','Journal','Any debit / credit')] %}
+    <button type="button" class="vtype-pill {{ 'active' if vt == vtype else '' }}" data-type="{{ vt }}" aria-pressed="{{ 'true' if vt == vtype else 'false' }}" title="{{ vd }}">{{ vt }}<small>{{ vn }}</small></button>
+    {% endfor %}
   </div>
   {% endif %}
 
-  {# Removed: the workflow banner added noise above the form. #}
-  <!--
-    <span class="flow-separator" aria-hidden="true">→</span>
-    <div class="flow-step"><span class="flow-step-no">2</span><div class="flow-step-copy"><strong>Add transaction lines</strong><span>Search accounts and enter amounts</span></div></div>
-    <span class="flow-separator" aria-hidden="true">→</span>
-    -->
-
-  <div class="vcard">
-    <div class="vcard-h"><span><span class="vcard-title">Voucher details</span><span class="vcard-subtitle">Header and transaction context</span></span><span class="vdoc-badge">{{ vtype }}</span></div>
-    <div class="vcard-b">
-      <div class="vtype-pills" style="margin-bottom:14px;">
-        {% for vt, vn in [('CPV','Cash Payment'),('CRV','Cash Receipt'),('BPV','Bank Payment'),('BRV','Bank Receipt'),('JV','Journal')] %}
-        <button type="button" class="vtype-pill {{ 'active' if vt == vtype else '' }}" data-type="{{ vt }}" {{ 'disabled' if not is_new or is_approved else '' }}>{{ vt }}<small>{{ vn }}</small></button>
-        {% endfor %}
-      </div>
-      <div class="grid-3">
-        <div>
-          <label class="vlbl" for="voucherDate">Date &amp; Time</label>
-          <input type="datetime-local" name="voucher_date" class="vinp" id="voucherDate"
-                 value="{{ v.voucher_date.strftime('%Y-%m-%dT%H:%M') if v else now.strftime('%Y-%m-%dT%H:%M') }}"
-                 {{ 'disabled' if not form_active else '' }}>
-        </div>
-        <div id="cbAccountWrap" {{ 'style=display:none' if not is_cb else '' }}>
-          <label class="vlbl" for="cbSearch">{{ cb_label.get(vtype, 'Cash/Bank Account') }} <span style="color:var(--v2-neg)">*</span></label>
-          <div class="ac-wrap">
-            <input type="text" class="vinp" id="cbSearch" placeholder="Search cash/bank account..."
-                   value="{{ v.cash_bank_account.name if v and v.cash_bank_account else '' }}" autocomplete="off"
+  <div class="vbody">
+  <div class="vmain">
+    <section class="vcard">
+      <div class="vcard-b">
+        <div class="vfields {{ 'vfields-cb' if is_cb else '' }}">
+          <div>
+            <label class="vlbl" for="voucherDate">Date &amp; time</label>
+            <input type="datetime-local" name="voucher_date" class="vinp" id="voucherDate"
+                   value="{{ v.voucher_date.strftime('%Y-%m-%dT%H:%M') if v else now.strftime('%Y-%m-%dT%H:%M') }}"
                    {{ 'disabled' if not form_active else '' }}>
-            <input type="hidden" name="cash_bank_account_id" id="cbAccountId"
-                   value="{{ v.cash_bank_account_id if v else '' }}">
-            <div class="ac-dd" id="cbDropdown"></div>
           </div>
-        </div>
-        {% if is_cb %}
-        <div id="headLabelWrap">
-          <label class="vlbl" for="headLabelSearch">Header Label <span style="font-weight:400;text-transform:none;letter-spacing:0">(bank/cash line)</span></label>
-          <div class="ac-wrap">
-            <input type="hidden" name="label_id" id="headLabelId"
-                   value="{{ v.label_id if v and v.label_id is not none else '' }}">
-            <input type="text" class="vinp" id="headLabelSearch" placeholder="Search project label..."
-                   value="{{ v.label.name if v and v.label else '' }}" autocomplete="off"
-                   {{ 'disabled' if not form_active else '' }}>
-            <div class="ac-dd" id="headLabelDropdown"></div>
+          <div id="cbAccountWrap" {{ 'style=display:none' if not is_cb else '' }}>
+            <label class="vlbl" for="cbSearch">{{ cb_label.get(vtype, 'Cash/Bank Account') }} <span style="color:var(--v2-neg)">*</span></label>
+            <div class="ac-wrap">
+              <input type="text" class="vinp" id="cbSearch" placeholder="Search {{ 'bank' if vtype in ('BPV','BRV') else 'cash' }} accounts…"
+                     value="{{ v.cash_bank_account.name if v and v.cash_bank_account else '' }}" autocomplete="off"
+                     {{ 'disabled' if not form_active else '' }}>
+              <input type="hidden" name="cash_bank_account_id" id="cbAccountId"
+                     value="{{ v.cash_bank_account_id if v else '' }}">
+              <div class="ac-dd" id="cbDropdown"></div>
+            </div>
+            <div class="vbal" id="cbBalance" hidden></div>
           </div>
+          {% if is_cb %}
+          <div id="headLabelWrap">
+            <label class="vlbl" for="headLabelSearch">Project label <span class="vlbl-sub">cash / bank line</span></label>
+            <div class="ac-wrap">
+              <input type="hidden" name="label_id" id="headLabelId"
+                     value="{{ v.label_id if v and v.label_id is not none else '' }}">
+              <input type="text" class="vinp" id="headLabelSearch" placeholder="None"
+                     value="{{ v.label.name if v and v.label else '' }}" autocomplete="off"
+                     {{ 'disabled' if not form_active else '' }}>
+              <div class="ac-dd" id="headLabelDropdown"></div>
+            </div>
+          </div>
+          {% endif %}
         </div>
-        {% endif %}
-        <div>
-          <label class="vlbl">Voucher #</label>
-          <input type="text" class="vinp" readonly value="{{ v.voucher_number if v else '(auto)' }}">
+        <div style="margin-top:12px">
+          <label class="vlbl" for="notes">Narration <span class="vlbl-sub">prints on the voucher</span></label>
+          <textarea name="notes" class="vinp" id="notes" rows="2" placeholder="What is this voucher for?" {{ 'disabled' if not form_active else '' }}>{{ v.notes if v else '' }}</textarea>
         </div>
       </div>
-      <div style="margin-top:12px">
-        <label class="vlbl" for="notes">Notes</label>
-        <textarea name="notes" class="vinp" id="notes" rows="2" {{ 'disabled' if not form_active else '' }}>{{ v.notes if v else '' }}</textarea>
-      </div>
-    </div>
-  </div>
+    </section>
 
-  <div class="vcard">
-    <div class="vcard-h">
-      <span><span class="vcard-title">Entries</span><span class="vcard-subtitle">Add the accounts affected by this voucher</span></span>
-      <span id="jvBalanceChip"></span>
-    </div>
-    <div class="vtb-w">
-      <table class="vtb" id="entriesTable">
-        <thead>
-          <tr>
-            <th style="width:30px">#</th>
-            <th style="width:78px">Code</th>
-            <th style="min-width:130px">Account</th>
-            <th style="min-width:280px">Description</th>
-            {% if per_line_labeling %}<th style="min-width:150px">Label</th>{% endif %}
-            {% if is_cb %}
-            <th class="num amt-col">Amount <span class="side-tag {{ 'side-cr' if is_receipt else 'side-dr' }}" style="font-size:9px;">{{ 'CR' if is_receipt else 'DR' }}</span></th>
-            {% else %}
-            <th class="num amt-col">Debit</th>
-            <th class="num amt-col">Credit</th>
-            {% endif %}
-            <th style="width:60px"></th>
-          </tr>
-        </thead>
-        <tbody id="entriesBody"></tbody>
-      </table>
-    </div>
-    {% if form_active %}
-    <div class="grid-acts">
-      <button type="button" class="bsm" id="addRowBtn">+ Add line</button>
-      <button type="button" class="bsm bsm-d" id="clearRowsBtn">&#10005; Clear all</button>
-      <span class="kbd-hint"><kbd>Space</kbd> search accounts &bull; <kbd>Enter</kbd> next / new line</span>
-    </div>
-    {% endif %}
-    <div class="vsummary">
-      {% if is_cb %}
-      <div class="vsum-line"><span class="l">Total {{ 'received' if is_receipt else 'paid' }}</span><span class="a" id="sumTotal">0.00</span></div>
-      <div class="contra-line">
-        <span>&#8618; <span id="contraCb">{{ v.cash_bank_account.name if v and v.cash_bank_account else 'Cash/Bank' }}</span> will be automatically <b>{{ 'debited' if is_receipt else 'credited' }}</b></span>
-        <span class="a" id="contraAmt" style="font-weight:700;font-variant-numeric:tabular-nums;">0.00</span>
+    <section class="vcard">
+      <div class="vcard-h">
+        <span class="vcard-title">{{ 'Paid to' if is_cb and not is_receipt else ('Received from' if is_receipt else 'Entries') }}</span>
+        <span id="jvBalanceChip"></span>
       </div>
-      {% else %}
-      <div class="vsum-line"><span class="l">Total Debit</span><span class="a" id="sumDr">0.00</span></div>
-      <div class="vsum-line"><span class="l">Total Credit</span><span class="a" id="sumCr">0.00</span></div>
-      <div class="vsum-line"><span class="l">Difference</span><span class="a" id="sumDiff">0.00</span></div>
+      <div class="vtb-w">
+        <table class="vtb" id="entriesTable">
+          <thead>
+            <tr>
+              <th style="width:30px">#</th>
+              <th style="width:128px">Code</th>
+              <th style="min-width:180px">Account</th>
+              <th style="min-width:220px">Description</th>
+              {% if per_line_labeling %}<th style="min-width:150px">Label</th>{% endif %}
+              {% if is_cb %}
+              <th class="num amt-col">Amount <span class="side-tag {{ 'side-cr' if is_receipt else 'side-dr' }}" style="font-size:9px;">{{ 'CR' if is_receipt else 'DR' }}</span></th>
+              {% else %}
+              <th class="num amt-col">Debit</th>
+              <th class="num amt-col">Credit</th>
+              {% endif %}
+              <th style="width:60px"></th>
+            </tr>
+          </thead>
+          <tbody id="entriesBody"></tbody>
+        </table>
+      </div>
+      {% if form_active %}
+      <div class="grid-acts">
+        <button type="button" class="bsm" id="addRowBtn">+ Add line</button>
+        <button type="button" class="bsm bsm-d" id="clearRowsBtn">&#10005; Clear all</button>
+        <span class="kbd-hint"><kbd>Space</kbd> search accounts &bull; <kbd>Enter</kbd> next / new line</span>
+      </div>
       {% endif %}
-    </div>
+    </section>
   </div>
 
+  <aside class="vrail" aria-label="Summary">
+    <section class="vcard vsumcard">
+      <div class="vcard-b">
+        <h2 class="vsum-h">Summary</h2>
+        <div class="vsummary">
+          {% if is_cb %}
+          <div class="vsum-line"><span class="l">Total {{ 'received' if is_receipt else 'paid' }}</span><span class="a" id="sumTotal">0.00</span></div>
+          <div class="contra-line">
+            <span>&#8618; <span id="contraCb">{{ v.cash_bank_account.name if v and v.cash_bank_account else 'Cash/Bank' }}</span> will be <b>{{ 'debited' if is_receipt else 'credited' }}</b></span>
+            <span class="a" id="contraAmt">0.00</span>
+          </div>
+          {% else %}
+          <div class="vsum-line"><span class="l">Total debit</span><span class="a" id="sumDr">0.00</span></div>
+          <div class="vsum-line"><span class="l">Total credit</span><span class="a" id="sumCr">0.00</span></div>
+          <div class="vsum-line vsum-diff"><span class="l">Difference</span><span class="a" id="sumDiff">0.00</span></div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+    <section class="vcard vpreview">
+      <div class="vcard-b">
+        <h2 class="vsum-h">{{ 'Posted entry' if is_approved else 'Entry preview' }}</h2>
+        <p class="vpre-sub">{{ 'What this voucher posted to the general ledger.' if is_approved else 'What will post to the general ledger on approval.' }}</p>
+        <div id="jePreview" class="vpre"><div class="vpre-empty">Add an account and an amount to see the entry.</div></div>
+      </div>
+    </section>
+  </aside>
+  </div>
 </form>
 
-<div class="vcard">
-  <div class="vab">
-    {% if is_new and editable %}
-    <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save</button>
-    <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
-    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o">Cancel</a>
+{% if v and editable %}
+<form method="POST" id="vDeleteForm" action="{{ url_for('accounting.delete_voucher', id=v.id) }}" hidden></form>
+{% endif %}
+{% if v and is_approved %}
+<form method="POST" id="vUnapproveForm" action="{{ url_for('accounting.unapprove_voucher', id=v.id) }}" hidden></form>
+{% endif %}
 
-    {% elif v and not is_new and not is_approved and not edit_mode %}
-    <button type="submit" form="voucherForm" class="vbtn vbtn-g" disabled>Save</button>
-    <a href="{{ url_for('accounting.voucher_form', id=v.id, edit=1) }}" class="vbtn vbtn-e">Edit</a>
-    <form method="POST" action="{{ url_for('accounting.approve_voucher', id=v.id) }}" style="display:inline">
-      <button type="submit" class="vbtn vbtn-s" onclick="return confirm('Approve this voucher?')">Approve</button>
-    </form>
-    <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o">Print</a>
-    <form method="POST" action="{{ url_for('accounting.delete_voucher', id=v.id) }}" style="display:inline" onsubmit="return confirm('Delete this voucher?')">
-      <button type="submit" class="vbtn vbtn-d">Delete</button>
-    </form>
-    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-g" style="pointer-events:none;">Cancel</a>
-
-    {% elif v and not is_new and editable and edit_mode %}
-    <button type="submit" form="voucherForm" class="vbtn vbtn-p" id="saveBtn">Save</button>
-    <button type="submit" form="voucherForm" class="vbtn vbtn-s" id="approveBtn">Save &amp; Approve</button>
-    <a href="{{ url_for('accounting.voucher_form', id=v.id) }}" class="vbtn vbtn-o">Cancel</a>
-
-    {% elif is_approved and v %}
-    <a href="{{ url_for('accounting.voucher_preview', id=v.id) }}" target="_blank" class="vbtn vbtn-o">Print</a>
-    <form method="POST" action="{{ url_for('accounting.unapprove_voucher', id=v.id) }}" style="display:inline">
-      <button type="submit" class="vbtn vbtn-d" onclick="return confirm('Unapprove this voucher? This will reverse journal entries.')">Unapprove</button>
-    </form>
-    <form method="POST" action="{{ url_for('accounting.delete_voucher', id=v.id) }}" style="display:inline" onsubmit="return confirm('Delete this voucher?')">
-      <button type="submit" class="vbtn vbtn-g" disabled>Delete</button>
-    </form>
-    <a href="{{ url_for('accounting.voucher_list') }}" class="vbtn vbtn-o">Cancel</a>
-    {% endif %}
+<div class="vmodal" id="vConfirm" role="dialog" aria-modal="true" aria-labelledby="vConfirmTitle" hidden>
+  <div class="vmodal-b">
+    <h3 id="vConfirmTitle">Confirm</h3>
+    <p id="vConfirmMsg"></p>
+    <div class="vmodal-acts">
+      <button type="button" class="vbtn vbtn-o" id="vConfirmCancel">Cancel</button>
+      <button type="button" class="vbtn vbtn-s" id="vConfirmOk">Continue</button>
+    </div>
   </div>
 </div>
 </div>
@@ -663,6 +805,151 @@ qs('#voucherForm').addEventListener('submit',function(e){
     qs('#entriesBody').innerHTML='';addRow({},true);
   });
   recalc();
+})();
+</script>
+<script>
+// ================= voucher UI v3 =================
+// Live entry preview, cash/bank balance before → after, the More menu, and
+// in-page confirm / error messages instead of the browser's alert/confirm.
+(function () {
+  var IS_APPROVED = {{ 'true' if is_approved else 'false' }};
+  var IS_PAYMENT = IS_CB && !IS_RECEIPT;
+  var errBox = qs('#vErr');
+  function showErr(m) {
+    if (!errBox) { return; }
+    errBox.textContent = m; errBox.hidden = false;
+    errBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  // The form's own validation reports through alert(); show it in the page.
+  window.alert = function (m) { showErr(String(m)); };
+  document.addEventListener('input', function () { if (errBox && !errBox.hidden) errBox.hidden = true; }, true);
+
+  // ── More menu ──
+  qsa('.vmore-btn').forEach(function (b) {
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var box = b.parentElement, open = !box.classList.contains('open');
+      qsa('.vmore.open').forEach(function (m) { m.classList.remove('open'); });
+      box.classList.toggle('open', open); b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+  });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.vmore')) qsa('.vmore.open').forEach(function (m) { m.classList.remove('open'); });
+  });
+
+  // ── in-page confirm ──
+  var modal = qs('#vConfirm'), pending = null;
+  function ask(title, msg, okText, onOk) {
+    qs('#vConfirmTitle').textContent = title; qs('#vConfirmMsg').textContent = msg;
+    qs('#vConfirmOk').textContent = okText || 'Continue';
+    pending = onOk; modal.hidden = false; qs('#vConfirmOk').focus();
+  }
+  function closeAsk() { modal.hidden = true; pending = null; }
+  qs('#vConfirmCancel').addEventListener('click', closeAsk);
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeAsk(); });
+  qs('#vConfirmOk').addEventListener('click', function () { var f = pending; closeAsk(); if (f) f(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { if (!modal.hidden) closeAsk(); qsa('.vmore.open').forEach(function (m) { m.classList.remove('open'); }); }
+  });
+  qsa('[data-confirm]').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      if (btn.dataset.confirmed === '1') return;
+      e.preventDefault();
+      ask(btn.dataset.confirmTitle || 'Confirm', btn.dataset.confirm, btn.dataset.confirmOk, function () {
+        var f = btn.form || document.getElementById(btn.getAttribute('form'));
+        if (f) f.submit();
+      });
+    });
+  });
+  // Approving posts to the ledger: say what will post, then submit the form
+  // with action=approve (the form's own validation still runs first).
+  var ap = qs('#approveBtn');
+  if (ap) ap.addEventListener('click', function (e) {
+    qs('#formAction').value = 'approve';
+    if (ap.dataset.confirmed === '1') return;
+    e.preventDefault();
+    var total = IS_CB ? qs('#sumTotal').textContent : qs('#sumDr').textContent;
+    ask('Approve and post', 'Post this voucher to the general ledger for ' + total + '? It is locked once approved.', 'Approve & post', function () {
+      ap.dataset.confirmed = '1'; ap.click(); ap.dataset.confirmed = '';
+    });
+  }, true);
+
+  // ── entry preview ──
+  function rowsData() {
+    return qsa('#entriesBody tr').map(function (tr) {
+      var name = (qs('.acct-input', tr) || {}).value || '', code = (qs('.code-display', tr) || {}).value || '';
+      var dr = 0, cr = 0;
+      if (IS_CB) {
+        var a = parseFloat((qs('.amt-input', tr) || {}).value) || 0;
+        if (IS_RECEIPT) cr = a; else dr = a;
+      } else {
+        dr = parseFloat((qs('.dr-input', tr) || {}).value) || 0;
+        cr = parseFloat((qs('.cr-input', tr) || {}).value) || 0;
+      }
+      return { name: name, code: code, dr: dr, cr: cr };
+    }).filter(function (r) { return r.name && (r.dr || r.cr); });
+  }
+  function previewRow(side, code, name, amt) {
+    return '<div class="vpre-row ' + side + '"><span class="vpre-side">' + (side === 'dr' ? 'Dr' : 'Cr') + '</span>' +
+      '<span class="vpre-acc">' + (code ? '<small>' + esc(code) + '</small>' : '') + esc(name) + '</span>' +
+      '<span class="vpre-amt">' + fmt(amt) + '</span></div>';
+  }
+  function renderPreview() {
+    var box = qs('#jePreview'); if (!box) return;
+    var rows = rowsData(), lines = [], total = 0;
+    rows.forEach(function (r) { total += r.dr + r.cr; });
+    if (!rows.length) { box.innerHTML = '<div class="vpre-empty">Add an account and an amount to see the entry.</div>'; return; }
+    var cbName = (qs('#cbSearch') || {}).value || (IS_CB ? 'Cash / bank account' : '');
+    if (IS_CB && IS_RECEIPT) lines.push(previewRow('dr', '', cbName, total));
+    rows.forEach(function (r) { if (r.dr) lines.push(previewRow('dr', r.code, r.name, r.dr)); });
+    rows.forEach(function (r) { if (r.cr) lines.push(previewRow('cr', r.code, r.name, r.cr)); });
+    if (IS_CB && !IS_RECEIPT) lines.push(previewRow('cr', '', cbName, total));
+    var dr = 0, cr = 0;
+    if (IS_CB) { dr = cr = total; } else rows.forEach(function (r) { dr += r.dr; cr += r.cr; });
+    var ok = Math.abs(dr - cr) < 0.005;
+    box.innerHTML = lines.join('') +
+      '<div class="vpre-tot"><span>Total</span><span>Dr ' + fmt(dr) + ' · Cr ' + fmt(cr) + '</span></div>' +
+      (ok ? '<div class="vpre-ok">✓ Balanced</div>' : '<div class="vpre-bad">Out of balance by ' + fmt(Math.abs(dr - cr)) + '</div>') +
+      (IS_CB && !qs('#cbAccountId').value ? '<div class="vpre-bad">Choose the ' + (IS_RECEIPT ? 'account the money goes into' : 'account it is paid from') + '.</div>' : '');
+  }
+
+  // ── cash / bank balance: now → after this voucher ──
+  var balFor = null, bal = null;
+  function renderBalance() {
+    var el = qs('#cbBalance'); if (!el) return;
+    var id = (qs('#cbAccountId') || {}).value;
+    if (!id) { el.hidden = true; return; }
+    if (id !== balFor) {
+      balFor = id; bal = null; el.hidden = false; el.textContent = 'Checking balance…';
+      fetch('/accounting/api/account-balance?id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d && d.ok && balFor === id) { bal = d.balance; renderBalance(); } })
+        .catch(function () { el.hidden = true; });
+      return;
+    }
+    if (bal === null) return;
+    var total = parseFloat((qs('#sumTotal') || {}).textContent.replace(/[^0-9.\-]/g, '')) || 0;
+    if (IS_APPROVED) { el.innerHTML = 'Balance now <b>' + fmt(bal) + '</b>'; el.hidden = false; return; }
+    var after = IS_RECEIPT ? bal + total : bal - total;
+    el.innerHTML = 'Balance <b>' + fmt(bal) + '</b> → after this voucher <b>' + fmt(after) + '</b>' +
+      (IS_PAYMENT && after < 0 ? ' <span class="warn">' + (/BPV/.test(qs('#voucherTypeInput').value) ? 'would be overdrawn' : 'cash would go below zero') + '</span>' : '');
+    el.hidden = false;
+  }
+
+  if (typeof window.recalc === 'function') {
+    var _rc = window.recalc;
+    window.recalc = function () { var r = _rc.apply(this, arguments); renderPreview(); renderBalance(); return r; };
+  }
+  // Rows wire their inputs to the recalc they saw when they were built, so
+  // the preview also follows typing directly.
+  ['input', 'change'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (e.target.closest && (e.target.closest('#entriesBody') || e.target.id === 'cbSearch')) {
+        setTimeout(function () { renderPreview(); renderBalance(); }, 0);
+      }
+    });
+  });
+  renderPreview(); renderBalance();
 })();
 </script>
 {% endblock %}

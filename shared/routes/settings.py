@@ -113,9 +113,23 @@ def index():
     if tab == "audit":
         ctx.update(_audit_ctx())
     elif tab == "company":
-        ctx["company"] = CompanyInfo.get()
+        # Not "company": that name is the active company the app shell shows
+        # in its header and switcher, and this tab used to blank it out.
+        ctx["company_info"] = CompanyInfo.get()
     elif tab == "periods":
-        ctx["fiscal_rule"] = FiscalYearRule.get()
+        rule = FiscalYearRule.get()
+        ctx["fiscal_rule"] = rule
+        # A worked example of the rule: the year that contains today.
+        from datetime import timedelta
+        import calendar
+        m, d = rule.start_month or 1, rule.start_day or 1
+        today = date.today()
+
+        def _start(y):
+            return date(y, m, min(d, calendar.monthrange(y, m)[1]))
+        y = today.year if today >= _start(today.year) else today.year - 1
+        ex_start = _start(y)
+        ctx["fy_example"] = (ex_start, _start(y + 1) - timedelta(days=1))
         ctx["periods"] = AccountingPeriod.query.order_by(
             AccountingPeriod.start_date.desc()).all()
     elif tab == "reports":

@@ -76,6 +76,11 @@ class ChartOfAccount(db.Model):
 
 class JournalEntry(db.Model):
     __tablename__ = "journal_entries"
+    # What every report and the document "Accounting entry" panel filter by.
+    __table_args__ = (
+        db.Index("ix_journal_entries_company_posted_date", "company_id", "is_posted", "entry_date"),
+        db.Index("ix_journal_entries_voucher", "voucher_type", "voucher_id"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     voucher_type = db.Column(db.String(50), nullable=False)
@@ -93,6 +98,10 @@ class JournalEntry(db.Model):
 
 class JournalLine(db.Model):
     __tablename__ = "journal_lines"
+    __table_args__ = (
+        db.Index("ix_journal_lines_entry", "journal_entry_id"),
+        db.Index("ix_journal_lines_account_entry", "account_id", "journal_entry_id"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, index=True)
     journal_entry_id = db.Column(db.Integer, db.ForeignKey("journal_entries.id"), nullable=False)
@@ -107,3 +116,8 @@ class JournalLine(db.Model):
 
     account = db.relationship("ChartOfAccount")
     label = db.relationship("ProjectLabel")
+
+
+# The reporting table (gl_daily_balances) is maintained by session hooks that
+# must exist wherever journals are written, so they register with the models.
+import shared.gl_summary  # noqa: E402,F401

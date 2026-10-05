@@ -276,7 +276,7 @@ def test_audit_log_csv_default_unchanged(w):
     "/executive/receivables", "/executive/integrity", "/fixed-assets/reports/",
     "/inventory/vouchers/product-ledger/list"])
 def test_report_pages_offer_export_buttons_that_keep_filters(w, page):
-    html = _get(w, page + "?as_of=2026-09-30").data.decode()
+    html = _get(w, page + "?run=1&as_of=2026-09-30").data.decode()
     assert 'data-export="excel"' in html and 'data-export="pdf"' in html
     # The filter on screen travels with the export link.
     m = re.search(r'href="([^"]*format=excel[^"]*)"', html)

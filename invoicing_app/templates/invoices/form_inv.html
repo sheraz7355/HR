@@ -575,6 +575,8 @@ body{background:var(--card);font-size:10px}
 {% endblock %}
 
 {% block content %}
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{{ gl_entry_button("SI", invoice.id if invoice else None, id_from="#invoiceId") }}
 <div class="wrap{{ ' is-locked' if is_approved else '' }}" id="docWrap">
   {% with doc_title = ('Approved ' if is_approved else '') + 'Sales Invoice' %}{% include '_print_header.html' %}{% endwith %}
   {% if rendered_template %}
@@ -697,6 +699,8 @@ body{background:var(--card);font-size:10px}
   </div>
 
 
+  <div class="doc-body">
+  <div class="doc-main">
   <!-- LINE ITEMS: the card owns its toolbar and grid (DESIGN.md §3). -->
   <div class="card">
     <div class="card-h">
@@ -707,11 +711,11 @@ body{background:var(--card);font-size:10px}
       </div>
       <div class="tool-actions">
         {% if editable %}
-        <button type="button" class="bsm" id="fromOrdersBtn" title="Import items from approved sales orders">From Orders</button>
+        <button type="button" class="bsm" id="fromOrdersBtn" title="Import items from approved sales orders">Import from order</button>
         <!-- The charges button carries its count and running total, so the
              charge position is readable without opening anything. -->
-        <button type="button" class="bsm bsm-charges" id="chargesBtn">&#8853; Additional Charges <span id="chargesCount"></span></button>
-        <button type="button" class="bsm bsm-settings" onclick="openSidePanel()">&#9881; Settings</button>
+        <button type="button" class="bsm bsm-charges" id="chargesBtn">Charges <span id="chargesCount"></span></button>
+        <button type="button" class="bsm bsm-settings" onclick="openSidePanel()">Invoice options</button>
         {% endif %}
         <!-- Scope toggles live in the Additional Settings panel (§13: "all
              configuration lives in the right-hand slide-over"). The grid header
@@ -775,17 +779,19 @@ body{background:var(--card);font-size:10px}
     </div>
   </div>
 
-  <!-- BOTTOM: Notes left, Summary right -->
-  <div class="card">
-    <div class="card-b" style="padding:0;">
-      <div class="btm">
-        <div class="btm-l">
+  <!-- NOTES (left column, under the items) -->
+  <section class="card doc-notes btm"><div class="btm-l">
           <label class="lbl" for="invoiceNotes">Notes</label>
           <textarea id="invoiceNotes" class="inp" rows="5" placeholder="Delivery instructions, bank details, terms…" {{ 'disabled' if not editable else '' }}>{{ invoice.notes if invoice else '' }}</textarea>
-        </div>
-        <div class="btm-r">
+        </div></section>
+  </div><!-- /doc-main -->
+
+  <!-- SUMMARY RAIL: totals beside the items, where the eye is while entering lines -->
+  <aside class="doc-rail" aria-label="Summary">
+    <div class="doc-summary btm"><div class="btm-r">
+          <h2 class="sum-h">Summary</h2>
           <div class="sl"><span class="sll">Subtotal</span><span class="slv" id="summarySubtotal">0.00</span></div>
-          <div class="sl sl-memo" id="absorbMemoRow" style="display:none;"><span class="sll">Absorbed charges (in item values) &mdash; memo</span><span class="slv" id="summaryAbsorb" style="width:70px;text-align:right;min-width:auto;">0.00</span></div>
+          <div class="sl sl-memo" id="absorbMemoRow" style="display:none;"><span class="sll">Charges included in item prices</span><span class="slv" id="summaryAbsorb" style="width:70px;text-align:right;min-width:auto;">0.00</span></div>
           <div class="sl">
             <span class="sll">Total discount <span class="mbadge" id="badgeDiscount"></span></span>
             <span style="display:flex;align-items:center;gap:4px;">
@@ -810,8 +816,12 @@ body{background:var(--card);font-size:10px}
             </span>
           </div>
           <div id="chargesSummaryContainer"></div>
+          <div class="sum-add">
+            <button type="button" class="sum-link" id="sumAddCharge">+ Add charge</button>
+            <button type="button" class="sum-link" id="sumAddTax">+ Further tax or withholding</button>
+          </div>
           <div class="sl" id="furtherTaxRow" style="display:none;">
-            <span class="sll">Further Tax</span>
+            <span class="sll">Further tax</span>
             <span style="display:flex;align-items:center;gap:4px;">
               <span style="color:var(--muted);font-size:11px;">%</span>
               <input type="number" class="sli sli-pct" id="furtherTaxPct" placeholder="%" step="0.01" min="0" max="100" value="{{ invoice.further_tax_pct if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
@@ -819,7 +829,7 @@ body{background:var(--card);font-size:10px}
             </span>
           </div>
           <div class="sl sl-deduct" id="withholdingTaxRow" style="display:none;">
-            <span class="sll">W/H Tax</span>
+            <span class="sll">Withholding tax</span>
             <span style="display:flex;align-items:center;gap:4px;">
               <span style="color:var(--muted);font-size:11px;">%</span>
               <input type="number" class="sli sli-pct" id="withholdingTaxPct" placeholder="%" step="0.01" min="0" max="100" value="{{ invoice.withholding_tax_pct if invoice else '0' }}" {{ 'disabled' if not editable else '' }}>
@@ -827,10 +837,10 @@ body{background:var(--card);font-size:10px}
             </span>
           </div>
           <div class="sl sl-net"><span class="sll">Total due</span><span class="slv" id="summaryNetTotal">0.00</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
+        
+    </div></div>
+  </aside>
+  </div><!-- /doc-body -->
 
     <!-- ACTION BAR — the chips mirror the global keys:
          Ctrl+S save · Ctrl+Shift+S save & approve · Ctrl+P print (saved docs)
@@ -848,17 +858,17 @@ body{background:var(--card);font-size:10px}
   <div class="chg-shell">
     <div class="chg-main">
       <div class="chg-head">
-        <span>Additional Charges &mdash; <span id="chgHeadInv">this invoice</span></span>
+        <span>Charges <span class="chg-sub" id="chgHeadInv">this invoice</span></span>
         <button type="button" class="chg-x" onclick="closeChargesModal()" title="Close">&times;</button>
       </div>
       <div class="chg-body">
-        <p style="font-size:12px;color:var(--muted);margin:0 0 4px;">Each row is one charge picked from the chart of accounts. Scope, distribution, treatment and tax bases are set per charge.</p>
+        <p class="chg-intro">Add freight, installation or any other charge, then choose who pays for it and how it is taxed.</p>
         <p style="font-size:12px;color:var(--warning-dark);margin:0 0 14px;">Further tax has no switch of its own &mdash; when applied to the invoice, it is always computed on the sales-tax base.</p>
         <div class="chg-wrap">
           <div id="chargesList"></div>
         </div>
         <div class="chg-actions">
-          <button type="button" class="bsm" id="addChargeBtn">+ Add charge from ledger</button>
+          <button type="button" class="bsm" id="addChargeBtn">+ Add another charge</button>
           <div class="chg-foot" id="chargesFoot"></div>
         </div>
         <div class="modal-acts" style="margin-top:14px;">
@@ -979,7 +989,7 @@ body{background:var(--card);font-size:10px}
 <!-- ADDITIONAL SETTINGS SIDE PANEL -->
 <div class="side-panel" id="sidePanel">
   <div class="sp-h">
-    <span>Additional Settings</span>
+    <span>Invoice options</span>
     <button onclick="closeSidePanel()">&times;</button>
   </div>
   <div class="sp-b">
@@ -2473,6 +2483,7 @@ window.addEventListener('beforeunload',function(e){
 <script>
 // Configuration for the shared document UI layer (static/js/doc_form.js).
 window.DOC = {
+  kind: 'sales',
   title: 'Sales Invoice', noun: 'invoice',
   partyKey: 'customer_id', partySearch: 'customerSearch', partyNoun: 'customer',
   listUrl: "{{ url_for('inv_invoices.list_invoices') }}",

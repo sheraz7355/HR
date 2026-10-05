@@ -246,7 +246,7 @@ def test_alembic_is_at_head_after_boot(w):
     from alembic.script import ScriptDirectory
     head = ScriptDirectory.from_config(db_migrate.alembic_config()).get_current_head()
     with flask_app.app_context():
-        assert db_migrate.current(db.engine) == head == "0002_money_numeric"
+        assert db_migrate.current(db.engine) == head == "0004_invoice_dates_timestamp"
 
 
 def test_money_revision_converts_a_double_precision_column(w):
@@ -274,6 +274,40 @@ def test_money_revision_converts_a_double_precision_column(w):
             )).scalar()
         assert dtype == "numeric"
         assert raw == "0.300000"
-        assert db_migrate.current(db.engine) == "0002_money_numeric"
+        assert db_migrate.current(db.engine) == "0004_invoice_dates_timestamp"
         # Running again is a no-op.
         db_migrate.upgrade(db.engine)
+
+
+def test_invoice_date_revision_converts_a_legacy_date_column(w):
+    """Live databases older than the DateTime model still held
+    inv_invoices.invoice_date as DATE; the return routes' ``.date()`` call
+    then 500'd there. Revision 0004 converts the column."""
+    from shared import db_migrate
+    with flask_app.app_context():
+        if db.engine.dialect.name != "postgresql":
+            pytest.skip("Postgres-only revision (SQLite types are affinities)")
+        with db.engine.begin() as conn:
+            for col in ("invoice_date", "due_date"):
+                conn.execute(db.text(
+                    f"ALTER TABLE inv_invoices ALTER COLUMN {col} TYPE DATE"))
+            conn.execute(db.text(
+                "UPDATE alembic_version SET version_num = '0003_gl_reporting'"))
+        db_migrate.upgrade(db.engine)
+        with db.engine.connect() as conn:
+            types = dict(conn.execute(db.text(
+                "SELECT column_name, data_type FROM information_schema.columns "
+                "WHERE table_name = 'inv_invoices' AND column_name IN "
+                "('invoice_date', 'due_date')")).fetchall())
+        assert types == {"invoice_date": "timestamp without time zone",
+                         "due_date": "timestamp without time zone"}
+        assert db_migrate.current(db.engine) == "0004_invoice_dates_timestamp"
+
+
+def test_return_date_check_accepts_date_and_datetime():
+    """The return routes compare through as_date, whatever type the column
+    hands back."""
+    from datetime import date, datetime
+    from shared.posting_helpers import as_date
+    assert as_date(datetime(2026, 3, 4, 15, 0)) < as_date(date(2026, 3, 5))
+    assert as_date(date(2026, 3, 5)) == as_date(datetime(2026, 3, 5, 9, 30))

@@ -13,6 +13,8 @@
 {% endif %}
 {% endblock %}
 {% block content %}
+{% from "partials/gl_entry.html" import gl_entry_button %}
+{% set gle_dep = [] %}{% for e in depreciation_entries %}{% set _ = gle_dep.append("FA-DEP:" ~ e.id) %}{% endfor %}{{ gl_entry_button("FA-ACQ", asset.id, also=gle_dep) }}
 <div class="card" style="margin-bottom:16px;">
   <div class="card-body">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">

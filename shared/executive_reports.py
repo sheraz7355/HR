@@ -119,6 +119,13 @@ def scope(as_dict=False):
     return out if as_dict else set(out)
 
 
+def _glb_day(d):
+    """A report date (date or datetime) as a calendar day, for the reporting
+    table (gl_daily_balances)."""
+    from datetime import datetime as _dt
+    return d.date() if isinstance(d, _dt) else d
+
+
 def _balances(account_ids, as_of=None):
     """``{account_id: (debit_total, credit_total)}`` from posted journal lines.
 
@@ -128,16 +135,17 @@ def _balances(account_ids, as_of=None):
     """
     if not account_ids:
         return {}
+    # The reporting table (posted activity per account and day), not every
+    # journal line.
+    from shared.models.gl_balance import GLDailyBalance as G
     q = (db.session.query(
-            JournalLine.account_id,
-            db.func.coalesce(db.func.sum(JournalLine.debit), 0).label("dr"),
-            db.func.coalesce(db.func.sum(JournalLine.credit), 0).label("cr"))
-         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-         .filter(JournalEntry.is_posted == True,   # noqa: E712
-                 JournalLine.account_id.in_(list(account_ids))))
+            G.account_id,
+            db.func.coalesce(db.func.sum(G.debit), 0).label("dr"),
+            db.func.coalesce(db.func.sum(G.credit), 0).label("cr"))
+         .filter(G.account_id.in_(list(account_ids))))
     if as_of:
-        q = q.filter(JournalEntry.entry_date <= _eod(as_of))
-    q = q.group_by(JournalLine.account_id)
+        q = q.filter(G.day <= _glb_day(as_of))
+    q = q.group_by(G.account_id)
     return {int(r.account_id): (_q(r.dr), _q(r.cr)) for r in q.all()}
 
 
@@ -420,17 +428,18 @@ def _aged_parties(in_scope, as_of=None):
     as_of_day = as_of.date() if isinstance(as_of, datetime) else (
         as_of if isinstance(as_of, date) else datetime.utcnow().date())
 
-    q = (db.session.query(JournalLine, JournalEntry)
-         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
-         .filter(JournalEntry.is_posted == True,   # noqa: E712
-                 JournalLine.account_id.in_(list(in_scope.keys()))))
+    # Daily totals from the reporting table are exactly what FIFO aging needs:
+    # within one day every layer is the same age.
+    from shared.models.gl_balance import GLDailyBalance as G
+    q = (db.session.query(G.account_id, G.day,
+                          db.func.sum(G.debit), db.func.sum(G.credit))
+         .filter(G.account_id.in_(list(in_scope.keys()))))
     if as_of:
-        q = q.filter(JournalEntry.entry_date <= _eod(as_of))
+        q = q.filter(G.day <= _glb_day(as_of))
     postings = {}
-    for line, entry in q.order_by(JournalEntry.entry_date,
-                                  JournalEntry.id).all():
-        postings.setdefault(int(line.account_id), []).append(
-            (entry.entry_date, line.debit, line.credit))
+    for acc_id, day, dr, cr in q.group_by(G.account_id, G.day).order_by(G.day).all():
+        postings.setdefault(int(acc_id), []).append(
+            (datetime.combine(day, datetime.min.time()), _q(dr), _q(cr)))
 
     accounts = {int(a.id): a for a in ChartOfAccount.query.filter(
         ChartOfAccount.id.in_(list(postings.keys()))).all()}

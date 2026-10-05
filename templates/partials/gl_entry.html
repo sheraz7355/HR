@@ -1,0 +1,40 @@
+{#- Floating "Accounting entry" button + panel for any document that posts to
+    the general ledger. Shows the journal(s) the document posted — which
+    accounts are debited and credited — read from /accounting/gl-entry.
+
+    {% from "partials/gl_entry.html" import gl_entry_button %}
+    {{ gl_entry_button("SI", invoice.id if invoice else None, id_from="#invoiceId") }}
+
+    vtype    the document's journal code (SI, PI, SR, PR, JV, CPV, CONS, ...)
+    vid      the saved document's id (None for a new, unsaved document)
+    also     optional list of "TYPE:id" journals that belong to the same
+             document (an asset's depreciation runs)
+    id_from  optional selector of an input holding the id, for forms that
+             save without reloading (the id is read again on every open)
+-#}
+{%- macro gl_entry_button(vtype, vid=None, id_from=None, also=None) -%}
+<button type="button" class="gle-fab no-print" id="gleFab" data-type="{{ vtype }}" data-id="{{ vid or '' }}"
+        {% if id_from %}data-id-from="{{ id_from }}"{% endif %} {% if also %}data-also="{{ also|join(',') }}"{% endif %} aria-haspopup="dialog" aria-controls="glePanel"
+        title="See which ledgers this document debits and credits">
+  <span class="gle-fab-ico" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h16M4 19h16"/><path d="M12 5v14"/></svg>
+  </span>
+  <span class="gle-fab-txt">Accounting entry</span>
+  <span class="gle-dot" aria-hidden="true"></span>
+</button>
+<div class="gle-overlay no-print" id="gleOverlay" hidden></div>
+<aside class="gle-panel no-print" id="glePanel" role="dialog" aria-modal="true" aria-labelledby="gleTitle" hidden>
+  <header class="gle-head">
+    <div>
+      <h2 class="gle-title" id="gleTitle">Accounting entry</h2>
+      <p class="gle-sub" id="gleSub">Loading…</p>
+    </div>
+    <button type="button" class="gle-x" id="gleClose" aria-label="Close">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </header>
+  <div class="gle-body" id="gleBody" aria-live="polite"></div>
+</aside>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/gl_entry.css') }}">
+<script src="{{ url_for('static', filename='js/gl_entry.js') }}" defer></script>
+{%- endmacro -%}

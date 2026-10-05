@@ -138,6 +138,10 @@ def integrity():
         return redirect(url_for("dashboard.hub"))
     from shared import integrity as books
     from shared.models.stock_layer import StockCostAdjustment
+    # The checks scan the books, so they run when asked (Run checks / export).
+    if not (request.args.get("run") or request.args.get("format")):
+        return render_template("executive/integrity.html", checks=[], all_ok=None,
+                               adjustments=[], loaded=False)
     checks = books.run_all()
     adjustments = (StockCostAdjustment.query
                    .order_by(StockCostAdjustment.id.desc()).limit(25).all())
@@ -161,7 +165,7 @@ def integrity():
             return rx.send_export(buf, "excel", title, datetime.now().date())
         return rx.export_table(fmt, title, headers, rows, period=period,
                                file_period=datetime.now().date())
-    return render_template("executive/integrity.html", checks=checks,
+    return render_template("executive/integrity.html", loaded=True, checks=checks,
                            all_ok=all(c["ok"] for c in checks),
                            adjustments=adjustments)
 

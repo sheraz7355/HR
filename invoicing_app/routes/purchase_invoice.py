@@ -380,6 +380,13 @@ def save_invoice():
         spread_left = spread
         n = len(cost_rows)
         denom = total_base or 1.0
+        # Each receipt carries its line's 2dp landed value (not qty x a 4dp
+        # unit cost), and the last line takes the rounding remainder, so the
+        # stock rows sum to exactly the Inventory debit posted below.
+        inventory_target = round(total_base + per_item_absorb
+                                 + (absorb_total - global_discount), 2)
+        all_stock = all(it.product_id for it in cost_rows)
+        received = 0.0
         for idx, item in enumerate(cost_rows):
             if not item.product_id:
                 continue
@@ -410,8 +417,13 @@ def save_invoice():
             landed_by_label[item.label_id or inv.label_id] = (
                 landed_by_label.get(item.label_id or inv.label_id, 0.0) + landed_total)
             if qty_f > 0:
+                line_value = round(landed_total, 2)
+                if all_stock and idx == n - 1:
+                    line_value = round(inventory_target - received, 2)
+                received = round(received + line_value, 2)
                 record_in(item.product_id, "PI", inv.id, inv.voucher_number,
-                          qty=qty_f, unit_cost=landed_total / qty_f,
+                          qty=qty_f, unit_cost=line_value / qty_f,
+                          total_cost=line_value,
                           notes=f"Purchase {inv.invoice_number}",
                           created_by=current_user.id,
                           txn_date=inv.invoice_date)

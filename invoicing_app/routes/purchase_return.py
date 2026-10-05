@@ -13,7 +13,7 @@ from shared.ledger_utils import post_journal_entry, reverse_journal_entry, posti
 from shared.models.ledger import ChartOfAccount
 from shared.permissions import deny_json
 from shared.costing import record_out, reverse_voucher_stock, original_receipt_cost
-from shared.posting_helpers import parse_doc_date
+from shared.posting_helpers import as_date, parse_doc_date
 
 inv_preturn_bp = Blueprint("inv_purchase_return", __name__,
                            url_prefix="/inventory/purchase-return")
@@ -216,7 +216,7 @@ def save_return():
         if _orig is None or _orig.status != "approved":
             return jsonify({"ok": False, "error":
                             "A return can only be raised against an approved invoice"}), 400
-        if _orig.invoice_date and ret.return_date.date() < _orig.invoice_date.date():
+        if _orig.invoice_date and as_date(ret.return_date) < as_date(_orig.invoice_date):
             return jsonify({"ok": False, "error":
                             f"Return date cannot be before the invoice date "
                             f"({_orig.invoice_date:%d %b %Y})"}), 400
